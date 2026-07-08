@@ -79,7 +79,7 @@ const orders: SeedOrder[] = [
     receivableStatus: "unreceived",
     payableStatus: "unpaid",
     needSupervisorConfirm: true,
-    calculationNote: "USD 汇率缺失，待后续通过 ExchangeRate-API 或主管确认"
+    calculationNote: "USD 汇率缺失，按固定 6.85 口径折算，需主管复核原表标注"
   },
   {
     orderNo: "FIN-202607-003",

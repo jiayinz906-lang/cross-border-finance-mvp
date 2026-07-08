@@ -28,4 +28,4 @@
 
 ## 后续扩展
 
-后续可扩展 `ExcelImportBatch`、`ReportExportRecord`、`ExchangeRateSnapshot` 等模型，记录导入批次、导出文件和汇率快照。
+后续可扩展 `ExcelImportBatch`、`ReportExportRecord`、`ImportRuleSnapshot` 等模型，记录导入批次、导出文件和当次执行的计算口径。

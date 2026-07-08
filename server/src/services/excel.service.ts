@@ -66,9 +66,34 @@ function nullableNumber(value: CellValue): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function signedNumber(value: CellValue): number | null {
-  const parsed = nullableNumber(value);
-  return parsed === null ? null : Math.abs(parsed);
+function exchangeRateMarker(row: RawRow): string {
+  return text(row["汇率"]) || text(row["备注"]) || text(row["备注_1"]);
+}
+
+function markedExchangeRate(row: RawRow): { rate: number; status: string; source: string } {
+  const marker = exchangeRateMarker(row);
+  const parsed = nullableNumber(marker);
+  if (parsed !== null) {
+    return {
+      rate: parsed,
+      status: "confirmed",
+      source: parsed === 1 ? "原始表格标注1，按人民币" : `原始表格标注汇率 ${parsed}`
+    };
+  }
+
+  if (/美金|美元|USD|\$|汇率未出/i.test(marker)) {
+    return {
+      rate: fallbackExchangeRate,
+      status: "confirmed",
+      source: `${marker || "美金"}，按固定汇率 ${fallbackExchangeRate}`
+    };
+  }
+
+  return {
+    rate: 1,
+    status: marker ? "pending" : "confirmed",
+    source: marker || "未标注汇率，按人民币暂列"
+  };
 }
 
 function parseDate(value: CellValue): Date {
@@ -117,8 +142,7 @@ function makeDraft(row: RawRow): DraftOrder {
   const service = text(row["服务"]) || "未分类业务";
   const feeType = text(row["费用类型"]);
   const serviceBusiness = isServiceBusiness(service, feeType);
-  const exchangeRate = nullableNumber(row["汇率"]);
-  const exchangeRateStatus = exchangeRate ? "confirmed" : text(row["汇率"]) ? "pending" : "confirmed";
+  const exchange = markedExchangeRate(row);
   const orderNo = text(row["运单号"]);
 
   return {
@@ -132,9 +156,9 @@ function makeDraft(row: RawRow): DraftOrder {
     businessType: service,
     supplierName: text(row["供应商"]) || undefined,
     currency: "CNY",
-    exchangeRate,
-    exchangeRateSource: exchangeRate ? "Excel 汇率列" : (text(row["汇率"]) || null),
-    exchangeRateStatus,
+    exchangeRate: exchange.rate,
+    exchangeRateSource: exchange.source,
+    exchangeRateStatus: exchange.status,
     receivableFreight: 0,
     receivableClearance: 0,
     receivableDelivery: 0,
@@ -154,7 +178,7 @@ function makeDraft(row: RawRow): DraftOrder {
     payableStatus: "unpaid",
     isServiceBusiness: serviceBusiness,
     isCompanyCustomerAdjusted: false,
-    needSupervisorConfirm: serviceBusiness || exchangeRateStatus === "pending",
+    needSupervisorConfirm: serviceBusiness || exchange.status === "pending",
     calculationNote: "",
     remark: [text(row["主品名"]), text(row["内部备注"])].filter(Boolean).join(" / ")
   };
@@ -236,7 +260,8 @@ export const excelService = {
       const draft = orders.get(orderNo) ?? makeDraft(row);
       const feeType = text(row["费用类型"]);
       const direction = text(row["收付类型"]);
-      const amount = signedNumber(row["折合人民币"]) ?? (number(row["本币费用"]) || number(row["金额"]));
+      const originalAmount = number(row["金额"]) || number(row["本币费用"]);
+      const amount = Math.abs(originalAmount * markedExchangeRate(row).rate);
       draft.supplierName = draft.supplierName || text(row["供应商"]) || undefined;
       draft.customerOrderNo = text(row["客户订单号"]) || draft.customerOrderNo || text(row["用户"]) || orderNo;
       draft.isServiceBusiness = draft.isServiceBusiness || isServiceBusiness(text(row["服务"]), feeType);

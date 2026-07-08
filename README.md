@@ -63,11 +63,11 @@ Copy-Item .env.example .env
 
 ## 后续开发阶段
 
-第二阶段可实现 Excel 导入解析、财务计算落库、主管确认、报表导出、图表组件和正式外部汇率 API 接入。第一阶段只保留对应 service TODO 和环境变量结构。
+第二阶段可继续完善主管确认、报表导出、图表组件和历史导入批次追踪。汇率不接入外部 API，统一按原始 Excel 表格标注执行：`1` 视为人民币，美元/美金/USD/汇率未出按 `6.85`，其他数字汇率按表格标注值。
 
 ## 云端部署注意事项
 
-后端端口使用 `PORT`，前端接口地址使用 `VITE_API_BASE_URL`，数据库地址使用 `DATABASE_URL`。前端可部署 Vercel / Netlify，后端可部署 Render / Railway / Fly.io / 云服务器。生产环境不要把 ExchangeRate-API Key 写入代码，应配置为云平台环境变量。
+后端端口使用 `PORT`，前端接口地址使用 `VITE_API_BASE_URL`，数据库地址使用 `DATABASE_URL`。前端可部署 GitHub Pages / Vercel / Netlify，后端可部署 Render / Railway / Fly.io / 云服务器。生产环境不需要配置汇率 API Key。
 
 ## 环境变量说明
 
@@ -75,7 +75,6 @@ Copy-Item .env.example .env
 DATABASE_URL="file:./dev.db"
 PORT=4000
 VITE_API_BASE_URL="http://localhost:4000/api"
-EXCHANGE_RATE_API_KEY="your_exchange_rate_api_key_here"
 ```
 
-如果 `EXCHANGE_RATE_API_KEY` 缺失，系统不应崩溃，后续计算应将汇率状态标记为“汇率待确认”。
+汇率计算只读取原始 Excel 标注，不使用外部接口。
