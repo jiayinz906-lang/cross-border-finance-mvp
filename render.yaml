@@ -1,8 +1,10 @@
 services:
   - type: web
     name: cross-border-finance-server
-    runtime: docker
+    runtime: node
     plan: free
+    buildCommand: export DATABASE_URL=file:./dev.db && corepack enable && pnpm install --filter cross-border-finance-server... --frozen-lockfile && pnpm --filter cross-border-finance-server exec prisma generate --schema ../prisma/schema.prisma && pnpm --filter cross-border-finance-server build && pnpm --filter cross-border-finance-server exec prisma db push --schema ../prisma/schema.prisma
+    startCommand: cd server && node dist/index.js
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
