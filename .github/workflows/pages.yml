@@ -40,6 +40,20 @@ jobs:
       - name: Build server
         run: pnpm --filter cross-border-finance-server build
 
+      - name: Package server artifact
+        run: |
+          mkdir -p server-package
+          cp -r server/dist server-package/dist
+          cp server/package.json server-package/server-package.json
+          cp package.json pnpm-lock.yaml pnpm-workspace.yaml Dockerfile render.yaml server-package/
+          cp -r prisma server-package/prisma
+
+      - name: Upload server artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-border-finance-server
+          path: server-package
+
       - name: Build client
         run: pnpm --filter cross-border-finance-client build
         env:
