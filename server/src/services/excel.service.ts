@@ -44,6 +44,7 @@ type DraftOrder = {
 
 const serviceBusinessKeywords = ["注册", "证书", "店铺", "商标", "注销", "EAC"];
 const fallbackExchangeRate = 6.85;
+const requiredDetailHeaders = ["运单号", "收付类型", "费用类型"];
 
 function text(value: CellValue): string {
   return value === null || value === undefined ? "" : String(value).trim();
@@ -63,6 +64,11 @@ function nullableNumber(value: CellValue): number | null {
   }
   const parsed = Number(text(value).replace(/,/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function signedNumber(value: CellValue): number | null {
+  const parsed = nullableNumber(value);
+  return parsed === null ? null : Math.abs(parsed);
 }
 
 function parseDate(value: CellValue): Date {
@@ -199,16 +205,25 @@ function riskType(order: {
   return "finance_review";
 }
 
+function findDetailSheet(workbook: XLSX.WorkBook): { sheetName: string; rows: RawRow[] } {
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json<RawRow>(sheet, { defval: null, raw: true });
+    if (!rows.length) continue;
+
+    const headers = new Set(Object.keys(rows[0] ?? {}));
+    if (requiredDetailHeaders.every((header) => headers.has(header))) {
+      return { sheetName, rows };
+    }
+  }
+
+  throw new Error("Excel 文件没有找到系统运单明细工作表，请确认包含：运单号、收付类型、费用类型");
+}
+
 export const excelService = {
   async importWorkbook(buffer: Buffer, originalName: string) {
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) {
-      throw new Error("Excel 文件没有可读取的工作表");
-    }
-
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<RawRow>(sheet, { defval: null, raw: true });
+    const { sheetName, rows } = findDetailSheet(workbook);
     if (!rows.length) {
       throw new Error("Excel 工作表没有明细数据");
     }
@@ -221,7 +236,7 @@ export const excelService = {
       const draft = orders.get(orderNo) ?? makeDraft(row);
       const feeType = text(row["费用类型"]);
       const direction = text(row["收付类型"]);
-      const amount = number(row["本币费用"]) || number(row["金额"]);
+      const amount = signedNumber(row["折合人民币"]) ?? (number(row["本币费用"]) || number(row["金额"]));
       draft.supplierName = draft.supplierName || text(row["供应商"]) || undefined;
       draft.customerOrderNo = text(row["客户订单号"]) || draft.customerOrderNo || text(row["用户"]) || orderNo;
       draft.isServiceBusiness = draft.isServiceBusiness || isServiceBusiness(text(row["服务"]), feeType);
