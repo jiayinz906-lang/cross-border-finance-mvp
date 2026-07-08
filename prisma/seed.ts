@@ -1,413 +1,166 @@
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
-
-const month = "2026-07";
+const month = "2026-06";
 
 type SeedOrder = {
   orderNo: string;
+  customerOrderNo: string;
   customerName: string;
   customerType: string;
   salespersonName: string;
   businessType: string;
   supplierName?: string;
-  currency: string;
-  exchangeRate?: number | null;
-  exchangeRateSource?: string | null;
-  exchangeRateStatus: string;
-  receivableFreight?: number;
-  receivableClearance?: number;
-  receivableDelivery?: number;
-  otherReceivable?: number;
-  payableFreight?: number;
-  payableClearance?: number;
-  payableDelivery?: number;
-  otherCost?: number;
-  receivedAmount?: number;
-  paidAmount?: number;
-  orderStatus: string;
-  receivableStatus: string;
-  payableStatus: string;
+  receivable: number;
+  payable: number;
+  received?: number;
+  paid?: number;
   isServiceBusiness?: boolean;
   isCompanyCustomerAdjusted?: boolean;
   needSupervisorConfirm?: boolean;
-  calculationNote: string;
-  remark?: string;
+  note?: string;
 };
 
 const orders: SeedOrder[] = [
-  {
-    orderNo: "FIN-202607-001",
-    customerName: "上海星桥贸易有限公司",
-    customerType: "personal",
-    salespersonName: "王敏",
-    businessType: "跨境物流",
-    supplierName: "华东干线供应商",
-    currency: "CNY",
-    exchangeRate: 1,
-    exchangeRateSource: "原始台账",
-    exchangeRateStatus: "confirmed",
-    receivableFreight: 12000,
-    receivableClearance: 1800,
-    receivableDelivery: 2400,
-    payableFreight: 8800,
-    payableClearance: 900,
-    payableDelivery: 1500,
-    receivedAmount: 16200,
-    paidAmount: 11200,
-    orderStatus: "completed",
-    receivableStatus: "received",
-    payableStatus: "paid",
-    calculationNote: "正常人民币订单"
-  },
-  {
-    orderNo: "FIN-202607-002",
-    customerName: "North Star LLC",
-    customerType: "personal",
-    salespersonName: "李娜",
-    businessType: "跨境物流",
-    supplierName: "美线代理 A",
-    currency: "USD",
-    exchangeRate: null,
-    exchangeRateSource: null,
-    exchangeRateStatus: "pending",
-    receivableFreight: 2200,
-    payableFreight: 1600,
-    receivedAmount: 0,
-    paidAmount: 0,
-    orderStatus: "completed",
-    receivableStatus: "unreceived",
-    payableStatus: "unpaid",
-    needSupervisorConfirm: true,
-    calculationNote: "USD 汇率缺失，按固定 6.85 口径折算，需主管复核原表标注"
-  },
-  {
-    orderNo: "FIN-202607-003",
-    customerName: "广州蓝鲸供应链",
-    customerType: "company",
-    salespersonName: "陈浩",
-    businessType: "清关服务",
-    supplierName: "口岸清关供应商",
-    currency: "CNY",
-    exchangeRate: 1,
-    exchangeRateSource: "原始台账",
-    exchangeRateStatus: "confirmed",
-    receivableFreight: 6800,
-    receivableClearance: 2600,
-    payableFreight: 5200,
-    payableClearance: 0,
-    receivedAmount: 5000,
-    paidAmount: 5200,
-    orderStatus: "completed",
-    receivableStatus: "partial",
-    payableStatus: "partial",
-    needSupervisorConfirm: true,
-    calculationNote: "清关成本缺失，默认利润 685 元倒推应付清关成本"
-  },
-  {
-    orderNo: "FIN-202607-004",
-    customerName: "杭州优品跨境",
-    customerType: "personal",
-    salespersonName: "王敏",
-    businessType: "派送服务",
-    supplierName: "末端派送供应商",
-    currency: "CNY",
-    exchangeRate: 1,
-    exchangeRateSource: "原始台账",
-    exchangeRateStatus: "confirmed",
-    receivableFreight: 7600,
-    receivableDelivery: 3200,
-    payableFreight: 6100,
-    payableDelivery: 0,
-    receivedAmount: 7600,
-    paidAmount: 6100,
-    orderStatus: "completed",
-    receivableStatus: "partial",
-    payableStatus: "partial",
-    needSupervisorConfirm: true,
-    calculationNote: "派送成本缺失，默认利润 685 元倒推应付派送成本"
-  },
-  {
-    orderNo: "FIN-202607-005",
-    customerName: "Milan Market SRL",
-    customerType: "personal",
-    salespersonName: "赵强",
-    businessType: "跨境物流",
-    supplierName: "欧洲派送商",
-    currency: "USD",
-    exchangeRate: 6.85,
-    exchangeRateSource: "默认 6.85 规则",
-    exchangeRateStatus: "confirmed",
-    receivableFreight: 1800,
-    receivableDelivery: 700,
-    payableFreight: 1300,
-    payableDelivery: 500,
-    receivedAmount: 2500,
-    paidAmount: 1800,
-    orderStatus: "completed",
-    receivableStatus: "received",
-    payableStatus: "paid",
-    calculationNote: "派送费原始录入 700 美金，按 700 × 6.85 折算"
-  },
-  {
-    orderNo: "FIN-202607-006",
-    customerName: "Paris Home SAS",
-    customerType: "company",
-    salespersonName: "赵强",
-    businessType: "跨境物流",
-    supplierName: "欧洲派送商",
-    currency: "USD",
-    exchangeRate: 6.85,
-    exchangeRateSource: "默认 6.85 规则",
-    exchangeRateStatus: "confirmed",
-    receivableFreight: 2100,
-    receivableDelivery: 800,
-    payableFreight: 1500,
-    payableDelivery: 560,
-    receivedAmount: 1600,
-    paidAmount: 1200,
-    orderStatus: "completed",
-    receivableStatus: "partial",
-    payableStatus: "partial",
-    isCompanyCustomerAdjusted: true,
-    calculationNote: "派送费原始录入 800 美金，按 800 × 6.85 折算"
-  },
-  {
-    orderNo: "FIN-202607-007",
-    customerName: "深圳光年电商",
-    customerType: "personal",
-    salespersonName: "刘洋",
-    businessType: "跨境物流",
-    supplierName: "华南干线供应商",
-    currency: "CNY",
-    exchangeRate: 1,
-    exchangeRateSource: "原始台账",
-    exchangeRateStatus: "confirmed",
-    receivableFreight: 15000,
-    payableFreight: 5200,
-    receivedAmount: 15000,
-    paidAmount: 5200,
-    orderStatus: "completed",
-    receivableStatus: "received",
-    payableStatus: "paid",
-    needSupervisorConfirm: true,
-    calculationNote: "高毛利异常订单，利润率超过 50%，需要复核"
-  },
-  {
-    orderNo: "FIN-202607-008",
-    customerName: "宁波云仓科技",
-    customerType: "personal",
-    salespersonName: "陈浩",
-    businessType: "跨境物流",
-    supplierName: "华东干线供应商",
-    currency: "CNY",
-    exchangeRate: 1,
-    exchangeRateSource: "原始台账",
-    exchangeRateStatus: "confirmed",
-    receivableFreight: 9000,
-    payableFreight: 8500,
-    receivedAmount: 4000,
-    paidAmount: 8500,
-    orderStatus: "completed",
-    receivableStatus: "partial",
-    payableStatus: "paid",
-    needSupervisorConfirm: true,
-    calculationNote: "低毛利高风险订单，利润率低于 10%"
-  },
-  {
-    orderNo: "FIN-202607-009",
-    customerName: "义乌海拓贸易",
-    customerType: "company",
-    salespersonName: "李娜",
-    businessType: "跨境物流",
-    supplierName: "美线代理 B",
-    currency: "CNY",
-    exchangeRate: 1,
-    exchangeRateSource: "原始台账",
-    exchangeRateStatus: "confirmed",
-    receivableFreight: 11000,
-    payableFreight: 7900,
-    receivedAmount: 0,
-    paidAmount: 7900,
-    orderStatus: "completed",
-    receivableStatus: "unreceived",
-    payableStatus: "paid",
-    needSupervisorConfirm: true,
-    calculationNote: "已完成但未回款订单"
-  },
-  {
-    orderNo: "FIN-202607-010",
-    customerName: "青岛北极星贸易",
-    customerType: "personal",
-    salespersonName: "刘洋",
-    businessType: "跨境物流",
-    supplierName: "取消订单供应商",
-    currency: "CNY",
-    exchangeRate: 1,
-    exchangeRateSource: "原始台账",
-    exchangeRateStatus: "confirmed",
-    receivableFreight: 7000,
-    payableFreight: 3000,
-    receivedAmount: 0,
-    paidAmount: 0,
-    orderStatus: "cancelled",
-    receivableStatus: "cancelled",
-    payableStatus: "cancelled",
-    calculationNote: "已取消订单，不计入营收、毛利和提成"
-  },
-  {
-    orderNo: "FIN-202607-011",
-    customerName: "莫斯科新贸",
-    customerType: "service",
-    salespersonName: "王敏",
-    businessType: "注册业务",
-    currency: "CNY",
-    exchangeRate: 1,
-    exchangeRateSource: "原始台账",
-    exchangeRateStatus: "confirmed",
-    otherReceivable: 5000,
-    otherCost: 1800,
-    receivedAmount: 3000,
-    paidAmount: 1800,
-    orderStatus: "completed",
-    receivableStatus: "partial",
-    payableStatus: "paid",
-    isServiceBusiness: true,
-    needSupervisorConfirm: true,
-    calculationNote: "注册业务单独成表，主管确认价格和提成"
-  },
-  {
-    orderNo: "FIN-202607-012",
-    customerName: "欧亚认证客户",
-    customerType: "service",
-    salespersonName: "李娜",
-    businessType: "EAC证书",
-    currency: "CNY",
-    exchangeRate: 1,
-    exchangeRateSource: "原始台账",
-    exchangeRateStatus: "confirmed",
-    otherReceivable: 8000,
-    otherCost: 3600,
-    receivedAmount: 8000,
-    paidAmount: 3600,
-    orderStatus: "completed",
-    receivableStatus: "received",
-    payableStatus: "paid",
-    isServiceBusiness: true,
-    needSupervisorConfirm: true,
-    calculationNote: "EAC 证书业务单独确认"
-  },
-  {
-    orderNo: "FIN-202607-013",
-    customerName: "品牌出海客户",
-    customerType: "service",
-    salespersonName: "赵强",
-    businessType: "商标注册",
-    currency: "CNY",
-    exchangeRate: 1,
-    exchangeRateSource: "原始台账",
-    exchangeRateStatus: "confirmed",
-    otherReceivable: 6500,
-    otherCost: 2600,
-    receivedAmount: 2000,
-    paidAmount: 2600,
-    orderStatus: "completed",
-    receivableStatus: "partial",
-    payableStatus: "paid",
-    isServiceBusiness: true,
-    needSupervisorConfirm: true,
-    calculationNote: "商标注册业务单独确认"
-  },
-  {
-    orderNo: "FIN-202607-014",
-    customerName: "跨境店铺客户",
-    customerType: "service",
-    salespersonName: "陈浩",
-    businessType: "店铺租赁",
-    currency: "CNY",
-    exchangeRate: 1,
-    exchangeRateSource: "原始台账",
-    exchangeRateStatus: "confirmed",
-    otherReceivable: 12000,
-    otherCost: 7200,
-    receivedAmount: 6000,
-    paidAmount: 3600,
-    orderStatus: "completed",
-    receivableStatus: "partial",
-    payableStatus: "partial",
-    isServiceBusiness: true,
-    needSupervisorConfirm: true,
-    calculationNote: "店铺租赁业务单独确认"
-  }
+  { orderNo: "SZ26062469", customerOrderNo: "sz0697", customerName: "zy0811", customerType: "personal", salespersonName: "章佳洁", businessType: "汽运灰关", supplierName: "115", receivable: 25723.08, payable: 23237.77, received: 25128, paid: 22715.71, needSupervisorConfirm: true, note: "利润率低于10%，需复核收入与成本归集" },
+  { orderNo: "SZ26062489", customerOrderNo: "sz0701", customerName: "zy0650", customerType: "personal", salespersonName: "章佳洁", businessType: "汽运灰关", supplierName: "115", receivable: 21600, payable: 19880, received: 0, paid: 19880, needSupervisorConfirm: true, note: "利润率低于10%" },
+  { orderNo: "SZ26062264", customerOrderNo: "sz0707", customerName: "zy0707", customerType: "company", salespersonName: "章佳洁", businessType: "汽运灰关", supplierName: "115", receivable: 78000, payable: 35500, received: 78000, paid: 35500, isServiceBusiness: true, needSupervisorConfirm: true, note: "公司注册，成交单价大于2.5万" },
+  { orderNo: "SZ26061593", customerOrderNo: "sz0688", customerName: "zy0707", customerType: "company", salespersonName: "杨伊雯", businessType: "公司注销", supplierName: "注册服务供应商", receivable: 78000, payable: 35500, received: 78000, paid: 35500, isServiceBusiness: true, needSupervisorConfirm: true, note: "公司注销，主管确认提成" },
+  { orderNo: "SZ26061575", customerOrderNo: "sz0665", customerName: "zy0213", customerType: "personal", salespersonName: "朱卓然", businessType: "汽运灰关", supplierName: "A口岸", receivable: 32200, payable: 15800, received: 20000, paid: 15800, needSupervisorConfirm: true, note: "异常高利润，需复核应付成本是否漏录" },
+  { orderNo: "SZ26061549", customerOrderNo: "sz0661", customerName: "zy0213", customerType: "personal", salespersonName: "蒋蕊", businessType: "汽运灰关", supplierName: "A口岸", receivable: 43150, payable: 20300, received: 43150, paid: 20300, needSupervisorConfirm: true, note: "异常高利润，需复核应付成本是否漏录" },
+  { orderNo: "SZ26061566", customerOrderNo: "sz0663", customerName: "0233", customerType: "personal", salespersonName: "蒋蕊", businessType: "汽运灰关", supplierName: "A口岸", receivable: 18900, payable: 17350, received: 18900, paid: 17350, needSupervisorConfirm: true, note: "利润率低于10%" },
+  { orderNo: "SZ26060120", customerOrderNo: "sz0602", customerName: "0233", customerType: "personal", salespersonName: "王霄鱼", businessType: "EAC证书注册", supplierName: "EAC供应商", receivable: 3500, payable: 1040, received: 3500, paid: 1040, isServiceBusiness: true, needSupervisorConfirm: true, note: "EAC证书-DOC，成交单价小于3.5K" },
+  { orderNo: "SZ26061174", customerOrderNo: "sz0639", customerName: "宁波鑫达吉进出口有限公司", customerType: "company", salespersonName: "王霄鱼", businessType: "OZ店铺租赁", supplierName: "店铺租赁供应商", receivable: 30900, payable: 24000, received: 30900, paid: 24000, isServiceBusiness: true, needSupervisorConfirm: true, note: "店铺租赁，单价3000/月" },
+  { orderNo: "SZ26061011", customerOrderNo: "sz0611", customerName: "zy0650", customerType: "personal", salespersonName: "朱卓然", businessType: "汽运灰关", supplierName: "B口岸", receivable: 49300, payable: 36800, received: 49300, paid: 25000 },
+  { orderNo: "SZ26061022", customerOrderNo: "sz0618", customerName: "zy0650", customerType: "personal", salespersonName: "朱卓然", businessType: "汽运灰关", supplierName: "B口岸", receivable: 37200, payable: 28100, received: 37200, paid: 28100 },
+  { orderNo: "SZ26061033", customerOrderNo: "sz0622", customerName: "zy0650", customerType: "personal", salespersonName: "朱卓然", businessType: "汽运灰关", supplierName: "B口岸", receivable: 37808, payable: 34017.5, received: 37808, paid: 34017.5, needSupervisorConfirm: true, note: "利润率临界，需复核" },
+  { orderNo: "SZ26061201", customerOrderNo: "sz0640", customerName: "zy0811", customerType: "personal", salespersonName: "章佳洁", businessType: "铁路白关整柜", supplierName: "铁路供应商", receivable: 61520, payable: 50200, received: 61520, paid: 50200 },
+  { orderNo: "SZ26061202", customerOrderNo: "sz0641", customerName: "zy0811", customerType: "personal", salespersonName: "章佳洁", businessType: "铁路白关整柜", supplierName: "铁路供应商", receivable: 46200, payable: 38400, received: 46200, paid: 38400 },
+  { orderNo: "SZ26061203", customerOrderNo: "sz0642", customerName: "zy0811", customerType: "personal", salespersonName: "章佳洁", businessType: "铁路白关整柜", supplierName: "铁路供应商", receivable: 15544.42, payable: 12894.52, received: 15544.42, paid: 12894.52 },
+  { orderNo: "SZ26061204", customerOrderNo: "sz0643", customerName: "zy0213", customerType: "personal", salespersonName: "蒋蕊", businessType: "铁路白关整柜", supplierName: "铁路供应商", receivable: 14100, payable: 10100, received: 14100, paid: 10100 },
+  { orderNo: "SZ26061205", customerOrderNo: "sz0644", customerName: "0233", customerType: "personal", salespersonName: "蒋蕊", businessType: "铁路白关整柜", supplierName: "铁路供应商", receivable: 11314.25, payable: 10020.63, received: 11314.25, paid: 10020.63 },
+  { orderNo: "SZ26061301", customerOrderNo: "sz0650", customerName: "zy0707", customerType: "personal", salespersonName: "朱卓然", businessType: "汽运白关拼车", supplierName: "拼车供应商", receivable: 27117.44, payable: 18543.29, received: 27117.44, paid: 18543.29 },
+  { orderNo: "SZ26061302", customerOrderNo: "sz0651", customerName: "zy0730", customerType: "personal", salespersonName: "朱卓然", businessType: "汽运白关拼车", supplierName: "拼车供应商", receivable: 64491.06, payable: 27582.7, received: 64491.06, paid: 27582.7, needSupervisorConfirm: true, note: "异常高利润，需复核成本" },
+  { orderNo: "SZ26061303", customerOrderNo: "sz0652", customerName: "zy0213", customerType: "personal", salespersonName: "蒋蕊", businessType: "汽运白关拼车", supplierName: "拼车供应商", receivable: 18000, payable: 13795, received: 18000, paid: 13795 },
+  { orderNo: "SZ26061401", customerOrderNo: "sz0660", customerName: "其他客户", customerType: "personal", salespersonName: "杨伊雯", businessType: "汽运灰关", supplierName: "C口岸", receivable: 52600, payable: 38200, received: 40000, paid: 38200 },
+  { orderNo: "SZ26061402", customerOrderNo: "sz0662", customerName: "其他客户", customerType: "personal", salespersonName: "杨伊雯", businessType: "汽运灰关", supplierName: "C口岸", receivable: 61300, payable: 43400, received: 61300, paid: 43400 },
+  { orderNo: "SZ26061403", customerOrderNo: "sz0664", customerName: "其他客户", customerType: "personal", salespersonName: "杨伊雯", businessType: "汽运灰关", supplierName: "C口岸", receivable: 48700, payable: 35150, received: 48700, paid: 35150 },
+  { orderNo: "SZ26061404", customerOrderNo: "sz0666", customerName: "其他客户", customerType: "personal", salespersonName: "王霄鱼", businessType: "汽运灰关", supplierName: "C口岸", receivable: 78100, payable: 59500, received: 50000, paid: 59500 },
+  { orderNo: "SZ26061405", customerOrderNo: "sz0667", customerName: "其他客户", customerType: "personal", salespersonName: "王霄鱼", businessType: "汽运灰关", supplierName: "C口岸", receivable: 106667.57, payable: 71145.97, received: 106667.57, paid: 71145.97 }
 ];
 
-function calcTotals(order: SeedOrder) {
-  const rate = order.currency === "USD" ? order.exchangeRate ?? 6.85 : 1;
-  const receivable =
-    ((order.receivableFreight ?? 0) +
-      (order.receivableClearance ?? 0) +
-      (order.receivableDelivery ?? 0) +
-      (order.otherReceivable ?? 0)) *
-    rate;
-  const payable =
-    ((order.payableFreight ?? 0) +
-      (order.payableClearance ?? 0) +
-      (order.payableDelivery ?? 0) +
-      (order.otherCost ?? 0)) *
-    rate;
-  const profit = order.orderStatus === "cancelled" ? 0 : receivable - payable;
+function rateForSalesperson(totalProfit: number) {
+  if (totalProfit >= 150000) return 0.3;
+  if (totalProfit >= 100000) return 0.25;
+  if (totalProfit >= 50000) return 0.2;
+  return 0.15;
+}
+
+function riskType(rate: number | null, needSupervisorConfirm: boolean) {
+  if (rate !== null && rate < 0.1) return "low_profit";
+  if (rate !== null && rate > 0.5) return "abnormal_high_profit";
+  return needSupervisorConfirm ? "finance_review" : null;
+}
+
+function splitReceivable(order: SeedOrder) {
+  if (order.isServiceBusiness) {
+    return { receivableFreight: 0, receivableClearance: 0, receivableDelivery: 0, otherReceivable: order.receivable };
+  }
   return {
-    adjustedReceivable: order.orderStatus === "cancelled" ? 0 : receivable,
-    adjustedPayable: order.orderStatus === "cancelled" ? 0 : payable,
-    adjustedGrossProfit: profit,
-    adjustedGrossProfitRate: receivable > 0 && order.orderStatus !== "cancelled" ? profit / receivable : null
+    receivableFreight: Math.round(order.receivable * 0.72 * 100) / 100,
+    receivableClearance: Math.round(order.receivable * 0.16 * 100) / 100,
+    receivableDelivery: Math.round(order.receivable * 0.12 * 100) / 100,
+    otherReceivable: 0
+  };
+}
+
+function splitPayable(order: SeedOrder) {
+  if (order.isServiceBusiness) {
+    return { payableFreight: 0, payableClearance: 0, payableDelivery: 0, otherCost: order.payable };
+  }
+  return {
+    payableFreight: Math.round(order.payable * 0.76 * 100) / 100,
+    payableClearance: Math.round(order.payable * 0.14 * 100) / 100,
+    payableDelivery: Math.round(order.payable * 0.1 * 100) / 100,
+    otherCost: 0
   };
 }
 
 async function main() {
-  await prisma.serviceBusinessRecord.deleteMany();
-  await prisma.costAdjustment.deleteMany();
-  await prisma.riskRecord.deleteMany();
-  await prisma.commissionRecord.deleteMany();
-  await prisma.financeSummary.deleteMany();
-  await prisma.financeOrder.deleteMany();
+  await prisma.actionLog.deleteMany({ where: { month } });
+  await prisma.exportJob.deleteMany({ where: { month } });
+  await prisma.confirmationDocument.deleteMany({ where: { month } });
+  await prisma.serviceBusinessRecord.deleteMany({ where: { financeOrder: { month } } });
+  await prisma.costAdjustment.deleteMany({ where: { financeOrder: { month } } });
+  await prisma.riskRecord.deleteMany({ where: { financeOrder: { month } } });
+  await prisma.commissionRecord.deleteMany({ where: { financeOrder: { month } } });
+  await prisma.financeSummary.deleteMany({ where: { month } });
+  await prisma.financeOrder.deleteMany({ where: { month } });
 
-  const createdOrders = [];
-  for (const order of orders) {
-    const totals = calcTotals(order);
-    createdOrders.push(
-      await prisma.financeOrder.create({
-        data: {
-          orderDate: new Date("2026-07-06T00:00:00.000Z"),
-          month,
-          supplierName: order.supplierName ?? null,
-          receivableFreight: order.receivableFreight ?? 0,
-          receivableClearance: order.receivableClearance ?? 0,
-          receivableDelivery: order.receivableDelivery ?? 0,
-          otherReceivable: order.otherReceivable ?? 0,
-          payableFreight: order.payableFreight ?? 0,
-          payableClearance: order.payableClearance ?? 0,
-          payableDelivery: order.payableDelivery ?? 0,
-          otherCost: order.otherCost ?? 0,
-          receivedAmount: order.receivedAmount ?? 0,
-          paidAmount: order.paidAmount ?? 0,
-          isServiceBusiness: order.isServiceBusiness ?? false,
-          isCompanyCustomerAdjusted: order.isCompanyCustomerAdjusted ?? false,
-          needSupervisorConfirm: order.needSupervisorConfirm ?? false,
-          exchangeRate: order.exchangeRate ?? null,
-          exchangeRateSource: order.exchangeRateSource ?? null,
-          customerOrderNo: order.orderNo.replace("FIN-", "USR-"),
-          remark: order.remark ?? null,
-          ...order,
-          ...totals
-        }
-      })
-    );
+  const created = [];
+  for (const [index, order] of orders.entries()) {
+    const grossProfit = order.receivable - order.payable;
+    const grossProfitRate = order.receivable > 0 ? grossProfit / order.receivable : null;
+    const createdOrder = await prisma.financeOrder.create({
+      data: {
+        orderNo: order.orderNo,
+        customerOrderNo: order.customerOrderNo,
+        orderDate: new Date(`2026-06-${String((index % 25) + 1).padStart(2, "0")}T10:00:00.000Z`),
+        month,
+        customerName: order.customerName,
+        customerType: order.customerType,
+        salespersonName: order.salespersonName,
+        businessType: order.businessType,
+        supplierName: order.supplierName,
+        currency: "CNY",
+        exchangeRate: 1,
+        exchangeRateSource: "原始表格标注1，按人民币计算；美元数据按6.85规则折算后入库",
+        exchangeRateStatus: "confirmed",
+        ...splitReceivable(order),
+        ...splitPayable(order),
+        adjustedReceivable: order.receivable,
+        adjustedPayable: order.payable,
+        adjustedGrossProfit: grossProfit,
+        adjustedGrossProfitRate: grossProfitRate,
+        receivedAmount: order.received ?? 0,
+        paidAmount: order.paid ?? 0,
+        orderStatus: "completed",
+        receivableStatus: (order.received ?? 0) >= order.receivable ? "received" : (order.received ?? 0) > 0 ? "partial" : "unreceived",
+        payableStatus: (order.paid ?? 0) >= order.payable ? "paid" : (order.paid ?? 0) > 0 ? "partial" : "unpaid",
+        isServiceBusiness: order.isServiceBusiness ?? false,
+        isCompanyCustomerAdjusted: order.isCompanyCustomerAdjusted ?? false,
+        needSupervisorConfirm: order.needSupervisorConfirm ?? false,
+        calculationNote: order.note ?? "2026年6月样例数据，按原始表格汇率与成本规则计算",
+        remark: "Render线上测试种子数据"
+      }
+    });
+    created.push(createdOrder);
   }
 
-  for (const order of createdOrders) {
-    if (!order.isServiceBusiness && order.orderStatus !== "cancelled" && order.adjustedGrossProfit > 0) {
-      const rate = order.customerType === "company" || order.isCompanyCustomerAdjusted ? 0.1 : 0.15;
+  const logisticsProfitBySalesperson = new Map<string, number>();
+  for (const order of created) {
+    if (!order.isServiceBusiness && order.adjustedGrossProfit > 0) {
+      logisticsProfitBySalesperson.set(order.salespersonName, (logisticsProfitBySalesperson.get(order.salespersonName) ?? 0) + order.adjustedGrossProfit);
+    }
+  }
+
+  for (const order of created) {
+    const currentRiskType = riskType(order.adjustedGrossProfitRate, order.needSupervisorConfirm);
+    if (currentRiskType) {
+      await prisma.riskRecord.create({
+        data: {
+          financeOrderId: order.id,
+          riskLevel: currentRiskType === "abnormal_high_profit" ? "medium" : "high",
+          riskType: currentRiskType,
+          riskReasons: `${order.orderNo}：${order.calculationNote}`,
+          suggestion: currentRiskType === "low_profit" ? "复核收入、应付成本和费用归集" : "复核应付成本是否漏录，必要时要求主管确认",
+          status: "open"
+        }
+      });
+    }
+
+    if (!order.isServiceBusiness && order.adjustedGrossProfit > 0) {
+      const rate = rateForSalesperson(logisticsProfitBySalesperson.get(order.salespersonName) ?? 0);
       await prisma.commissionRecord.create({
         data: {
           financeOrderId: order.id,
@@ -415,104 +168,90 @@ async function main() {
           customerType: order.customerType,
           businessType: order.businessType,
           grossProfit: order.adjustedGrossProfit,
-          commissionRate: rate,
-          commissionAmount: order.adjustedGrossProfit * rate,
+          commissionRate: order.isCompanyCustomerAdjusted ? 0.1 : rate,
+          commissionAmount: order.adjustedGrossProfit * (order.isCompanyCustomerAdjusted ? 0.1 : rate),
           needSupervisorConfirm: order.needSupervisorConfirm,
-          confirmStatus: order.needSupervisorConfirm ? "pending" : "confirmed"
-        }
-      });
-    }
-
-    if (order.needSupervisorConfirm || (order.adjustedGrossProfitRate ?? 0) < 0.1 || (order.adjustedGrossProfitRate ?? 0) > 0.5) {
-      await prisma.riskRecord.create({
-        data: {
-          financeOrderId: order.id,
-          riskLevel: (order.adjustedGrossProfitRate ?? 0) > 0.5 ? "medium" : "high",
-          riskType: (order.adjustedGrossProfitRate ?? 0) > 0.5 ? "abnormal_high_profit" : "finance_risk",
-          riskReasons: order.calculationNote ?? "需要主管确认",
-          suggestion: "复核原始台账、应收应付和汇率口径。",
-          status: "open"
-        }
-      });
-    }
-
-    if (order.payableClearance === 0 && order.receivableClearance > 0) {
-      await prisma.costAdjustment.create({
-        data: {
-          financeOrderId: order.id,
-          fieldName: "payableClearance",
-          oldValue: 0,
-          newValue: Math.max(order.receivableClearance - 685, 0),
-          adjustmentLogic: "应收清关费折人民币金额 - 685",
-          reason: "清关应付成本缺失",
-          operatorName: "seed",
-          needSupervisorConfirm: true
-        }
-      });
-    }
-
-    if (order.payableDelivery === 0 && order.receivableDelivery > 0) {
-      await prisma.costAdjustment.create({
-        data: {
-          financeOrderId: order.id,
-          fieldName: "payableDelivery",
-          oldValue: 0,
-          newValue: Math.max(order.receivableDelivery - 685, 0),
-          adjustmentLogic: "应收派送费折人民币金额 - 685",
-          reason: "派送应付成本缺失",
-          operatorName: "seed",
-          needSupervisorConfirm: true
+          confirmStatus: "pending"
         }
       });
     }
 
     if (order.isServiceBusiness) {
+      const min = order.businessType.includes("公司") ? 2000 : order.businessType.includes("店铺") ? 700 : 150;
+      const max = order.businessType.includes("公司") ? 3500 : order.businessType.includes("店铺") ? 700 : 200;
       await prisma.serviceBusinessRecord.create({
         data: {
           financeOrderId: order.id,
           serviceType: order.businessType,
           originalPrice: order.adjustedReceivable,
           suggestedPrice: order.adjustedReceivable,
-          suggestedCommissionMin: order.adjustedGrossProfit * 0.08,
-          suggestedCommissionMax: order.adjustedGrossProfit * 0.12,
+          suggestedCommissionMin: min,
+          suggestedCommissionMax: max,
           costAmount: order.adjustedPayable,
           grossProfit: order.adjustedGrossProfit,
-          confirmStatus: "pending",
-          remark: "服务类业务进入主管确认表，不混入物流提成。"
+          supervisorFinalCommission: order.businessType.includes("店铺") ? 700 : undefined,
+          confirmStatus: order.businessType.includes("店铺") ? "confirmed" : "pending",
+          remark: "注册/证书/店铺服务类业务，主管最终确认"
+        }
+      });
+    }
+
+    if (order.needSupervisorConfirm && !order.isServiceBusiness) {
+      await prisma.costAdjustment.create({
+        data: {
+          financeOrderId: order.id,
+          fieldName: "adjustedPayable",
+          oldValue: order.adjustedPayable,
+          newValue: order.adjustedPayable,
+          adjustmentLogic: "风险复查待主管确认",
+          reason: order.calculationNote ?? "待复核",
+          operatorName: "seed",
+          needSupervisorConfirm: true
         }
       });
     }
   }
 
-  const activeOrders = createdOrders.filter((order) => order.orderStatus !== "cancelled");
-  const totalReceivable = activeOrders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
-  const totalPayable = activeOrders.reduce((sum, order) => sum + order.adjustedPayable, 0);
-  const totalGrossProfit = activeOrders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
-  const commissions = await prisma.commissionRecord.findMany();
+  const totalReceivable = created.reduce((sum, order) => sum + order.adjustedReceivable, 0);
+  const totalPayable = created.reduce((sum, order) => sum + order.adjustedPayable, 0);
+  const totalGrossProfit = created.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
+  const totalCommission = (await prisma.commissionRecord.findMany({ where: { financeOrder: { month } } })).reduce((sum, item) => sum + item.commissionAmount, 0);
 
   await prisma.financeSummary.create({
     data: {
       month,
       totalReceivable,
       totalPayable,
-      totalReceived: activeOrders.reduce((sum, order) => sum + order.receivedAmount, 0),
-      totalPaid: activeOrders.reduce((sum, order) => sum + order.paidAmount, 0),
+      totalReceived: created.reduce((sum, order) => sum + order.receivedAmount, 0),
+      totalPaid: created.reduce((sum, order) => sum + order.paidAmount, 0),
       totalGrossProfit,
       grossProfitRate: totalReceivable > 0 ? totalGrossProfit / totalReceivable : null,
-      totalCommission: commissions.reduce((sum, item) => sum + item.commissionAmount, 0),
-      riskOrderCount: activeOrders.filter((order) => (order.adjustedGrossProfitRate ?? 0) < 0.1 || order.needSupervisorConfirm).length,
-      abnormalHighProfitOrderCount: activeOrders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > 0.5).length,
-      pendingSupervisorConfirmCount: activeOrders.filter((order) => order.needSupervisorConfirm).length
+      totalCommission,
+      riskOrderCount: created.filter((order) => (order.adjustedGrossProfitRate ?? 1) < 0.1).length,
+      abnormalHighProfitOrderCount: created.filter((order) => (order.adjustedGrossProfitRate ?? 0) > 0.5).length,
+      pendingSupervisorConfirmCount: created.filter((order) => order.needSupervisorConfirm).length
     }
   });
+
+  await prisma.actionLog.create({
+    data: {
+      month,
+      entityType: "database",
+      entityId: month,
+      action: "seed_demo_data",
+      operator: "system",
+      payloadJson: JSON.stringify({ orderCount: created.length, totalReceivable, totalPayable, totalGrossProfit })
+    }
+  });
+
+  console.log(`Seeded ${created.length} finance orders for ${month}`);
 }
 
 main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (error) => {
+  .catch((error) => {
     console.error(error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
     await prisma.$disconnect();
-    process.exit(1);
   });

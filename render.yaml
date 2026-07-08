@@ -3,7 +3,7 @@ services:
     name: cross-border-finance-server
     runtime: node
     plan: free
-    buildCommand: export DATABASE_URL=file:./dev.db && export VITE_API_BASE_URL=/api && pnpm install --frozen-lockfile && pnpm --filter cross-border-finance-server exec prisma generate --schema ../prisma/schema.prisma && pnpm --filter cross-border-finance-client build && pnpm --filter cross-border-finance-server build && pnpm --filter cross-border-finance-server exec prisma db push --schema ../prisma/schema.prisma
+    buildCommand: export DATABASE_URL=file:./dev.db && export VITE_API_BASE_URL=/api && pnpm install --frozen-lockfile && pnpm --filter cross-border-finance-server exec prisma generate --schema ../prisma/schema.prisma && pnpm --filter cross-border-finance-client build && pnpm --filter cross-border-finance-server build && pnpm --filter cross-border-finance-server exec prisma db push --schema ../prisma/schema.prisma && pnpm prisma db seed
     startCommand: cd server && node dist/index.js
     healthCheckPath: /api/health
     envVars:
