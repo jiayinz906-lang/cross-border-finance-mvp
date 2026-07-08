@@ -131,3 +131,56 @@ model ServiceBusinessRecord {
   createdAt                   DateTime     @default(now())
   updatedAt                   DateTime     @updatedAt
 }
+
+model ConfirmationDocument {
+  id                  Int       @id @default(autoincrement())
+  month               String
+  documentType        String
+  ownerName           String
+  businessType        String?
+  orderCount          Int       @default(0)
+  grossProfit         Float     @default(0)
+  commissionAmount    Float     @default(0)
+  payloadJson         String?
+  documentStatus      String    @default("generated")
+  sendStatus          String    @default("unsent")
+  signatureStatus     String    @default("pending")
+  supervisorStatus    String    @default("pending")
+  signatureToken      String?   @unique
+  signatureUrl        String?
+  signedAt            DateTime?
+  confirmedAt         DateTime?
+  voidedAt            DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([month, documentType])
+  @@unique([month, documentType, ownerName])
+}
+
+model ExportJob {
+  id          Int      @id @default(autoincrement())
+  month       String
+  exportType  String
+  fileFormat  String
+  status      String   @default("ready")
+  fileName    String
+  payloadJson String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([month, exportType])
+}
+
+model ActionLog {
+  id          Int      @id @default(autoincrement())
+  month       String?
+  entityType  String
+  entityId    String
+  action      String
+  operator    String   @default("主管")
+  payloadJson String?
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+}

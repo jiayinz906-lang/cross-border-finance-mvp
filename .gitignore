@@ -6,3 +6,5 @@ dist/
 prisma/dev.db
 server/dist/
 client/dist/
+.codex-spreadsheet-work/
+outputs/

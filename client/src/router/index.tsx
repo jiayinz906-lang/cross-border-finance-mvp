@@ -2,8 +2,10 @@ import type { RouteObject } from "react-router-dom";
 import { BasicLayout } from "../layouts/BasicLayout";
 import AgentRules from "../pages/AgentRules";
 import Commission from "../pages/Commission";
+import CustomerProfit from "../pages/CustomerProfit";
 import Dashboard from "../pages/Dashboard";
 import FinanceLedger from "../pages/FinanceLedger";
+import OperatorPerformance from "../pages/OperatorPerformance";
 import Payables from "../pages/Payables";
 import ProfitAnalysis from "../pages/ProfitAnalysis";
 import Receivables from "../pages/Receivables";
@@ -26,6 +28,8 @@ export const routes: RouteObject[] = [
       { path: "commission", element: <Commission /> },
       { path: "service-confirm", element: <ServiceConfirm /> },
       { path: "signature-confirm", element: <SignatureConfirm /> },
+      { path: "operator-performance", element: <OperatorPerformance /> },
+      { path: "customer-profit", element: <CustomerProfit /> },
       { path: "risks", element: <Risks /> },
       { path: "reports", element: <Reports /> },
       { path: "agent-rules", element: <AgentRules /> },

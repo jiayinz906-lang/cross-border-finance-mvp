@@ -1,110 +1,238 @@
-import { Alert, Card, Col, Row, Space, Table } from "antd";
+import { Button, Card, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useEffect, useState } from "react";
-import { getProfitAnalysis } from "../../api/profit.api";
-import { BarList, DonutChart } from "../../components/MiniCharts";
-import { OrderNoPopup } from "../../components/OrderNoPopup";
-import { PageHeader } from "../../components/PageHeader";
-import { StatCard } from "../../components/StatCard";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { getFinanceDashboard } from "../../api/finance.api";
+import type { BusinessSummary, DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
 
-type ProfitBucket = {
-  name: string;
+type ProfitMetric = {
+  title: string;
+  value: string;
+  accent: "blue" | "green" | "orange" | "red";
+  tag: string;
+  note: string;
+};
+
+type ProfitSplit = {
+  title: string;
+  type: "total" | "logistics" | "service";
   orderCount: number;
   receivable: number;
   payable: number;
   grossProfit: number;
   grossProfitRate: number | null;
-};
-
-type ProfitRow = {
-  id: number;
-  orderNo: string;
-  customerOrderNo?: string | null;
-  customerName: string;
-  salespersonName: string;
-  businessType: string;
-  adjustedReceivable: number;
-  adjustedPayable: number;
-  adjustedGrossProfit: number;
-  adjustedGrossProfitRate: number | null;
-  calculationNote?: string;
-};
-
-type ProfitAnalysisData = {
   note: string;
-  totals: {
-    orderCount: number;
-    totalReceivable: number;
-    totalPayable: number;
-    totalGrossProfit: number;
-    grossProfitRate: number | null;
-  };
-  byBusinessType: ProfitBucket[];
-  bySalesperson: ProfitBucket[];
-  byCustomer: ProfitBucket[];
-  rows: ProfitRow[];
 };
 
-const bucketColumns: ColumnsType<ProfitBucket> = [
-  { title: "维度", dataIndex: "name" },
-  { title: "票数", dataIndex: "orderCount", width: 80 },
-  { title: "应收", dataIndex: "receivable", render: formatMoney },
-  { title: "应付", dataIndex: "payable", render: formatMoney },
-  { title: "毛利", dataIndex: "grossProfit", render: formatMoney },
-  { title: "毛利率", dataIndex: "grossProfitRate", render: formatPercent }
-];
+const serviceKeywords = ["注册", "证书", "店铺", "商标", "注销", "EAC"];
 
-const rowColumns: ColumnsType<ProfitRow> = [
-  { title: "订单编号", dataIndex: "orderNo", fixed: "left", width: 150, render: (_, row) => <OrderNoPopup order={row} /> },
-  { title: "客户", dataIndex: "customerName" },
-  { title: "业务员", dataIndex: "salespersonName" },
-  { title: "物流业务类型", dataIndex: "businessType" },
-  { title: "应收", dataIndex: "adjustedReceivable", render: formatMoney },
-  { title: "应付", dataIndex: "adjustedPayable", render: formatMoney },
-  { title: "毛利", dataIndex: "adjustedGrossProfit", render: formatMoney },
-  { title: "毛利率", dataIndex: "adjustedGrossProfitRate", render: formatPercent }
-];
+function isServiceType(type: string) {
+  return serviceKeywords.some((keyword) => type.includes(keyword));
+}
+
+function commissionBasis(type: string) {
+  return isServiceType(type) ? "主管确认提成" : "物流阶梯提成";
+}
+
+function toPlainMoney(value?: number | null) {
+  return formatMoney(value).replace("CN¥", "¥").replace(/\s/g, "");
+}
 
 export default function ProfitAnalysis() {
-  const [data, setData] = useState<ProfitAnalysisData | null>(null);
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    getProfitAnalysis().then((res) => setData(res.data));
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getFinanceDashboard("2026-06");
+      setData(res.data);
+    } catch {
+      message.error("业务利润数据加载失败，请确认后端服务可用。");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const summary = data?.summary;
+  const businessRows = data?.businessSummary ?? [];
+  const logisticsRows = businessRows.filter((item) => !isServiceType(item.businessType));
+  const serviceRows = businessRows.filter((item) => isServiceType(item.businessType));
+
+  function sumRows(rows: BusinessSummary[]) {
+    const receivable = rows.reduce((sum, item) => sum + item.receivable, 0);
+    const payable = rows.reduce((sum, item) => sum + item.payable, 0);
+    const grossProfit = rows.reduce((sum, item) => sum + item.grossProfit, 0);
+    return {
+      orderCount: rows.reduce((sum, item) => sum + item.orderCount, 0),
+      receivable,
+      payable,
+      grossProfit,
+      grossProfitRate: receivable > 0 ? grossProfit / receivable : null
+    };
+  }
+
+  const logisticsSplit = sumRows(logisticsRows);
+  const serviceSplit = sumRows(serviceRows);
+
+  const splits: ProfitSplit[] = [
+    {
+      title: "总业务",
+      type: "total",
+      orderCount: data?.orderCount ?? 0,
+      receivable: summary?.totalReceivable ?? 0,
+      payable: summary?.totalPayable ?? 0,
+      grossProfit: summary?.totalGrossProfit ?? 0,
+      grossProfitRate: summary?.grossProfitRate ?? null,
+      note: "物流 + 注册/服务类合计"
+    },
+    {
+      title: "物流业务",
+      type: "logistics",
+      ...logisticsSplit,
+      note: "进入物流阶梯提成口径"
+    },
+    {
+      title: "注册/服务类",
+      type: "service",
+      ...serviceSplit,
+      note: "注册、证书、店铺租赁等主管确认"
+    }
+  ];
+
+  const metrics: ProfitMetric[] = useMemo(() => [
+    {
+      title: "总应收",
+      value: toPlainMoney(summary?.totalReceivable),
+      accent: "blue",
+      tag: "优化后",
+      note: "汇率缺失统一按 6.85 修正"
+    },
+    {
+      title: "调整后毛利",
+      value: toPlainMoney(summary?.totalGrossProfit),
+      accent: "green",
+      tag: formatPercent(summary?.grossProfitRate),
+      note: "可用于经营分析口径"
+    },
+    {
+      title: "物流提成",
+      value: toPlainMoney(summary?.totalCommission),
+      accent: "orange",
+      tag: "15%",
+      note: "统一按物流毛利计提"
+    },
+    {
+      title: "高风险票",
+      value: `${summary?.riskOrderCount ?? 0}票`,
+      accent: "red",
+      tag: "需复核",
+      note: "汇率、负毛利、缺应付"
+    },
+    {
+      title: "总票数",
+      value: `${data?.orderCount ?? 0}`,
+      accent: "blue",
+      tag: "Excel",
+      note: "按运单口径去重"
+    },
+    {
+      title: "调整后应付",
+      value: toPlainMoney(summary?.totalPayable),
+      accent: "green",
+      tag: "含暂估",
+      note: "清关/派送缺应付补齐"
+    }
+  ], [data?.orderCount, summary]);
+
+  const columns: ColumnsType<BusinessSummary> = [
+    {
+      title: "分类",
+      dataIndex: "businessType",
+      width: 120,
+      render: (type: string) => (
+        <Tag bordered={false} color={isServiceType(type) ? "purple" : "blue"}>
+          {isServiceType(type) ? "注册/服务" : "物流"}
+        </Tag>
+      )
+    },
+    { title: "业务类型", dataIndex: "businessType" },
+    { title: "票数", dataIndex: "orderCount", width: 92 },
+    { title: "修正后应收", dataIndex: "receivable", align: "right", render: toPlainMoney },
+    { title: "调整后应付", dataIndex: "payable", align: "right", render: toPlainMoney },
+    { title: "调整后毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
+    { title: "毛利率", dataIndex: "grossProfitRate", align: "right", render: formatPercent },
+    { title: "提成口径", dataIndex: "businessType", render: commissionBasis }
+  ];
+
   return (
-    <Space direction="vertical" size={16} className="page-stack">
-      <PageHeader
-        title="业务利润分析"
-        description="本页仅统计物流业务，注册、证书、店铺租赁等服务类业务不进入利润分析。"
-      />
-      <Alert type="info" showIcon message={data?.note ?? "利润分析仅包含物流业务。"} />
-      <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} lg={6}><StatCard title="物流票数" value={data?.totals.orderCount ?? 0} /></Col>
-        <Col xs={24} sm={12} lg={6}><StatCard title="物流应收" value={formatMoney(data?.totals.totalReceivable)} /></Col>
-        <Col xs={24} sm={12} lg={6}><StatCard title="物流毛利" value={formatMoney(data?.totals.totalGrossProfit)} /></Col>
-        <Col xs={24} sm={12} lg={6}><StatCard title="物流毛利率" value={formatPercent(data?.totals.grossProfitRate)} /></Col>
-      </Row>
-      <Row gutter={[16, 16]}>
-        <Col xs={24} lg={12}>
-          <Card title="业务类型毛利占比">
-            <DonutChart data={data?.byBusinessType ?? []} labelKey="name" valueKey="grossProfit" title="物流业务毛利" />
+    <div className="profit-board">
+      <header className="profit-hero">
+        <div>
+          <h1>2026年6月跨境电商经营与提成测试台</h1>
+          <p>基于 6月数据 Excel 汇总，统一汇率、倒推成本、物流提成和风险复核口径。</p>
+        </div>
+        <Space size={12} wrap>
+          <div className="profit-source">数据源：<b>6月数据 Excel</b></div>
+          <Button type="primary" className="profit-month-btn">2026年6月</Button>
+          <Button className="profit-print-btn" onClick={() => window.print()}>打印 / 导出 PDF</Button>
+          <Button onClick={loadData}>刷新</Button>
+        </Space>
+      </header>
+
+      <section className="profit-metric-grid">
+        {metrics.map((item) => (
+          <Card key={item.title} className={`profit-metric-card profit-accent-${item.accent}`} loading={loading}>
+            <span className="profit-metric-icon" />
+            <span className="profit-metric-title">{item.title}</span>
+            <strong>{item.value}</strong>
+            <div className="profit-metric-note">
+              <Tag bordered={false}>{item.tag}</Tag>
+              <span>{item.note}</span>
+            </div>
           </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card title="业务员物流毛利排行">
-            <BarList data={data?.bySalesperson ?? []} labelKey="name" valueKey="grossProfit" title="业务员毛利" />
+        ))}
+      </section>
+
+      <section className="profit-split-grid">
+        {splits.map((item) => (
+          <Card key={item.title} className={`profit-split-card profit-split-${item.type}`} loading={loading}>
+            <div className="profit-split-head">
+              <div>
+                <span>{item.title}</span>
+                <strong>{item.orderCount}票</strong>
+              </div>
+              <Tag bordered={false}>{formatPercent(item.grossProfitRate)}</Tag>
+            </div>
+            <div className="profit-split-body">
+              <div><span>应收</span><b>{toPlainMoney(item.receivable)}</b></div>
+              <div><span>应付</span><b>{toPlainMoney(item.payable)}</b></div>
+              <div><span>毛利</span><b>{toPlainMoney(item.grossProfit)}</b></div>
+            </div>
+            <p>{item.note}</p>
           </Card>
-        </Col>
-      </Row>
-      <Card title="业务类型利润汇总">
-        <Table rowKey="name" dataSource={data?.byBusinessType ?? []} columns={bucketColumns} pagination={false} />
+        ))}
+      </section>
+
+      <Card
+        className="profit-summary-card"
+        title="业务类型利润汇总（物流 / 注册分开）"
+        extra={<Button type="text" size="small" className="profit-link-btn">不展示费用类型汇总</Button>}
+      >
+        <Table
+          rowKey="businessType"
+          loading={loading}
+          columns={columns}
+          dataSource={businessRows}
+          pagination={false}
+          scroll={{ x: 1120 }}
+        />
       </Card>
-      <Card title="物流订单利润明细">
-        <Table rowKey="id" dataSource={data?.rows ?? []} columns={rowColumns} scroll={{ x: 1200 }} />
-      </Card>
-    </Space>
+    </div>
   );
 }

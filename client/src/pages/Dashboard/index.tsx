@@ -10,6 +10,7 @@ import { Button, Card, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getFinanceDashboard } from "../../api/finance.api";
+import { monthlyReportExportUrl } from "../../api/workflow.api";
 import { ImportButton } from "../../components/ImportButton";
 import type { BusinessSummary, DashboardData, MonthlyTrend } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
@@ -199,9 +200,9 @@ export default function Dashboard() {
   const topSupplierPayable = totalPayable * 0.37;
 
   const kpis: Kpi[] = [
-    { title: "总应收", value: toMoney(totalReceivable), color: "#4c7ee8", icon: "¥", mom: pct(data?.comparison.momReceivable), yoy: pct(data?.comparison.yoyReceivable) },
+    { title: "总应收", value: toMoney(totalReceivable), color: "#4c7ee8", icon: "¥", mom: pct(data?.comparison?.momReceivable), yoy: pct(data?.comparison?.yoyReceivable) },
     { title: "总应付", value: toMoney(totalPayable), color: "#37b99d", icon: "▣", mom: "+8.21%", yoy: "+15.06%" },
-    { title: "调整后毛利", value: toMoney(totalProfit), color: "#f28c2d", icon: "↗", mom: pct(data?.comparison.momGrossProfit), yoy: pct(data?.comparison.yoyGrossProfit) },
+    { title: "调整后毛利", value: toMoney(totalProfit), color: "#f28c2d", icon: "↗", mom: pct(data?.comparison?.momGrossProfit), yoy: pct(data?.comparison?.yoyGrossProfit) },
     { title: "毛利率", value: formatPercent(grossRate), color: "#8a5ce5", icon: "%", mom: "+3.27pct", yoy: "+2.81pct" },
     { title: "总票数", value: `${data?.orderCount ?? 0}票`, color: "#3d78ed", icon: "▤", mom: "+13.64%", yoy: "+19.05%" },
     { title: "物流提成", value: toMoney(logisticsCommission), color: "#4e76ee", icon: "♟", mom: "+9.18%", yoy: "+16.84%" },
@@ -220,7 +221,7 @@ export default function Dashboard() {
           <div className="overview-select"><FileExcelOutlined /> 数据源：<b>{summary?.month === "2026-06" ? "2026年6月（优化5）.xlsx" : "Excel 数据"}</b></div>
           <div className="overview-select">月份：<b>{summary?.month ?? "2026-06"}</b><CalendarOutlined /></div>
           <ImportButton onImported={load} />
-          <Button type="primary" icon={<DownloadOutlined />}>导出月报</Button>
+          <Button type="primary" icon={<DownloadOutlined />} onClick={() => window.open(monthlyReportExportUrl(summary?.month ?? "2026-06"), "_blank")}>导出月报</Button>
         </div>
         <div className="overview-refresh"><ReloadOutlined /> 最后更新：2026-06-19 10:30:45</div>
       </header>
