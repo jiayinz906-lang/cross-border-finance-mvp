@@ -8,17 +8,17 @@ RUN apt-get update \
 
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY tsconfig.base.json ./
 COPY prisma ./prisma
 COPY server/package.json ./server/package.json
-COPY client/package.json ./client/package.json
+COPY server/tsconfig.json ./server/tsconfig.json
 
-RUN pnpm install --frozen-lockfile
+RUN cd server && pnpm install
 
-COPY server ./server
+COPY server/src ./server/src
 
-RUN pnpm prisma generate
-RUN pnpm --filter cross-border-finance-server build
+RUN cd server && pnpm exec prisma generate --schema ../prisma/schema.prisma
+RUN cd server && pnpm run build
 
 FROM node:22-bookworm-slim AS runner
 
@@ -32,12 +32,12 @@ RUN apt-get update \
 
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY prisma ./prisma
 COPY server/package.json ./server/package.json
+COPY server/tsconfig.json ./server/tsconfig.json
 COPY --from=build /app/server/dist ./server/dist
-COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/server/node_modules ./server/node_modules
 
 EXPOSE 4000
 
-CMD ["sh", "-c", "pnpm exec prisma db push && node server/dist/index.js"]
+CMD ["sh", "-c", "cd server && pnpm exec prisma db push --schema ../prisma/schema.prisma && node dist/index.js"]
