@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>财务管理系统 - HTML 测试页</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+        background: #f5f7fb;
+        color: #172033;
+      }
+      .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+      aside {
+        background: #fff;
+        border-right: 1px solid #e6eaf2;
+        padding: 20px 14px;
+      }
+      .brand {
+        font-size: 18px;
+        font-weight: 700;
+        margin: 0 10px 20px;
+      }
+      nav button {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        padding: 12px 14px;
+        margin: 2px 0;
+        border-radius: 6px;
+        text-align: left;
+        color: #35405a;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      nav button.active, nav button:hover {
+        background: #eaf1ff;
+        color: #2563eb;
+      }
+      header {
+        height: 64px;
+        display: flex;
+        align-items: center;
+        padding: 0 24px;
+        background: #fff;
+        border-bottom: 1px solid #e6eaf2;
+        font-size: 18px;
+        font-weight: 700;
+      }
+      main { padding: 24px; }
+      h1 { margin: 0 0 4px; font-size: 24px; }
+      .muted { color: #6a748a; margin: 0 0 18px; }
+      .health {
+        border: 1px solid #b7ebc6;
+        background: #f1fff4;
+        border-radius: 6px;
+        padding: 12px 14px;
+        margin-bottom: 16px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(160px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e6eaf2;
+        border-radius: 6px;
+        padding: 18px;
+        min-height: 110px;
+      }
+      .label { color: #6a748a; font-size: 13px; }
+      .value { font-size: 24px; font-weight: 700; margin-top: 12px; }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border: 1px solid #e6eaf2;
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      th, td {
+        border-bottom: 1px solid #edf0f5;
+        padding: 12px;
+        text-align: left;
+        font-size: 14px;
+      }
+      th { background: #f8fafd; color: #4b5568; }
+      .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; background: #fff3e0; color: #b45309; }
+      .hidden { display: none; }
+      @media (max-width: 880px) {
+        .shell { grid-template-columns: 1fr; }
+        aside { display: none; }
+        .grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside>
+        <div class="brand">财务管理系统</div>
+        <nav id="menu"></nav>
+      </aside>
+      <section>
+        <header>财务管理系统</header>
+        <main>
+          <section id="dashboard">
+            <h1>财务首页</h1>
+            <p class="muted">跨境物流月度财务核算、异常风险和管理层摘要入口。</p>
+            <div class="health">HTML 静态测试页已拉起。正式 React 页面请在安装 Node/npm 后运行 <code>npm run dev</code>。</div>
+            <div class="grid">
+              <div class="card"><div class="label">本月应收</div><div class="value">¥142,715</div></div>
+              <div class="card"><div class="label">本月应付</div><div class="value">¥83,616</div></div>
+              <div class="card"><div class="label">本月毛利</div><div class="value">¥59,099</div></div>
+              <div class="card"><div class="label">本月毛利率</div><div class="value">41.41%</div></div>
+              <div class="card"><div class="label">已回款金额</div><div class="value">¥88,850</div></div>
+              <div class="card"><div class="label">未回款金额</div><div class="value">¥53,865</div></div>
+              <div class="card"><div class="label">高风险订单数</div><div class="value">8</div></div>
+              <div class="card"><div class="label">业务员提成总额</div><div class="value">¥5,642</div></div>
+            </div>
+          </section>
+          <section id="ledger" class="hidden">
+            <h1>财务台账</h1>
+            <p class="muted">订单财务明细、应收应付、毛利和主管确认状态。</p>
+            <table>
+              <thead><tr><th>订单编号</th><th>客户</th><th>业务类型</th><th>币种</th><th>毛利率</th><th>状态</th></tr></thead>
+              <tbody>
+                <tr><td>FIN-202607-001</td><td>上海星桥贸易有限公司</td><td>跨境物流</td><td>CNY</td><td>30.86%</td><td>正常</td></tr>
+                <tr><td>FIN-202607-002</td><td>North Star LLC</td><td>跨境物流</td><td>USD</td><td>待确认</td><td><span class="tag">汇率缺失</span></td></tr>
+                <tr><td>FIN-202607-007</td><td>深圳光年电商</td><td>跨境物流</td><td>CNY</td><td>65.33%</td><td><span class="tag">异常高利润</span></td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section id="agent" class="hidden">
+            <h1>Agent规则</h1>
+            <p class="muted">FP&A Analyst Agent 的规则配置和核心财务口径摘要。</p>
+            <div class="card">
+              <p><strong>Agent 名称：</strong>FP&A Analyst Agent：跨境物流月度财务分析专用版</p>
+              <p><strong>Agent 文件路径：</strong>agents/finance/finance-fpa-analyst.md</p>
+              <p><strong>规则状态：</strong>configured</p>
+              <p><strong>核心口径：</strong>6.85 汇率规则、685 元默认利润倒推成本、低于 10% 高风险、高于 50% 异常高利润、服务类业务单独成表。</p>
+            </div>
+          </section>
+        </main>
+      </section>
+    </div>
+    <script>
+      const pages = [
+        ["dashboard", "财务首页"],
+        ["ledger", "财务台账"],
+        ["agent", "Agent规则"]
+      ];
+      const menu = document.querySelector("#menu");
+      function show(id) {
+        for (const [page] of pages) {
+          document.querySelector("#" + page).classList.toggle("hidden", page !== id);
+        }
+        for (const button of menu.querySelectorAll("button")) {
+          button.classList.toggle("active", button.dataset.page === id);
+        }
+      }
+      for (const [id, label] of pages) {
+        const button = document.createElement("button");
+        button.textContent = label;
+        button.dataset.page = id;
+        button.onclick = () => show(id);
+        menu.appendChild(button);
+      }
+      show("dashboard");
+    </script>
+  </body>
+</html>

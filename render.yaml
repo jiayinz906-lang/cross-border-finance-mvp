@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: cross-border-finance-server
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        value: file:./dev.db
+      - key: PORT
+        value: 4000

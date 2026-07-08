@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model FinanceOrder {
+  id                          Int                     @id @default(autoincrement())
+  orderNo                     String                  @unique
+  customerOrderNo             String?
+  orderDate                   DateTime
+  month                       String
+  customerName                String
+  customerType                String
+  salespersonName             String
+  businessType                String
+  supplierName                String?
+  currency                    String
+  exchangeRate                Float?
+  exchangeRateSource          String?
+  exchangeRateStatus          String
+  receivableFreight           Float                   @default(0)
+  receivableClearance         Float                   @default(0)
+  receivableDelivery          Float                   @default(0)
+  otherReceivable             Float                   @default(0)
+  payableFreight              Float                   @default(0)
+  payableClearance            Float                   @default(0)
+  payableDelivery             Float                   @default(0)
+  otherCost                   Float                   @default(0)
+  adjustedReceivable          Float                   @default(0)
+  adjustedPayable             Float                   @default(0)
+  adjustedGrossProfit         Float                   @default(0)
+  adjustedGrossProfitRate     Float?
+  receivedAmount              Float                   @default(0)
+  paidAmount                  Float                   @default(0)
+  orderStatus                 String
+  receivableStatus            String
+  payableStatus               String
+  isServiceBusiness           Boolean                 @default(false)
+  isCompanyCustomerAdjusted   Boolean                 @default(false)
+  needSupervisorConfirm       Boolean                 @default(false)
+  calculationNote             String?
+  remark                      String?
+  createdAt                   DateTime                @default(now())
+  updatedAt                   DateTime                @updatedAt
+  commissionRecords           CommissionRecord[]
+  riskRecords                 RiskRecord[]
+  costAdjustments             CostAdjustment[]
+  serviceBusinessRecords      ServiceBusinessRecord[]
+}
+
+model FinanceSummary {
+  id                              Int      @id @default(autoincrement())
+  month                           String   @unique
+  totalReceivable                 Float    @default(0)
+  totalPayable                    Float    @default(0)
+  totalReceived                   Float    @default(0)
+  totalPaid                       Float    @default(0)
+  totalGrossProfit                Float    @default(0)
+  grossProfitRate                 Float?
+  totalCommission                 Float    @default(0)
+  riskOrderCount                  Int      @default(0)
+  abnormalHighProfitOrderCount    Int      @default(0)
+  pendingSupervisorConfirmCount   Int      @default(0)
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+}
+
+model CommissionRecord {
+  id                      Int          @id @default(autoincrement())
+  financeOrderId          Int
+  financeOrder            FinanceOrder @relation(fields: [financeOrderId], references: [id])
+  salespersonName         String
+  customerType            String
+  businessType            String
+  grossProfit             Float
+  commissionRate          Float
+  commissionAmount        Float
+  manualCommissionAmount  Float?
+  needSupervisorConfirm   Boolean      @default(false)
+  confirmStatus           String       @default("pending")
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+}
+
+model RiskRecord {
+  id              Int          @id @default(autoincrement())
+  financeOrderId  Int
+  financeOrder    FinanceOrder @relation(fields: [financeOrderId], references: [id])
+  riskLevel       String
+  riskType        String
+  riskReasons     String
+  suggestion      String
+  status          String       @default("open")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model CostAdjustment {
+  id                      Int          @id @default(autoincrement())
+  financeOrderId          Int
+  financeOrder            FinanceOrder @relation(fields: [financeOrderId], references: [id])
+  fieldName               String
+  oldValue                Float?
+  newValue                Float?
+  adjustmentLogic         String
+  reason                  String
+  operatorName            String
+  needSupervisorConfirm   Boolean      @default(false)
+  createdAt               DateTime     @default(now())
+}
+
+model ServiceBusinessRecord {
+  id                          Int          @id @default(autoincrement())
+  financeOrderId              Int
+  financeOrder                FinanceOrder @relation(fields: [financeOrderId], references: [id])
+  serviceType                 String
+  originalPrice               Float
+  suggestedPrice              Float?
+  suggestedCommissionMin      Float?
+  suggestedCommissionMax      Float?
+  costAmount                  Float?
+  grossProfit                 Float?
+  supervisorFinalPrice        Float?
+  supervisorFinalCommission   Float?
+  confirmStatus               String       @default("pending")
+  remark                      String?
+  createdAt                   DateTime     @default(now())
+  updatedAt                   DateTime     @updatedAt
+}
