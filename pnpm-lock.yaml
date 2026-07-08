@@ -92,6 +92,9 @@ importers:
       '@types/node':
         specifier: ^22.16.0
         version: 22.20.0
+      prisma:
+        specifier: 5.22.0
+        version: 5.22.0
       tsx:
         specifier: ^4.20.3
         version: 4.23.0
