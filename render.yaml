@@ -9,5 +9,3 @@ services:
     envVars:
       - key: DATABASE_URL
         value: file:./dev.db
-      - key: PORT
-        value: 4000
