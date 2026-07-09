@@ -1,12 +1,12 @@
-import { Button, Card, Modal, Select, Space, Table, Tag, message } from "antd";
+import { Alert, Button, Card, Modal, Select, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key } from "react";
-import { getFinanceDashboard } from "../../api/finance.api";
+import { getFinanceDashboard, getRawLedgerLines } from "../../api/finance.api";
 import { getRisks } from "../../api/risks.api";
 import { markRiskReviewed } from "../../api/workflow.api";
 import { useSelectedMonth } from "../../contexts/MonthContext";
-import type { DashboardData, FinanceOrder } from "../../types/finance.types";
+import type { DashboardData, FinanceOrder, RawLedgerLine } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
 
@@ -32,17 +32,21 @@ type RiskFinanceOrder = FinanceOrder & {
 };
 
 type RawDataRow = {
-  key: string;
+  id: number;
+  rowIndex: number;
   orderNo: string;
-  businessType: string;
-  direction: "应收" | "应付";
+  customerOrderNo: string;
+  service: string;
+  direction: string;
   feeType: string;
-  originalAmount: number;
-  exchangeRate: number | null;
-  convertedAmount: number;
+  amount: number | null;
+  localAmount: number | null;
+  exchangeRate: string;
   supplierName: string;
   salespersonName: string;
+  customerServiceName: string;
   orderTime: string;
+  parseStatus: string;
 };
 
 type MetricCard = {
@@ -75,32 +79,35 @@ function riskReasonText(row: RiskRow) {
   return row.riskReasons?.replace(`${row.financeOrder?.orderNo}：`, "") || "待复核";
 }
 
-function rawRows(order?: RiskFinanceOrder): RawDataRow[] {
-  if (!order) return [];
-  const exchangeRate = order.exchangeRate ?? null;
-  const orderTime = order.orderDate ? order.orderDate.replace("T", " ").slice(0, 19) : "-";
-  const feeRows = [
-    { direction: "应付" as const, feeType: "运费", amount: order.payableFreight ?? 0 },
-    { direction: "应付" as const, feeType: "操作费", amount: (order.payableClearance ?? 0) + (order.payableDelivery ?? 0) + (order.otherCost ?? 0) },
-    { direction: "应收" as const, feeType: "运费", amount: order.receivableFreight ?? 0 },
-    { direction: "应收" as const, feeType: "操作费", amount: (order.receivableClearance ?? 0) + (order.receivableDelivery ?? 0) + (order.otherReceivable ?? 0) }
-  ];
+function rawText(row: RawLedgerLine, field: string) {
+  const value = row.canonical?.[field] ?? row.raw?.[field];
+  return value === null || value === undefined || value === "" ? "-" : String(value);
+}
 
-  return feeRows
-    .filter((item) => Math.abs(item.amount ?? 0) > 0)
-    .map((item, index) => ({
-      key: `${order.id}-${index}`,
-      orderNo: order.orderNo,
-      businessType: order.businessType,
-      direction: item.direction,
-      feeType: item.feeType,
-      originalAmount: item.amount,
-      exchangeRate,
-      convertedAmount: item.amount,
-      supplierName: item.direction === "应付" ? order.supplierName || "未指定供应商" : "未指定供应商",
-      salespersonName: order.salespersonName,
-      orderTime
-    }));
+function rawNumber(row: RawLedgerLine, field: string) {
+  const value = row.canonical?.[field] ?? row.raw?.[field];
+  const parsed = typeof value === "number" ? value : Number(String(value ?? "").replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function rawRows(lines: RawLedgerLine[]): RawDataRow[] {
+  return lines.map((line) => ({
+    id: line.id,
+    rowIndex: line.rowIndex,
+    orderNo: rawText(line, "orderNo"),
+    customerOrderNo: rawText(line, "customerOrderNo"),
+    service: rawText(line, "service"),
+    direction: rawText(line, "direction"),
+    feeType: rawText(line, "feeType"),
+    amount: rawNumber(line, "amount"),
+    localAmount: rawNumber(line, "localAmount"),
+    exchangeRate: rawText(line, "exchangeRate"),
+    supplierName: rawText(line, "supplier"),
+    salespersonName: rawText(line, "salespersonName"),
+    customerServiceName: rawText(line, "customerServiceName"),
+    orderTime: rawText(line, "orderDate"),
+    parseStatus: line.parseStatus
+  }));
 }
 
 export default function Risks() {
@@ -108,6 +115,8 @@ export default function Risks() {
   const [rows, setRows] = useState<RiskRow[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [selectedRisk, setSelectedRisk] = useState<RiskRow | null>(null);
+  const [rawLines, setRawLines] = useState<RawLedgerLine[]>([]);
+  const [rawLoading, setRawLoading] = useState(false);
   const [filter, setFilter] = useState("all");
   const [expandedKeys, setExpandedKeys] = useState<Key[]>([]);
   const [loading, setLoading] = useState(false);
@@ -193,6 +202,23 @@ export default function Risks() {
     await loadData();
   };
 
+  const openRawData = async (row: RiskRow) => {
+    setSelectedRisk(row);
+    setRawLines([]);
+    const orderNo = row.financeOrder?.orderNo;
+    if (!orderNo) return;
+
+    setRawLoading(true);
+    try {
+      const response = await getRawLedgerLines({ month: selectedMonth, orderNo });
+      setRawLines(response.data.rows ?? []);
+    } catch {
+      message.error("原始 Excel 明细加载失败，请确认后端数据库可用。");
+    } finally {
+      setRawLoading(false);
+    }
+  };
+
   useEffect(() => {
     setExpandedKeys(filteredRows[0] ? [filteredRows[0].id] : []);
   }, [filteredRows]);
@@ -235,7 +261,7 @@ export default function Risks() {
       render: (_, row) => (
         <Space size={6}>
           <Button size="small" onClick={() => setExpandedKeys([row.id])}>详情</Button>
-          <Button size="small" onClick={() => setSelectedRisk(row)}>原始数据</Button>
+          <Button size="small" onClick={() => openRawData(row)}>原始数据</Button>
           <Button size="small" onClick={() => handleMarkReviewed(row)}>
             标记复核
           </Button>
@@ -245,15 +271,19 @@ export default function Risks() {
   ];
 
   const rawColumns: ColumnsType<RawDataRow> = [
-    { title: "运单号", dataIndex: "orderNo", width: 120 },
-    { title: "业务类型", dataIndex: "businessType", width: 120 },
+    { title: "Excel行", dataIndex: "rowIndex", width: 80, fixed: "left" },
+    { title: "运单号", dataIndex: "orderNo", width: 130, fixed: "left" },
+    { title: "原始订单号", dataIndex: "customerOrderNo", width: 150 },
+    { title: "业务类型", dataIndex: "service", width: 120 },
     { title: "收付", dataIndex: "direction", width: 70 },
     { title: "费用类型", dataIndex: "feeType", width: 100 },
-    { title: "原始金额", dataIndex: "originalAmount", align: "right", render: toPlainMoney },
-    { title: "使用汇率", dataIndex: "exchangeRate", width: 90, render: (value) => value ?? "-" },
-    { title: "折算金额", dataIndex: "convertedAmount", align: "right", render: toPlainMoney },
+    { title: "原始金额", dataIndex: "amount", align: "right", render: toPlainMoney },
+    { title: "本币费用", dataIndex: "localAmount", align: "right", render: toPlainMoney },
+    { title: "汇率/标注", dataIndex: "exchangeRate", width: 100 },
     { title: "供应商", dataIndex: "supplierName", width: 130 },
     { title: "销售代表", dataIndex: "salespersonName", width: 100 },
+    { title: "客服代表", dataIndex: "customerServiceName", width: 100 },
+    { title: "解析状态", dataIndex: "parseStatus", width: 100, render: (value) => <Tag color={value === "parsed" ? "green" : "gold"}>{value}</Tag> },
     { title: "下单时间", dataIndex: "orderTime", width: 170 }
   ];
 
@@ -349,13 +379,22 @@ export default function Risks() {
         <div className="risk-modal-subtitle">
           {selectedRisk?.financeOrder?.orderNo} · {selectedRisk?.financeOrder?.businessType} · {riskReasonText(selectedRisk ?? {} as RiskRow)}
         </div>
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="以下数据来自数据库保存的 Excel 原始明细行"
+          description="用于复核应收、应付、汇率、供应商、销售代表和下单时间。聚合订单金额必须能追溯到这些原始行。"
+        />
         <Table
-          rowKey="key"
+          rowKey="id"
           className="risk-raw-table"
+          loading={rawLoading}
           columns={rawColumns}
-          dataSource={rawRows(selectedRisk?.financeOrder)}
+          dataSource={rawRows(rawLines)}
           pagination={false}
-          scroll={{ x: 1120 }}
+          locale={{ emptyText: rawLoading ? "加载中" : "未找到该运单的原始 Excel 行" }}
+          scroll={{ x: 1450 }}
         />
       </Modal>
     </div>
