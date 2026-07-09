@@ -17,6 +17,7 @@
     "build:render": "pnpm prisma:deploy && pnpm --filter cross-border-finance-client build && pnpm --filter cross-border-finance-server build && pnpm prisma db seed",
     "start:render": "cd server && node dist/index.js",
     "verify:import": "tsx scripts/verify-import.ts",
+    "verify:ui": "tsx scripts/verify-ui-smoke.ts",
     "prisma:generate": "prisma generate",
     "prisma:deploy": "prisma generate && prisma db push",
     "prisma:migrate": "prisma migrate dev --name init",

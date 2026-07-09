@@ -21,10 +21,10 @@ import {
 } from "../../api/workflow.api";
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
+import { apiBaseUrl } from "../../api/request";
 import type { AuthContext, ImportBatch, ImportTemplate, ParameterRule } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
 const roleStorageKey = "xjd-finance-role";
 const tokenStorageKey = "xjd-finance-token";
 
