@@ -1,26 +1,57 @@
-# XJD Finance 自托管栈说明
+# XJD Finance 自托管架构说明
 
-来源参考：`external_refs/awesome-selfhosted-master/README.md`
+本项目参考 `awesome-selfhosted` 的自托管原则，但不是直接嵌入某个现成财务软件，而是面向跨境物流财务场景实现的一套独立系统。
 
-本项目不是直接嵌入 awesome-selfhosted 中的某个成品财务软件，而是按自托管原则落地为一套独立业务系统：
+## 架构
 
-- 前端：React + Vite 静态站点，可部署到 GitHub Pages、Vercel、Render Static Site 或 Nginx。
-- 后端：Node.js + Express API，负责 Excel 解析、字段映射、汇总计算、风险识别、确认单和导出。
-- 数据库：Prisma ORM。本地使用 SQLite `prisma/dev.db`，生产多用户环境建议迁移 PostgreSQL。
-- 运行证据：`/api/health`、前端 200 响应、GitHub Actions 构建和数据库落库结果。
+- 前端：React + Vite 静态站点。
+- 后端：Node.js + Express API。
+- ORM：Prisma。
+- 本地数据库：SQLite `prisma/dev.db`。
+- 生产数据库：建议 PostgreSQL。
+- 健康检查：`/api/health`。
+- 就绪检查：`/api/health/ready?month=2026-06`。
+
+## 当前本地端口
+
+- 前端：http://localhost:5173/
+- 后端：http://localhost:4000/api
 
 ## Excel 导入原则
 
-- 前端只负责上传 Excel。
-- 后端自动识别表头，并把 Excel 原始列映射到系统标准字段。
-- 导入结果返回字段映射、模板差异、agency finance/testing 规则和自托管栈信息。
-- 模板表头只写入 `ExcelImportTemplate`，不写业务数据。
+- 前端只负责上传 Excel 和展示结果。
+- 后端负责表头识别、字段映射、汇率口径、应收应付、毛利、风险、提成和确认单派生。
+- 固定模板只写入 `ExcelImportTemplate`，不写业务数据。
+- 正式导入后，每一行原始台账写入 `RawLedgerLine`。
+- 订单、应收、应付、提成和风险都必须能追溯到原始行。
 
-## Agency Agent 接入
+## Agency Agent 接入方式
 
 来源参考：`external_refs/agency-agents-main`
 
 - Finance：`finance-fpa-analyst.md`、`finance-financial-analyst.md`
 - Testing：`testing-api-tester.md`、`testing-reality-checker.md`、`testing-test-automation-engineer.md`
 
-这些 agent 规则以后端配置形式接入，用于约束导入口径和测试证据，不作为外部在线 AI 调用。
+这些规则以配置和验收口径接入系统，不作为外部在线 AI 调用。它们用于约束导入、财务分析和测试证据。
+
+## 自托管建议
+
+- 单人本地验证：SQLite 足够。
+- 多人真实使用：PostgreSQL。
+- 文件备份：定期导出系统备份和数据库备份。
+- 服务部署：Docker、Render、Railway、Fly.io 或云服务器。
+- 前端部署：Vercel、GitHub Pages、Render Static Site 或 Nginx。
+
+## 验收入口
+
+日常体检：
+
+```powershell
+pnpm doctor
+```
+
+完整验收：
+
+```powershell
+pnpm verify:all
+```
