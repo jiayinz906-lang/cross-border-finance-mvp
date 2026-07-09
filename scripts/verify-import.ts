@@ -110,6 +110,7 @@ async function verifyImport(checks: Check[]) {
   assertCheck(checks, "Dashboard supplier payable summary generated", dashboard.supplierPayableSummary.length > 0, String(dashboard.supplierPayableSummary.length));
   assertCheck(checks, "Dashboard customer profit summary generated", dashboard.customerProfitSummary.length > 0, String(dashboard.customerProfitSummary.length));
   assertCheck(checks, "Dashboard risk overview generated", dashboard.riskOverview.openRiskCount >= 0 && dashboard.riskOverview.highRiskCount >= 0, JSON.stringify(dashboard.riskOverview));
+  assertCheck(checks, "Dashboard comparison fields generated", "momPayable" in dashboard.comparison && "momOrderCount" in dashboard.comparison, JSON.stringify(dashboard.comparison));
 
   return {
     month: imported.month,

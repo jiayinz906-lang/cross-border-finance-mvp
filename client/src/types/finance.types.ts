@@ -122,6 +122,16 @@ export type DashboardData = {
     yoyGrossProfit: number | null;
     momReceivable: number | null;
     yoyReceivable: number | null;
+    momPayable: number | null;
+    yoyPayable: number | null;
+    momGrossProfitRate: number | null;
+    yoyGrossProfitRate: number | null;
+    momOrderCount: number | null;
+    yoyOrderCount: number | null;
+    momCommission: number | null;
+    yoyCommission: number | null;
+    momRiskOrderCount: number | null;
+    yoyRiskOrderCount: number | null;
   };
 };
 

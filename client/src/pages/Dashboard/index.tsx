@@ -52,6 +52,11 @@ function pct(value?: number | null) {
   return typeof value === "number" ? `${value > 0 ? "+" : ""}${formatPercent(value)}` : "--";
 }
 
+function pctPoint(value?: number | null) {
+  if (typeof value !== "number") return "--";
+  return `${value > 0 ? "+" : ""}${(value * 100).toFixed(2)}pct`;
+}
+
 function MetricCard({ item }: { item: Kpi }) {
   return (
     <Card className="overview-kpi-card">
@@ -242,12 +247,12 @@ export default function Dashboard() {
 
   const kpis: Kpi[] = [
     { title: "总应收", value: toMoney(totalReceivable), color: "#4c7ee8", icon: "¥", mom: pct(data?.comparison?.momReceivable), yoy: pct(data?.comparison?.yoyReceivable) },
-    { title: "总应付", value: toMoney(totalPayable), color: "#37b99d", icon: "□", mom: "+8.21%", yoy: "+15.06%" },
+    { title: "总应付", value: toMoney(totalPayable), color: "#37b99d", icon: "□", mom: pct(data?.comparison?.momPayable), yoy: pct(data?.comparison?.yoyPayable) },
     { title: "调整后毛利", value: toMoney(totalProfit), color: "#f28c2d", icon: "↗", mom: pct(data?.comparison?.momGrossProfit), yoy: pct(data?.comparison?.yoyGrossProfit) },
-    { title: "毛利率", value: formatPercent(grossRate), color: "#8a5ce5", icon: "%", mom: "+3.27pct", yoy: "+2.81pct" },
-    { title: "总票数", value: `${data?.orderCount ?? 0}票`, color: "#3d78ed", icon: "▤", mom: "+13.64%", yoy: "+19.05%" },
-    { title: "物流提成", value: toMoney(logisticsCommission), color: "#4e76ee", icon: "♟", mom: "+9.18%", yoy: "+16.84%" },
-    { title: "高风险票数", value: `${riskCount}票`, color: "#ec454d", icon: "!", mom: "+2票", yoy: "+1票" }
+    { title: "毛利率", value: formatPercent(grossRate), color: "#8a5ce5", icon: "%", mom: pctPoint(data?.comparison?.momGrossProfitRate), yoy: pctPoint(data?.comparison?.yoyGrossProfitRate) },
+    { title: "总票数", value: `${data?.orderCount ?? 0}票`, color: "#3d78ed", icon: "▤", mom: pct(data?.comparison?.momOrderCount), yoy: pct(data?.comparison?.yoyOrderCount) },
+    { title: "物流提成", value: toMoney(logisticsCommission), color: "#4e76ee", icon: "♟", mom: pct(data?.comparison?.momCommission), yoy: pct(data?.comparison?.yoyCommission) },
+    { title: "高风险票数", value: `${riskCount}票`, color: "#ec454d", icon: "!", mom: pct(data?.comparison?.momRiskOrderCount), yoy: pct(data?.comparison?.yoyRiskOrderCount) }
   ];
 
   return (

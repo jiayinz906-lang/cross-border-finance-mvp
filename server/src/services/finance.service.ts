@@ -79,6 +79,11 @@ function percentChange(current: number, previous: number): number | null {
   return (current - previous) / previous;
 }
 
+function pointChange(current?: number | null, previous?: number | null): number | null {
+  if (typeof current !== "number" || typeof previous !== "number") return null;
+  return current - previous;
+}
+
 function previousMonth(month: string): string {
   const [year, monthNumber] = month.split("-").map(Number);
   const date = new Date(year, monthNumber - 2, 1);
@@ -338,6 +343,10 @@ export const financeService = {
     const selected = selectedMonth ? summaries.find((item) => item.month === selectedMonth) : summaries.at(-1);
     const previous = selectedMonth ? summaries.find((item) => item.month === previousMonth(selectedMonth)) : undefined;
     const previousYear = selectedMonth ? summaries.find((item) => item.month === previousYearMonth(selectedMonth)) : undefined;
+    const [previousOrderCount, previousYearOrderCount] = await Promise.all([
+      selectedMonth ? prisma.financeOrder.count({ where: { month: previousMonth(selectedMonth) } }) : Promise.resolve(0),
+      selectedMonth ? prisma.financeOrder.count({ where: { month: previousYearMonth(selectedMonth) } }) : Promise.resolve(0)
+    ]);
 
     return {
       summary,
@@ -376,7 +385,17 @@ export const financeService = {
         momGrossProfit: percentChange(selected?.totalGrossProfit ?? 0, previous?.totalGrossProfit ?? 0),
         yoyGrossProfit: percentChange(selected?.totalGrossProfit ?? 0, previousYear?.totalGrossProfit ?? 0),
         momReceivable: percentChange(selected?.totalReceivable ?? 0, previous?.totalReceivable ?? 0),
-        yoyReceivable: percentChange(selected?.totalReceivable ?? 0, previousYear?.totalReceivable ?? 0)
+        yoyReceivable: percentChange(selected?.totalReceivable ?? 0, previousYear?.totalReceivable ?? 0),
+        momPayable: percentChange(selected?.totalPayable ?? 0, previous?.totalPayable ?? 0),
+        yoyPayable: percentChange(selected?.totalPayable ?? 0, previousYear?.totalPayable ?? 0),
+        momGrossProfitRate: pointChange(selected?.grossProfitRate, previous?.grossProfitRate),
+        yoyGrossProfitRate: pointChange(selected?.grossProfitRate, previousYear?.grossProfitRate),
+        momOrderCount: percentChange(orders.length, previousOrderCount),
+        yoyOrderCount: percentChange(orders.length, previousYearOrderCount),
+        momCommission: percentChange(selected?.totalCommission ?? 0, previous?.totalCommission ?? 0),
+        yoyCommission: percentChange(selected?.totalCommission ?? 0, previousYear?.totalCommission ?? 0),
+        momRiskOrderCount: percentChange(selected?.riskOrderCount ?? 0, previous?.riskOrderCount ?? 0),
+        yoyRiskOrderCount: percentChange(selected?.riskOrderCount ?? 0, previousYear?.riskOrderCount ?? 0)
       }
     };
   },
