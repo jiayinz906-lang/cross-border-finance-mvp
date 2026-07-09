@@ -148,6 +148,7 @@ export type ImportResult = {
   serviceOrders: number;
   logisticsOrders: number;
   audit?: ImportAudit;
+  qualityReport?: ImportQualityReport;
 };
 
 export type ImportPreviewResult = ImportResult & {
@@ -260,4 +261,20 @@ export type ImportAudit = {
     importRules: string[];
   };
   selfHostedStack?: unknown;
+};
+
+export type ImportQualityIssue = {
+  key: string;
+  level: "error" | "warning" | "info";
+  title: string;
+  count: number;
+  orderNos: string[];
+  message: string;
+};
+
+export type ImportQualityReport = {
+  blockingCount: number;
+  warningCount: number;
+  infoCount: number;
+  issues: ImportQualityIssue[];
 };

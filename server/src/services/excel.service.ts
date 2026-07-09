@@ -90,6 +90,15 @@ type ParsedRawLine = {
   parseMessage?: string;
 };
 
+type ImportQualityIssue = {
+  key: string;
+  level: "error" | "warning" | "info";
+  title: string;
+  count: number;
+  orderNos: string[];
+  message: string;
+};
+
 const templateKey = "system_waybill_detail";
 const requiredCanonicalFields: CanonicalField[] = ["orderNo", "direction", "feeType"];
 
@@ -492,6 +501,163 @@ function summarizeOrders(orders: DraftOrder[], rules: ImportRules) {
   };
 }
 
+function compactOrderNos(orderNos: Array<string | undefined>, limit = 20) {
+  return Array.from(new Set(orderNos.filter(Boolean) as string[])).slice(0, limit);
+}
+
+function buildQualityReport(input: { orders: DraftOrder[]; rawLines: ParsedRawLine[]; rules: ImportRules }) {
+  const { orders, rawLines, rules } = input;
+  const issues: ImportQualityIssue[] = [];
+  const skippedLines = rawLines.filter((line) => line.parseStatus === "skipped");
+  const logisticsOrders = orders.filter((order) => !order.isServiceBusiness);
+  const serviceOrders = orders.filter((order) => order.isServiceBusiness);
+  const duplicateLineMap = new Map<string, ParsedRawLine[]>();
+
+  for (const line of rawLines) {
+    if (!line.orderNo) continue;
+    const key = [
+      line.orderNo,
+      text(line.canonical.direction),
+      text(line.canonical.feeType),
+      text(line.canonical.localAmount) || text(line.canonical.amount),
+      text(line.canonical.supplier)
+    ].join("|");
+    duplicateLineMap.set(key, [...(duplicateLineMap.get(key) ?? []), line]);
+  }
+
+  const duplicateLines = Array.from(duplicateLineMap.values()).filter((lines) => lines.length > 1);
+  const noReceivableOrders = orders.filter((order) => order.adjustedReceivable <= 0);
+  const noPayableLogisticsOrders = logisticsOrders.filter((order) => order.adjustedPayable <= 0);
+  const pendingExchangeOrders = orders.filter((order) => order.exchangeRateStatus === "pending");
+  const negativeProfitOrders = orders.filter((order) => order.adjustedGrossProfit < 0);
+  const lowProfitOrders = orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < rules.highRiskBelow);
+  const abnormalHighProfitOrders = orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > rules.abnormalHighAbove);
+  const missingSalespersonOrders = orders.filter((order) => order.salespersonName === "未分配");
+  const missingCustomerServiceOrders = orders.filter((order) => !order.customerServiceName || order.customerServiceName === "未分配");
+  const missingSupplierOrders = logisticsOrders.filter((order) => !order.supplierName);
+
+  if (skippedLines.length) {
+    issues.push({
+      key: "missing_order_no_rows",
+      level: "warning",
+      title: "缺少运单号的原始行",
+      count: skippedLines.length,
+      orderNos: [],
+      message: "这些 Excel 行会保留原始台账，但不会进入订单汇总。请确认是否为空行、备注行或漏填运单号。"
+    });
+  }
+
+  if (duplicateLines.length) {
+    issues.push({
+      key: "duplicate_charge_lines",
+      level: "warning",
+      title: "疑似重复费用行",
+      count: duplicateLines.reduce((sum, lines) => sum + lines.length, 0),
+      orderNos: compactOrderNos(duplicateLines.flatMap((lines) => lines.map((line) => line.orderNo))),
+      message: "同一运单、收付类型、费用类型、金额和供应商重复出现。请核对是否重复录入。"
+    });
+  }
+
+  if (noReceivableOrders.length) {
+    issues.push({
+      key: "orders_without_receivable",
+      level: "error",
+      title: "订单无应收",
+      count: noReceivableOrders.length,
+      orderNos: compactOrderNos(noReceivableOrders.map((order) => order.orderNo)),
+      message: "订单没有识别到应收金额，写库后会影响营收和毛利。建议先补齐或确认是否作废订单。"
+    });
+  }
+
+  if (noPayableLogisticsOrders.length) {
+    issues.push({
+      key: "logistics_without_payable",
+      level: "warning",
+      title: "物流订单无应付",
+      count: noPayableLogisticsOrders.length,
+      orderNos: compactOrderNos(noPayableLogisticsOrders.map((order) => order.orderNo)),
+      message: "物流订单未识别到成本，应进入风险复查，防止异常高毛利来自成本漏录。"
+    });
+  }
+
+  if (pendingExchangeOrders.length) {
+    issues.push({
+      key: "pending_exchange_rate",
+      level: "warning",
+      title: "汇率待确认",
+      count: pendingExchangeOrders.length,
+      orderNos: compactOrderNos(pendingExchangeOrders.map((order) => order.orderNo)),
+      message: "存在非数字或无法确认的汇率标注，当前按人民币暂列，需主管复核。"
+    });
+  }
+
+  if (negativeProfitOrders.length) {
+    issues.push({
+      key: "negative_profit",
+      level: "error",
+      title: "负毛利订单",
+      count: negativeProfitOrders.length,
+      orderNos: compactOrderNos(negativeProfitOrders.map((order) => order.orderNo)),
+      message: "负毛利会直接影响月度利润和提成，建议导入前复核费用类型、收付方向和成本。"
+    });
+  }
+
+  if (lowProfitOrders.length) {
+    issues.push({
+      key: "low_profit",
+      level: "warning",
+      title: "低毛利风险订单",
+      count: lowProfitOrders.length,
+      orderNos: compactOrderNos(lowProfitOrders.map((order) => order.orderNo)),
+      message: `毛利率低于 ${(rules.highRiskBelow * 100).toFixed(0)}%，将进入风险复查。`
+    });
+  }
+
+  if (abnormalHighProfitOrders.length) {
+    issues.push({
+      key: "abnormal_high_profit",
+      level: "warning",
+      title: "异常高毛利订单",
+      count: abnormalHighProfitOrders.length,
+      orderNos: compactOrderNos(abnormalHighProfitOrders.map((order) => order.orderNo)),
+      message: `毛利率高于 ${(rules.abnormalHighAbove * 100).toFixed(0)}%，需复核是否存在应付成本漏录。`
+    });
+  }
+
+  if (serviceOrders.length) {
+    issues.push({
+      key: "service_business_detected",
+      level: "info",
+      title: "注册/证书/店铺服务类",
+      count: serviceOrders.length,
+      orderNos: compactOrderNos(serviceOrders.map((order) => order.orderNo)),
+      message: "服务类业务将单独进入注册确认，不进入物流提成口径。"
+    });
+  }
+
+  if (missingSalespersonOrders.length || missingCustomerServiceOrders.length || missingSupplierOrders.length) {
+    issues.push({
+      key: "missing_owner_fields",
+      level: "warning",
+      title: "负责人或供应商缺失",
+      count: missingSalespersonOrders.length + missingCustomerServiceOrders.length + missingSupplierOrders.length,
+      orderNos: compactOrderNos([
+        ...missingSalespersonOrders.map((order) => order.orderNo),
+        ...missingCustomerServiceOrders.map((order) => order.orderNo),
+        ...missingSupplierOrders.map((order) => order.orderNo)
+      ]),
+      message: "缺少销售代表、客服代表或供应商会影响提成、操作员绩效和上游应付分析。"
+    });
+  }
+
+  return {
+    blockingCount: issues.filter((item) => item.level === "error").length,
+    warningCount: issues.filter((item) => item.level === "warning").length,
+    infoCount: issues.filter((item) => item.level === "info").length,
+    issues
+  };
+}
+
 async function parseWorkbook(buffer: Buffer, originalName: string) {
   const rules = await loadImportRules();
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
@@ -536,6 +702,7 @@ async function parseWorkbook(buffer: Buffer, originalName: string) {
   const monthOrders = finalized.filter((order) => order.month === month);
   const summary = summarizeOrders(monthOrders, rules);
   const audit = importAudit(headers, mapping, rules);
+  const qualityReport = buildQualityReport({ orders: monthOrders, rawLines, rules });
 
   return {
     fileName,
@@ -549,7 +716,8 @@ async function parseWorkbook(buffer: Buffer, originalName: string) {
     importedRows: rows.length,
     rules,
     ...summary,
-    audit
+    audit,
+    qualityReport
   };
 }
 
@@ -745,6 +913,7 @@ export const excelService = {
       pendingSupervisorConfirmCount: parsed.pendingSupervisorConfirmCount,
       sampleOrders,
       audit: parsed.audit,
+      qualityReport: parsed.qualityReport,
       writeMode: "确认后将保留每一行原始台账，并按月份重建订单、应收应付、毛利、风险和提成派生数据。"
     };
   },
@@ -860,7 +1029,8 @@ export const excelService = {
       importedOrders: createdOrders.length,
       serviceOrders: createdOrders.filter((order) => order.isServiceBusiness).length,
       logisticsOrders: createdOrders.filter((order) => !order.isServiceBusiness).length,
-      audit: parsed.audit
+      audit: parsed.audit,
+      qualityReport: parsed.qualityReport
     };
   },
 

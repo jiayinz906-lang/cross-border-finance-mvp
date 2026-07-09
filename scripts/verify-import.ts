@@ -67,9 +67,11 @@ async function verifyImport(checks: Check[]) {
   assertCheck(checks, "Preview logistics/service split", preview.logisticsOrders === 22 && preview.serviceOrders === 3, `${preview.logisticsOrders}/${preview.serviceOrders}`);
   assertCheck(checks, "Preview uses DB USD rule", preview.audit?.activeRules?.usdRate === 6.85, String(preview.audit?.activeRules?.usdRate));
   assertCheck(checks, "Preview maps required fields", (preview.audit?.missingRequiredFields.length ?? 1) === 0, JSON.stringify(preview.audit?.missingRequiredFields));
+  assertCheck(checks, "Preview quality report generated", Boolean(preview.qualityReport?.issues?.length), JSON.stringify(preview.qualityReport));
 
   const imported = await excelService.importWorkbook(buffer, fileName);
   assertCheck(checks, "Import returns batch", Boolean(imported.batchId && imported.batchNo), imported.batchNo);
+  assertCheck(checks, "Import returns quality report", Boolean(imported.qualityReport?.issues?.length), JSON.stringify(imported.qualityReport));
 
   const [orders, summary, batch, commissions, risks, services] = await Promise.all([
     prisma.financeOrder.findMany({ where: { month: imported.month } }),

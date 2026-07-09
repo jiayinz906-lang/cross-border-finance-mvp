@@ -74,6 +74,28 @@ const mappingColumns: ColumnsType<{ field: string; sourceHeader: string }> = [
   }
 ];
 
+const qualityColumns: ColumnsType<NonNullable<ImportPreviewResult["qualityReport"]>["issues"][number]> = [
+  {
+    title: "级别",
+    dataIndex: "level",
+    width: 90,
+    render: (value: string) => {
+      if (value === "error") return <Tag color="red">阻断</Tag>;
+      if (value === "warning") return <Tag color="gold">需复核</Tag>;
+      return <Tag color="blue">提示</Tag>;
+    }
+  },
+  { title: "校验项", dataIndex: "title", width: 170 },
+  { title: "数量", dataIndex: "count", width: 80, align: "right" },
+  {
+    title: "涉及订单",
+    dataIndex: "orderNos",
+    width: 260,
+    render: (values: string[]) => values?.length ? values.join("、") : "-"
+  },
+  { title: "处理建议", dataIndex: "message" }
+];
+
 function tags(values?: string[]) {
   if (!values?.length) return <Typography.Text type="secondary">无</Typography.Text>;
   return (
@@ -121,6 +143,10 @@ export function ImportButton({ onImported }: Props) {
     if (!pendingFile || !preview) return;
     if (preview.audit?.missingRequiredFields?.length) {
       message.error("字段映射存在缺失，不能写入数据库。请调整 Excel 表头后重新上传。");
+      return;
+    }
+    if ((preview.qualityReport?.blockingCount ?? 0) > 0) {
+      message.error("导入质量校验存在阻断项，请先修正无应收或负毛利等问题后再写入数据库。");
       return;
     }
     setImporting(true);
@@ -178,6 +204,23 @@ export function ImportButton({ onImported }: Props) {
               <Descriptions.Item label="调整后毛利">{money(preview.totalGrossProfit)}</Descriptions.Item>
               <Descriptions.Item label="毛利率">{formatPercent(preview.grossProfitRate)}</Descriptions.Item>
             </Descriptions>
+            <Alert
+              type={(preview.qualityReport?.blockingCount ?? 0) > 0 ? "error" : (preview.qualityReport?.warningCount ?? 0) > 0 ? "warning" : "success"}
+              showIcon
+              message={`导入质量校验：阻断 ${preview.qualityReport?.blockingCount ?? 0} 项，需复核 ${preview.qualityReport?.warningCount ?? 0} 项，提示 ${preview.qualityReport?.infoCount ?? 0} 项`}
+              description={(preview.qualityReport?.blockingCount ?? 0) > 0
+                ? "存在会影响营收或毛利准确性的硬错误，当前不允许写入数据库。"
+                : "未发现阻断项；警告项写库后会进入风险复查或主管确认流程。"}
+            />
+            <Table
+              rowKey="key"
+              size="small"
+              title={() => "导入质量校验明细"}
+              pagination={false}
+              columns={qualityColumns}
+              dataSource={preview.qualityReport?.issues ?? []}
+              locale={{ emptyText: "未发现导入质量问题" }}
+            />
             <Alert
               type={preview.audit?.missingRequiredFields.length ? "error" : "success"}
               showIcon
