@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { can } from "../server/src/config/rbac.js";
 import { prisma } from "../server/src/prisma/client.js";
+import { payableService } from "../server/src/services/payable.service.js";
+import { receivableService } from "../server/src/services/receivable.service.js";
 import { excelService } from "../server/src/services/excel.service.js";
 import { workflowService } from "../server/src/services/workflow.service.js";
 
@@ -144,6 +146,27 @@ async function verifySignature(checks: Check[], month: string) {
   assertCheck(checks, "Supervisor evidence stored", evidence?.supervisor?.role === "supervisor", JSON.stringify(evidence));
 }
 
+async function verifyAging(checks: Check[], month: string) {
+  const [receivables, payables] = await Promise.all([
+    receivableService.listReceivables(month),
+    payableService.listPayables(month)
+  ]);
+  const receivableOutstanding = receivables.rows.reduce((sum, row) => sum + row.outstandingReceivable, 0);
+  const receivableBuckets = Object.values(receivables.agingBuckets).reduce((sum, value) => sum + value, 0);
+  const payableOutstanding = payables.rows.reduce((sum, row) => sum + row.outstandingPayable, 0);
+  const payableBuckets = Object.values(payables.agingBuckets).reduce((sum, value) => sum + value, 0);
+
+  assertCheck(checks, "Receivable aging rows generated", receivables.rows.length > 0, String(receivables.rows.length));
+  assertCheck(checks, "Receivable customer aging generated", receivables.customerAging.length > 0, String(receivables.customerAging.length));
+  assertCheck(checks, "Receivable outstanding matches rows", closeEnough(receivables.totals.totalOutstanding, receivableOutstanding), `${receivables.totals.totalOutstanding} / ${receivableOutstanding}`);
+  assertCheck(checks, "Receivable buckets match outstanding", closeEnough(receivableBuckets, receivableOutstanding), `${receivableBuckets} / ${receivableOutstanding}`);
+
+  assertCheck(checks, "Payable aging rows generated", payables.rows.length > 0, String(payables.rows.length));
+  assertCheck(checks, "Payable supplier aging generated", payables.supplierAging.length > 0, String(payables.supplierAging.length));
+  assertCheck(checks, "Payable outstanding matches rows", closeEnough(payables.totals.totalOutstanding, payableOutstanding), `${payables.totals.totalOutstanding} / ${payableOutstanding}`);
+  assertCheck(checks, "Payable buckets match outstanding", closeEnough(payableBuckets, payableOutstanding), `${payableBuckets} / ${payableOutstanding}`);
+}
+
 async function verifyMonthClose(
   checks: Check[],
   input: { month: string; buffer: Buffer; fileName: string; batchId: number }
@@ -184,6 +207,7 @@ async function main() {
   const imported = await verifyImport(checks);
   await verifyRbac(checks);
   await verifySignature(checks, imported.month);
+  await verifyAging(checks, imported.month);
   await verifyMonthClose(checks, imported);
 
   const failed = checks.filter((check) => !check.pass);
