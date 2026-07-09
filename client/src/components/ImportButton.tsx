@@ -1,5 +1,5 @@
 import { UploadOutlined } from "@ant-design/icons";
-import { Alert, Button, Descriptions, Modal, Space, Table, Tag, Upload, message } from "antd";
+import { Alert, Button, Descriptions, Modal, Space, Table, Tag, Typography, Upload, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { UploadProps } from "antd";
 import { useState } from "react";
@@ -33,6 +33,56 @@ const columns: ColumnsType<ImportPreviewResult["sampleOrders"][number]> = [
   }
 ];
 
+const fieldLabels: Record<string, string> = {
+  orderNo: "系统单号",
+  customerOrderNo: "原始订单号",
+  customerName: "客户",
+  service: "业务类型",
+  supplier: "供应商",
+  direction: "收付类型",
+  feeType: "费用类型",
+  amount: "原始金额",
+  localAmount: "本币金额",
+  salespersonName: "销售代表",
+  remark: "备注",
+  exchangeRate: "汇率",
+  customerServiceName: "客服代表",
+  orderDate: "下单时间",
+  internalRemark: "内部备注",
+  actualWeight: "实重",
+  pieces: "件数",
+  mainProductName: "主品名"
+};
+
+const mappingColumns: ColumnsType<{ field: string; sourceHeader: string }> = [
+  {
+    title: "系统字段",
+    dataIndex: "field",
+    width: 180,
+    render: (value: string) => (
+      <Space direction="vertical" size={0}>
+        <b>{fieldLabels[value] ?? value}</b>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{value}</Typography.Text>
+      </Space>
+    )
+  },
+  { title: "Excel 原始表头", dataIndex: "sourceHeader" },
+  {
+    title: "核对状态",
+    width: 120,
+    render: () => <Tag color="green">已识别</Tag>
+  }
+];
+
+function tags(values?: string[]) {
+  if (!values?.length) return <Typography.Text type="secondary">无</Typography.Text>;
+  return (
+    <Space wrap size={[4, 4]}>
+      {values.map((item) => <Tag key={item}>{item}</Tag>)}
+    </Space>
+  );
+}
+
 export function ImportButton({ onImported }: Props) {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
@@ -50,6 +100,9 @@ export function ImportButton({ onImported }: Props) {
       try {
         const response = await previewFinanceExcel(uploadFile);
         const result = response.data as ImportPreviewResult;
+        if (result.audit?.missingRequiredFields?.length) {
+          message.error(`缺少必填字段：${result.audit.missingRequiredFields.join("、")}`);
+        }
         setPendingFile(uploadFile);
         setPreview(result);
         setPreviewOpen(true);
@@ -66,6 +119,10 @@ export function ImportButton({ onImported }: Props) {
 
   const confirmImport = async () => {
     if (!pendingFile || !preview) return;
+    if (preview.audit?.missingRequiredFields?.length) {
+      message.error("字段映射存在缺失，不能写入数据库。请调整 Excel 表头后重新上传。");
+      return;
+    }
     setImporting(true);
     try {
       const response = await importFinanceExcel(pendingFile);
@@ -126,6 +183,28 @@ export function ImportButton({ onImported }: Props) {
               showIcon
               message={`自动映射字段 ${preview.audit?.fieldMapping.length ?? 0} 个`}
               description={preview.audit?.template.matchExact ? "表头与后台模板完全一致。" : "表头可解析，但与后台模板不完全一致，建议核对多余或缺失表头。"}
+            />
+            <Descriptions size="small" bordered column={1}>
+              <Descriptions.Item label="必填字段缺失">
+                {preview.audit?.missingRequiredFields.length
+                  ? <Tag color="red">{preview.audit.missingRequiredFields.join("、")}</Tag>
+                  : <Tag color="green">无缺失，可写入数据库</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label="模板缺少表头">
+                {tags(preview.audit?.template.missingTemplateHeaders)}
+              </Descriptions.Item>
+              <Descriptions.Item label="Excel 额外表头">
+                {tags(preview.audit?.template.extraHeaders)}
+              </Descriptions.Item>
+            </Descriptions>
+            <Table
+              rowKey="field"
+              size="small"
+              title={() => "字段映射确认：请核对系统字段是否对应正确的 Excel 原始表头"}
+              pagination={false}
+              columns={mappingColumns}
+              dataSource={preview.audit?.fieldMapping ?? []}
+              scroll={{ y: 260 }}
             />
             <Table
               rowKey="orderNo"
