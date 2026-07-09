@@ -15,6 +15,8 @@ export type ConfirmationDocument = {
   supervisorStatus: string;
   signatureUrl?: string | null;
   signedAt?: string | null;
+  confirmedAt?: string | null;
+  payloadJson?: string | null;
 };
 
 export function getDocuments(month = "2026-06", documentType?: string) {
