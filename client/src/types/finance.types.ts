@@ -235,6 +235,31 @@ export type AuthContext = AuthRole & {
   roles: AuthRole[];
 };
 
+export type ReadinessStatus = {
+  status: "ready" | "not_ready" | string;
+  service: string;
+  timestamp: string;
+  checks: {
+    database: boolean;
+    importTemplate: boolean;
+    parameterRules: boolean;
+    financeSummary: boolean;
+  };
+  details?: {
+    templateCount?: number;
+    activeRuleCount?: number;
+    month?: string;
+    summary?: {
+      totalReceivable: number;
+      totalPayable: number;
+      totalGrossProfit: number;
+      riskOrderCount: number;
+      updatedAt: string;
+    } | null;
+    error?: string;
+  };
+};
+
 export type ImportTemplate = {
   id: number;
   templateKey: string;

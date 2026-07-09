@@ -198,6 +198,7 @@ async function verifyImportTemplateRegistry(checks: Check[]) {
 
   assertCheck(checks, "Import template registry returns system template", Boolean(systemTemplate), templates.map((template) => template.templateKey).join(","));
   assertCheck(checks, "Import template registry keeps fixed headers only", (systemTemplate?.headerCount ?? 0) >= 20, `${systemTemplate?.fileName ?? "-"} / ${systemTemplate?.headerCount ?? 0}`);
+  assertCheck(checks, "Import template registry keeps readable file name", Boolean(systemTemplate?.fileName.includes("表头")), systemTemplate?.fileName);
   assertCheck(checks, "Import template registry includes order number header", Boolean(systemTemplate?.headers.includes("运单号")), systemTemplate?.headers.join(","));
 }
 

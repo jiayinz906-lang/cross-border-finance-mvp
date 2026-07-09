@@ -241,9 +241,11 @@ function normalizeHeader(value: CellValue) {
 }
 
 function normalizeUploadFileName(value: string) {
-  if (/[^\x00-\x7F]/.test(value)) return value;
   const decoded = Buffer.from(value, "latin1").toString("utf8");
-  return decoded.includes("�") ? value : decoded;
+  if (decoded.includes("�")) return value;
+  if (/[\u00C0-\u00FF]/.test(value)) return decoded;
+  if (/[^\x00-\x7F]/.test(value)) return value;
+  return decoded;
 }
 
 function buildHeaderMapping(headers: string[]): HeaderMapping {
@@ -898,7 +900,7 @@ export const excelService = {
       return {
         id: template.id,
         templateKey: template.templateKey,
-        fileName: template.fileName,
+        fileName: normalizeUploadFileName(template.fileName),
         sheetName: template.sheetName,
         headerRowIndex: template.headerRowIndex,
         headerCount: headers.length,

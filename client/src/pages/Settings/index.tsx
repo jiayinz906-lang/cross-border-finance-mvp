@@ -9,6 +9,7 @@ import {
   rollbackImportBatch,
   updateParameterRule
 } from "../../api/finance.api";
+import { getReadiness } from "../../api/health.api";
 import { login } from "../../api/auth.api";
 import {
   getActionLogs,
@@ -22,7 +23,7 @@ import {
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import { apiBaseUrl } from "../../api/request";
-import type { AuthContext, ImportBatch, ImportTemplate, ParameterRule } from "../../types/finance.types";
+import type { AuthContext, ImportBatch, ImportTemplate, ParameterRule, ReadinessStatus } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 
 const roleStorageKey = "xjd-finance-role";
@@ -54,6 +55,11 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
+function readinessTag(value?: boolean) {
+  if (value) return <Tag color="green">通过</Tag>;
+  return <Tag color="red">异常</Tag>;
+}
+
 export default function Settings() {
   const { selectedMonth } = useSelectedMonth();
   const [auth, setAuth] = useState<AuthContext | null>(null);
@@ -65,11 +71,13 @@ export default function Settings() {
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [templates, setTemplates] = useState<ImportTemplate[]>([]);
   const [rules, setRules] = useState<ParameterRule[]>([]);
+  const [readiness, setReadiness] = useState<ReadinessStatus | null>(null);
   const [monthClose, setMonthClose] = useState<MonthCloseStatus | null>(null);
   const [actionLogs, setActionLogs] = useState<ActionLogRow[]>([]);
   const [ruleDrafts, setRuleDrafts] = useState<RuleDraft>({});
   const [loading, setLoading] = useState(false);
   const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [readinessLoading, setReadinessLoading] = useState(false);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
   const [closeLoading, setCloseLoading] = useState(false);
@@ -112,6 +120,20 @@ export default function Settings() {
       setTemplatesLoading(false);
     }
   }, []);
+
+  const loadReadiness = useCallback(async () => {
+    setReadinessLoading(true);
+    try {
+      const res = await getReadiness(selectedMonth);
+      setReadiness(res.data);
+    } catch (error: unknown) {
+      const data = (error as { response?: { data?: ReadinessStatus } })?.response?.data;
+      if (data) setReadiness(data);
+      else message.error("系统就绪状态加载失败，请确认后端服务可用");
+    } finally {
+      setReadinessLoading(false);
+    }
+  }, [selectedMonth]);
 
   const loadRules = useCallback(async () => {
     setRulesLoading(true);
@@ -163,6 +185,10 @@ export default function Settings() {
   useEffect(() => {
     loadTemplates();
   }, [loadTemplates]);
+
+  useEffect(() => {
+    loadReadiness();
+  }, [loadReadiness]);
 
   useEffect(() => {
     loadRules();
@@ -493,6 +519,28 @@ export default function Settings() {
                 导出全量系统备份 Excel
               </Button>
             </Space>
+          </Space>
+        </Card>
+
+        <Card title={`系统就绪状态（${selectedMonth}）`} extra={<Button onClick={loadReadiness} loading={readinessLoading}>刷新就绪状态</Button>}>
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Alert
+              type={readiness?.status === "ready" ? "success" : "warning"}
+              showIcon
+              message={readiness?.status === "ready" ? "系统已就绪，可以进行导入、分析和确认流程" : "系统未完全就绪，请检查下方异常项"}
+              description={`检查时间：${readiness?.timestamp ? String(readiness.timestamp).replace("T", " ").slice(0, 19) : "未获取"}；接口：/api/health/ready?month=${selectedMonth}`}
+            />
+            <Descriptions bordered size="small" column={4}>
+              <Descriptions.Item label="数据库">{readinessTag(readiness?.checks.database)}</Descriptions.Item>
+              <Descriptions.Item label="表头模板">{readinessTag(readiness?.checks.importTemplate)}</Descriptions.Item>
+              <Descriptions.Item label="参数规则">{readinessTag(readiness?.checks.parameterRules)}</Descriptions.Item>
+              <Descriptions.Item label="月度汇总">{readinessTag(readiness?.checks.financeSummary)}</Descriptions.Item>
+              <Descriptions.Item label="模板数">{readiness?.details?.templateCount ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="规则数">{readiness?.details?.activeRuleCount ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="总应收">{money(readiness?.details?.summary?.totalReceivable)}</Descriptions.Item>
+              <Descriptions.Item label="总应付">{money(readiness?.details?.summary?.totalPayable)}</Descriptions.Item>
+            </Descriptions>
+            {readiness?.details?.error && <Alert type="error" showIcon message="就绪检查错误" description={readiness.details.error} />}
           </Space>
         </Card>
 
