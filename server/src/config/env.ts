@@ -2,7 +2,16 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+const isProduction = process.env.NODE_ENV === "production";
+const localDevTokenSecret = "xjd-finance-local-dev-secret";
+
+if (isProduction && !process.env.AUTH_TOKEN_SECRET) {
+  throw new Error("AUTH_TOKEN_SECRET is required in production.");
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 4000),
-  databaseUrl: process.env.DATABASE_URL
+  databaseUrl: process.env.DATABASE_URL,
+  authTokenSecret: process.env.AUTH_TOKEN_SECRET || localDevTokenSecret,
+  nodeEnv: process.env.NODE_ENV ?? "development"
 };

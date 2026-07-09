@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import { authContext, resolveRole, type UserRole } from "../config/rbac.js";
+import { env } from "../config/env.js";
 import { prisma } from "../prisma/client.js";
 
-const tokenSecret = process.env.AUTH_TOKEN_SECRET || "xjd-finance-local-dev-secret";
+const tokenSecret = env.authTokenSecret;
 const tokenTtlMs = 1000 * 60 * 60 * 12;
 
 type TokenPayload = {

@@ -9,3 +9,5 @@ services:
     envVars:
       - key: DATABASE_URL
         value: file:./dev.db
+      - key: AUTH_TOKEN_SECRET
+        generateValue: true
