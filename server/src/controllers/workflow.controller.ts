@@ -79,7 +79,11 @@ export async function confirmSalespersonCommissionController(req: Request, res: 
 
 export async function actionLogsController(req: Request, res: Response) {
   res.json({
-    rows: await workflowService.actionLogs(req.query.entityType as string | undefined, req.query.entityId as string | undefined)
+    rows: await workflowService.actionLogs({
+      month: req.query.month as string | undefined,
+      entityType: req.query.entityType as string | undefined,
+      entityId: req.query.entityId as string | undefined
+    })
   });
 }
 

@@ -8,7 +8,14 @@ import {
   rollbackImportBatch,
   updateParameterRule
 } from "../../api/finance.api";
-import { getMonthCloseStatus, lockMonth, unlockMonth, type MonthCloseStatus } from "../../api/workflow.api";
+import {
+  getActionLogs,
+  getMonthCloseStatus,
+  lockMonth,
+  unlockMonth,
+  type ActionLogRow,
+  type MonthCloseStatus
+} from "../../api/workflow.api";
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { AuthContext, ImportBatch, ParameterRule } from "../../types/finance.types";
@@ -41,9 +48,11 @@ export default function Settings() {
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [rules, setRules] = useState<ParameterRule[]>([]);
   const [monthClose, setMonthClose] = useState<MonthCloseStatus | null>(null);
+  const [actionLogs, setActionLogs] = useState<ActionLogRow[]>([]);
   const [ruleDrafts, setRuleDrafts] = useState<RuleDraft>({});
   const [loading, setLoading] = useState(false);
   const [rulesLoading, setRulesLoading] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
   const [closeLoading, setCloseLoading] = useState(false);
   const [closeNote, setCloseNote] = useState("");
   const [savingRuleKey, setSavingRuleKey] = useState<string | null>(null);
@@ -99,6 +108,18 @@ export default function Settings() {
     }
   }, [selectedMonth]);
 
+  const loadActionLogs = useCallback(async () => {
+    setLogsLoading(true);
+    try {
+      const res = await getActionLogs({ month: selectedMonth });
+      setActionLogs(res.data.rows ?? []);
+    } catch {
+      message.error("操作审计日志加载失败，请确认后端服务可用");
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [selectedMonth]);
+
   useEffect(() => {
     loadAuth().catch(() => message.error("角色权限加载失败"));
   }, [loadAuth, currentRole]);
@@ -115,6 +136,10 @@ export default function Settings() {
     loadMonthClose();
   }, [loadMonthClose]);
 
+  useEffect(() => {
+    loadActionLogs();
+  }, [loadActionLogs]);
+
   const changeRole = (role: string) => {
     localStorage.setItem(roleStorageKey, role);
     setCurrentRole(role);
@@ -130,7 +155,7 @@ export default function Settings() {
     try {
       await rollbackImportBatch(id);
       message.success("批次已回滚，当前月份汇总已重新计算");
-      await loadBatches();
+      await Promise.all([loadBatches(), loadActionLogs()]);
     } catch {
       message.error("批次回滚失败，请检查角色权限或批次状态");
     } finally {
@@ -148,7 +173,7 @@ export default function Settings() {
         await unlockMonth(selectedMonth, closeNote || "主管解锁，允许补充调整");
         message.success(`${selectedMonth} 已解锁`);
       }
-      await Promise.all([loadMonthClose(), loadBatches()]);
+      await Promise.all([loadMonthClose(), loadBatches(), loadActionLogs()]);
     } catch {
       message.error("月度锁账操作失败，请检查角色权限或后端服务");
     } finally {
@@ -274,6 +299,31 @@ export default function Settings() {
           保存
         </Button>
       )
+    }
+  ];
+
+  const logColumns: ColumnsType<ActionLogRow> = [
+    { title: "时间", dataIndex: "createdAt", width: 170, render: (value) => String(value).replace("T", " ").slice(0, 19) },
+    { title: "月份", dataIndex: "month", width: 90, render: (value) => value || "-" },
+    { title: "对象", width: 180, render: (_, row) => `${row.entityType} / ${row.entityId}` },
+    { title: "动作", dataIndex: "action", width: 180, render: (value) => <Tag color="blue">{value}</Tag> },
+    { title: "操作人", dataIndex: "operator", width: 120 },
+    {
+      title: "摘要",
+      dataIndex: "payloadJson",
+      ellipsis: true,
+      render: (value) => {
+        if (!value) return "-";
+        try {
+          const parsed = JSON.parse(value);
+          if (parsed.batchNo) return `${parsed.batchNo} ${parsed.fileName ?? ""}`.trim();
+          if (parsed.note) return parsed.note;
+          if (parsed.count !== undefined) return `数量 ${parsed.count}`;
+          return JSON.stringify(parsed).slice(0, 120);
+        } catch {
+          return String(value).slice(0, 120);
+        }
+      }
     }
   ];
 
@@ -404,6 +454,24 @@ export default function Settings() {
             dataSource={batches}
             pagination={{ pageSize: 6 }}
             scroll={{ x: 1500 }}
+          />
+        </Card>
+
+        <Card title={`操作审计日志（${selectedMonth}）`} extra={<Button onClick={loadActionLogs} loading={logsLoading}>刷新日志</Button>}>
+          <Alert
+            type="success"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="关键财务动作会写入数据库审计日志"
+            description="当前已记录 Excel 导入、批次回滚、锁账/解锁、确认单生成、发送签名、员工签名、主管确认、风险复核和提成确认等操作。"
+          />
+          <Table
+            rowKey="id"
+            size="small"
+            loading={logsLoading}
+            columns={logColumns}
+            dataSource={actionLogs}
+            pagination={{ pageSize: 8 }}
           />
         </Card>
       </Space>

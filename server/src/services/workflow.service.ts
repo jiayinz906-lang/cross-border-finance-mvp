@@ -498,11 +498,12 @@ startxref
     return { salespersonName, rows: updates };
   },
 
-  async actionLogs(entityType?: string, entityId?: string) {
+  async actionLogs(input: { month?: string; entityType?: string; entityId?: string } = {}) {
     return prisma.actionLog.findMany({
       where: {
-        ...(entityType ? { entityType } : {}),
-        ...(entityId ? { entityId } : {})
+        ...(input.month ? { month: input.month } : {}),
+        ...(input.entityType ? { entityType: input.entityType } : {}),
+        ...(input.entityId ? { entityId: input.entityId } : {})
       },
       orderBy: { id: "desc" },
       take: 100

@@ -75,6 +75,11 @@ async function verifyImport(checks: Check[]) {
     prisma.serviceBusinessRecord.findMany({ where: { financeOrder: { month: imported.month } } })
   ]);
   const rawLines = await excelService.listRawLedgerLines({ batchId: imported.batchId });
+  const importLogs = await workflowService.actionLogs({
+    month: imported.month,
+    entityType: "import_batch",
+    entityId: String(imported.batchId)
+  });
 
   const orderReceivable = orders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
   const orderPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
@@ -88,6 +93,7 @@ async function verifyImport(checks: Check[]) {
   assertCheck(checks, "Raw ledger lines stored", rawLines.rows.length === preview.importedRows, `${rawLines.rows.length} / ${preview.importedRows}`);
   assertCheck(checks, "Raw ledger line keeps original row json", Boolean(rawLines.rows[0]?.raw && Object.keys(rawLines.rows[0].raw).length), JSON.stringify(rawLines.rows[0]?.raw));
   assertCheck(checks, "Raw ledger line keeps canonical fields", Boolean(rawLines.rows.find((line) => line.orderNo)?.canonical?.orderNo), JSON.stringify(rawLines.rows.find((line) => line.orderNo)?.canonical));
+  assertCheck(checks, "Import action log written", importLogs.some((log) => log.action === "import_excel"), importLogs.map((log) => log.action).join(","));
   assertCheck(checks, "Batch is active", batch?.status === "active", batch?.status);
   assertCheck(checks, "Summary exists", Boolean(summary), summary?.month);
   assertCheck(checks, "Summary receivable matches orders", closeEnough(summary?.totalReceivable ?? 0, orderReceivable), `${summary?.totalReceivable} / ${orderReceivable}`);
@@ -169,6 +175,8 @@ async function verifyMonthClose(
     note: "Unlock month after verification"
   });
   assertCheck(checks, "Month close unlocks month", unlocked.status === "open", unlocked.status);
+  const closeLogs = await workflowService.actionLogs({ month: input.month, entityType: "month_close", entityId: input.month });
+  assertCheck(checks, "Month close action logs written", closeLogs.some((log) => log.action === "lock_month") && closeLogs.some((log) => log.action === "unlock_month"), closeLogs.map((log) => log.action).join(","));
 }
 
 async function main() {

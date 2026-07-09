@@ -30,6 +30,17 @@ export type MonthCloseStatus = {
   closeNote?: string | null;
 };
 
+export type ActionLogRow = {
+  id: number;
+  month?: string | null;
+  entityType: string;
+  entityId: string;
+  action: string;
+  operator: string;
+  payloadJson?: string | null;
+  createdAt: string;
+};
+
 export function getDocuments(month = "2026-06", documentType?: string) {
   return request.get("/workflow/documents", { params: { month, documentType } });
 }
@@ -88,4 +99,8 @@ export function lockMonth(month = "2026-06", note?: string) {
 
 export function unlockMonth(month = "2026-06", note?: string) {
   return request.post("/workflow/month-close/unlock", { month, note, operator: "主管" });
+}
+
+export function getActionLogs(filters: { month?: string; entityType?: string; entityId?: string } = {}) {
+  return request.get("/workflow/actions", { params: filters });
 }

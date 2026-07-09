@@ -564,6 +564,26 @@ async function assertMonthOpen(month: string, action: string) {
   }
 }
 
+async function writeActionLog(input: {
+  month?: string;
+  entityType: string;
+  entityId: string | number;
+  action: string;
+  operator?: string;
+  payload?: unknown;
+}) {
+  return prisma.actionLog.create({
+    data: {
+      month: input.month,
+      entityType: input.entityType,
+      entityId: String(input.entityId),
+      action: input.action,
+      operator: input.operator ?? "finance-system",
+      payloadJson: input.payload ? JSON.stringify(input.payload) : undefined
+    }
+  });
+}
+
 async function rebuildFinanceSummary(month: string) {
   const rules = await loadImportRules();
   const orders = await prisma.financeOrder.findMany({ where: { month } });
@@ -810,6 +830,24 @@ export const excelService = {
     }
 
     await rebuildFinanceSummary(parsed.month);
+    await writeActionLog({
+      month: parsed.month,
+      entityType: "import_batch",
+      entityId: batch.id,
+      action: "import_excel",
+      payload: {
+        batchNo: batch.batchNo,
+        fileName: parsed.fileName,
+        sheetName: parsed.sheetName,
+        importedRows: parsed.importedRows,
+        importedOrders: createdOrders.length,
+        logisticsOrders: createdOrders.filter((order) => !order.isServiceBusiness).length,
+        serviceOrders: createdOrders.filter((order) => order.isServiceBusiness).length,
+        totalReceivable: parsed.totalReceivable,
+        totalPayable: parsed.totalPayable,
+        totalGrossProfit: parsed.totalGrossProfit
+      }
+    });
 
     return {
       batchId: batch.id,
@@ -876,6 +914,18 @@ export const excelService = {
     await prisma.financeOrder.deleteMany({ where: { importBatchId: id } });
     await prisma.importBatch.update({ where: { id }, data: { status: "reverted", revertedAt: new Date() } });
     await rebuildFinanceSummary(batch.month);
+    await writeActionLog({
+      month: batch.month,
+      entityType: "import_batch",
+      entityId: id,
+      action: "rollback_import_batch",
+      payload: {
+        batchNo: batch.batchNo,
+        fileName: batch.fileName,
+        importedOrders: batch.importedOrders,
+        importedRows: batch.importedRows
+      }
+    });
 
     return { id, month: batch.month, status: "reverted" };
   }
