@@ -59,6 +59,10 @@ export async function importTemplateController(req: Request, res: Response) {
   res.json(await excelService.saveImportTemplate(req.file.buffer, req.file.originalname));
 }
 
+export async function importTemplatesController(_req: Request, res: Response) {
+  res.json({ rows: await excelService.listImportTemplates() });
+}
+
 export async function importBatchesController(req: Request, res: Response) {
   res.json({ rows: await excelService.listImportBatches(req.query.month as string | undefined) });
 }

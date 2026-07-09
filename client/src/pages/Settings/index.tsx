@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getAuthContext,
   getImportBatches,
+  getImportTemplates,
   getParameterRules,
   rollbackImportBatch,
   updateParameterRule
@@ -20,7 +21,7 @@ import {
 } from "../../api/workflow.api";
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
-import type { AuthContext, ImportBatch, ParameterRule } from "../../types/finance.types";
+import type { AuthContext, ImportBatch, ImportTemplate, ParameterRule } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
@@ -62,11 +63,13 @@ export default function Settings() {
   const [password, setPassword] = useState("admin123");
   const [loginLoading, setLoginLoading] = useState(false);
   const [batches, setBatches] = useState<ImportBatch[]>([]);
+  const [templates, setTemplates] = useState<ImportTemplate[]>([]);
   const [rules, setRules] = useState<ParameterRule[]>([]);
   const [monthClose, setMonthClose] = useState<MonthCloseStatus | null>(null);
   const [actionLogs, setActionLogs] = useState<ActionLogRow[]>([]);
   const [ruleDrafts, setRuleDrafts] = useState<RuleDraft>({});
   const [loading, setLoading] = useState(false);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
   const [closeLoading, setCloseLoading] = useState(false);
@@ -97,6 +100,18 @@ export default function Settings() {
       setLoading(false);
     }
   }, [selectedMonth]);
+
+  const loadTemplates = useCallback(async () => {
+    setTemplatesLoading(true);
+    try {
+      const res = await getImportTemplates();
+      setTemplates(res.data.rows ?? []);
+    } catch {
+      message.error("表头模板加载失败，请确认后端服务可用");
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }, []);
 
   const loadRules = useCallback(async () => {
     setRulesLoading(true);
@@ -144,6 +159,10 @@ export default function Settings() {
   useEffect(() => {
     loadBatches();
   }, [loadBatches]);
+
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
 
   useEffect(() => {
     loadRules();
@@ -299,6 +318,33 @@ export default function Settings() {
     }
   ];
 
+  const templateColumns: ColumnsType<ImportTemplate> = [
+    {
+      title: "模板",
+      dataIndex: "templateKey",
+      width: 210,
+      render: (_, row) => (
+        <Space direction="vertical" size={2}>
+          <b>{row.templateKey}</b>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{row.fileName}</Typography.Text>
+        </Space>
+      )
+    },
+    { title: "工作表", dataIndex: "sheetName", width: 120 },
+    { title: "表头行", dataIndex: "headerRowIndex", width: 90, align: "right" },
+    { title: "表头数", dataIndex: "headerCount", width: 90, align: "right" },
+    {
+      title: "固定表头规范",
+      dataIndex: "headers",
+      render: (headers: string[]) => (
+        <Space size={[4, 6]} wrap>
+          {headers.map((header, index) => <Tag key={`${header}-${index}`}>{index + 1}. {header}</Tag>)}
+        </Space>
+      )
+    },
+    { title: "更新时间", dataIndex: "updatedAt", width: 170, render: (value) => String(value).replace("T", " ").slice(0, 19) }
+  ];
+
   const ruleColumns: ColumnsType<ParameterRule> = [
     { title: "分组", dataIndex: "ruleGroup", width: 100, render: (value) => <Tag>{value}</Tag> },
     {
@@ -448,6 +494,24 @@ export default function Settings() {
               </Button>
             </Space>
           </Space>
+        </Card>
+
+        <Card title="后台表头模板规范" extra={<Button onClick={loadTemplates} loading={templatesLoading}>刷新模板</Button>}>
+          <Alert
+            type="success"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="模板只保存固定表头，不保存业务数据"
+            description="后续 Excel 导入会读取这里的表头规范进行字段映射、缺失表头和额外表头校验，导入批次详情会保留当次模板差异。"
+          />
+          <Table
+            rowKey="templateKey"
+            size="small"
+            loading={templatesLoading}
+            columns={templateColumns}
+            dataSource={templates}
+            pagination={false}
+          />
         </Card>
 
         <Card title={`月度锁账控制（${selectedMonth}）`}>

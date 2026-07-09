@@ -888,6 +888,27 @@ export const excelService = {
     };
   },
 
+  async listImportTemplates() {
+    const templates = await prisma.excelImportTemplate.findMany({
+      orderBy: [{ templateKey: "asc" }, { id: "asc" }]
+    });
+
+    return templates.map((template) => {
+      const headers = safeJson<string[]>(template.headersJson, []);
+      return {
+        id: template.id,
+        templateKey: template.templateKey,
+        fileName: template.fileName,
+        sheetName: template.sheetName,
+        headerRowIndex: template.headerRowIndex,
+        headerCount: headers.length,
+        headers,
+        createdAt: template.createdAt,
+        updatedAt: template.updatedAt
+      };
+    });
+  },
+
   async previewWorkbook(buffer: Buffer, originalName: string) {
     const parsed = await parseWorkbook(buffer, originalName);
     const sampleOrders = parsed.orders.slice(0, 5).map((order) => ({

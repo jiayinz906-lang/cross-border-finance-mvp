@@ -235,6 +235,18 @@ export type AuthContext = AuthRole & {
   roles: AuthRole[];
 };
 
+export type ImportTemplate = {
+  id: number;
+  templateKey: string;
+  fileName: string;
+  sheetName: string;
+  headerRowIndex: number;
+  headerCount: number;
+  headers: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ImportTemplateResult = {
   templateKey: string;
   fileName: string;

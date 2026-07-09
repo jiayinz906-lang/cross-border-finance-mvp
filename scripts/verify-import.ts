@@ -192,6 +192,15 @@ async function verifyMonthlyReportExport(checks: Check[], month: string) {
   assertCheck(checks, "Monthly report export includes CFO summary rows", summaryRows.length >= 5, String(summaryRows.length));
 }
 
+async function verifyImportTemplateRegistry(checks: Check[]) {
+  const templates = await excelService.listImportTemplates();
+  const systemTemplate = templates.find((template) => template.templateKey === "system_waybill_detail");
+
+  assertCheck(checks, "Import template registry returns system template", Boolean(systemTemplate), templates.map((template) => template.templateKey).join(","));
+  assertCheck(checks, "Import template registry keeps fixed headers only", (systemTemplate?.headerCount ?? 0) >= 20, `${systemTemplate?.fileName ?? "-"} / ${systemTemplate?.headerCount ?? 0}`);
+  assertCheck(checks, "Import template registry includes order number header", Boolean(systemTemplate?.headers.includes("运单号")), systemTemplate?.headers.join(","));
+}
+
 async function verifySystemBackupExport(checks: Check[], month: string) {
   const exported = await workflowService.exportSystemBackup(month);
   const workbook = XLSX.read(exported.buffer, { type: "buffer" });
@@ -378,6 +387,7 @@ async function main() {
   const imported = await verifyImport(checks);
   await verifyRbac(checks);
   await verifyRiskReview(checks, imported.month);
+  await verifyImportTemplateRegistry(checks);
   await verifyMonthlyReportExport(checks, imported.month);
   await verifySystemBackupExport(checks, imported.month);
   await verifySignature(checks, imported.month);

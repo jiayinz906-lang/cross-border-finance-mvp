@@ -9,6 +9,7 @@ import {
   importExcelController,
   importPreviewController,
   importTemplateController,
+  importTemplatesController,
   listLedgerController,
   monthsController,
   parameterRulesController,
@@ -28,6 +29,7 @@ financeRoutes.get("/dashboard", dashboardController);
 financeRoutes.get("/months", monthsController);
 financeRoutes.get("/parameter-rules", parameterRulesController);
 financeRoutes.put("/parameter-rules/:ruleKey", requirePermission("rules:write"), updateParameterRuleController);
+financeRoutes.get("/import-templates", importTemplatesController);
 financeRoutes.get("/import-batches", importBatchesController);
 financeRoutes.get("/raw-ledger-lines", rawLedgerLinesController);
 financeRoutes.post("/import-preview", upload.single("file"), importPreviewController);

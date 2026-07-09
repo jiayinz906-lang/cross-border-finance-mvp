@@ -52,6 +52,10 @@ export function importFinanceTemplate(file: File) {
   });
 }
 
+export function getImportTemplates() {
+  return request.get("/finance/import-templates");
+}
+
 export function getImportBatches(month?: string) {
   return request.get("/finance/import-batches", params(month));
 }
