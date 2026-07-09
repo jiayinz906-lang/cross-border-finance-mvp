@@ -1,8 +1,12 @@
 import { spawn } from "node:child_process";
 
+const packageManager = process.env.npm_execpath || "pnpm";
+const runScript = (script) =>
+  spawn(packageManager, ["run", script], { shell: true, stdio: "inherit" });
+
 const children = [
-  spawn("npm", ["run", "dev:server"], { shell: true, stdio: "inherit" }),
-  spawn("npm", ["run", "dev:client"], { shell: true, stdio: "inherit" })
+  runScript("dev:server"),
+  runScript("dev:client")
 ];
 
 const stop = (signal) => {
