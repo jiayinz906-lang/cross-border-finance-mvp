@@ -34,6 +34,7 @@ pnpm dev
 - 前端：http://localhost:5173/
 - 后端：http://localhost:4000/api
 - 健康检查：http://localhost:4000/api/health
+- 就绪检查：http://localhost:4000/api/health/ready?month=2026-06
 
 ## 验收测试
 
@@ -41,6 +42,7 @@ pnpm dev
 
 ```powershell
 pnpm verify:import
+pnpm verify:ui
 ```
 
 验收内容：
@@ -54,6 +56,7 @@ pnpm verify:import
 - 月度汇总与单票明细合计一致
 - RBAC 权限规则正确
 - 确认单生成、签名 token、员工签收、主管确认和签名证据落库
+- 前端页面、后端健康、数据库就绪、表头模板和仪表盘汇总可用
 
 ## 常用命令
 
@@ -61,6 +64,7 @@ pnpm verify:import
 pnpm --filter cross-border-finance-server build
 pnpm --filter cross-border-finance-client build
 pnpm verify:import
+pnpm verify:ui
 pnpm prisma:deploy
 ```
 
