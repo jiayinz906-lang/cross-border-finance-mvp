@@ -16,6 +16,7 @@ model FinanceOrder {
   customerName                String
   customerType                String
   salespersonName             String
+  customerServiceName         String?
   businessType                String
   supplierName                String?
   currency                    String

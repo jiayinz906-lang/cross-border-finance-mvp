@@ -7,6 +7,7 @@ export type FinanceOrder = {
   customerName: string;
   customerType: string;
   salespersonName: string;
+  customerServiceName?: string | null;
   businessType: string;
   supplierName?: string | null;
   currency: string;

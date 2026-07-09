@@ -42,6 +42,10 @@ function category(order: FinanceOrder) {
   return "other";
 }
 
+function customerServiceName(order: FinanceOrder) {
+  return order.customerServiceName || order.salespersonName || "待主管确认";
+}
+
 function operatorRows(operatorName: string, orders: FinanceOrder[]) {
   const rules = [
     {
@@ -135,7 +139,7 @@ export const analyticsService = {
     const orders = await prisma.financeOrder.findMany({ where: { month } });
     const groups = new Map<string, FinanceOrder[]>();
     for (const order of orders) {
-      const operatorName = order.salespersonName || "待主管确认";
+      const operatorName = customerServiceName(order);
       groups.set(operatorName, [...(groups.get(operatorName) ?? []), order]);
     }
     return Array.from(groups.entries())

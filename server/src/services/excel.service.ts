@@ -12,6 +12,7 @@ type DraftOrder = {
   customerName: string;
   customerType: string;
   salespersonName: string;
+  customerServiceName?: string | null;
   businessType: string;
   supplierName?: string;
   currency: string;
@@ -48,6 +49,14 @@ const requiredDetailHeaders = ["运单号", "收付类型", "费用类型"];
 
 function text(value: CellValue): string {
   return value === null || value === undefined ? "" : String(value).trim();
+}
+
+function firstText(row: RawRow, keys: string[]): string {
+  for (const key of keys) {
+    const value = text(row[key]);
+    if (value) return value;
+  }
+  return "";
 }
 
 function number(value: CellValue): number {
@@ -144,6 +153,8 @@ function makeDraft(row: RawRow): DraftOrder {
   const serviceBusiness = isServiceBusiness(service, feeType);
   const exchange = markedExchangeRate(row);
   const orderNo = text(row["运单号"]);
+  const salespersonName = text(row["销售代表"]) || "未分配";
+  const customerServiceName = firstText(row, ["客服代表", "客服", "操作员", "客服人员", "客户代表", "跟单客服", "销售助理"]) || salespersonName;
 
   return {
     orderNo,
@@ -152,7 +163,8 @@ function makeDraft(row: RawRow): DraftOrder {
     month: monthOf(orderDate),
     customerName: text(row["用户"]) || text(row["客户订单号"]) || text(row["运单号"]),
     customerType: serviceBusiness ? "service" : "logistics",
-    salespersonName: text(row["销售代表"]) || "未分配",
+    salespersonName,
+    customerServiceName,
     businessType: service,
     supplierName: text(row["供应商"]) || undefined,
     currency: "CNY",
