@@ -1,73 +1,140 @@
 # XJD Finance UI
 
-跨境物流 / 注册服务月度财务分析系统，用于把 Excel 原始台账导入数据库，并生成经营总览、业务利润、物流提成、注册确认、电子签名确认、操作员绩效、客户利润分析、风险复查、上游应付和参数规则。
+跨境物流 / 注册服务月度财务分析系统。系统把 Excel 原始台账导入数据库，并生成经营总览、业务利润、物流提成、注册确认、电子签名确认、操作员绩效、客户利润分析、风险复查、上游应付、参数规则和原始数据追溯。
 
 ## 当前能力
 
 - Excel 自动表头映射、导入预检、确认写入数据库。
-- 导入批次记录、旧批次替换、当前批次回滚。
-- 原始表格汇率口径：人民币为 1，美金/美元/USD/汇率未出按 6.85，其余按表格标注。
-- 物流和注册/证书/店铺租赁等服务类业务分开核算。
-- 参数规则存入数据库，可在设置页维护。
-- 轻量角色权限：系统管理员、财务、主管、老板/管理层、销售/客服。
-- 员工确认单电子签名证据链：token 过期时间、IP、User-Agent、角色、签收时间、主管确认记录。
-- 一键验收脚本覆盖导入、汇总一致性、RBAC 和签名证据链。
+- 后台保存固定表头模板，只保存表头规范，不写入模板业务数据。
+- 原始 Excel 每一行写入 `RawLedgerLine`，订单汇总可追溯回原始台账。
+- 应收、应付、毛利、风险、提成按单票明细聚合。
+- 物流业务和注册 / 证书 / 店铺租赁等服务类业务分开核算。
+- 汇率严格按原始表格标注：人民币按 1，美金 / 美元 / USD / 汇率未出按 6.85，其余按表格标注。
+- 参数规则、导入批次、确认单、签名证据、操作日志和系统备份均写入数据库。
+- 员工个人确认单支持生成、签名 token、员工签收、主管确认和证据留存。
+- 一键验收覆盖构建、导入、表头模板、应收应付、风险复查、提成、确认单、月结锁账和前后端可用性。
 
 ## 技术栈
 
 - 前端：React、TypeScript、Vite、Ant Design、React Router、Axios
 - 后端：Node.js、Express、TypeScript、Prisma ORM
-- 数据库：SQLite 本地验证；生产多人使用建议迁移 PostgreSQL
-- 部署：Render / Docker / GitHub Pages 或 Vercel 前端静态部署
+- 本地数据库：SQLite `prisma/dev.db`
+- 生产建议：PostgreSQL，避免把 Render 免费实例文件系统作为长期财务数据库
 
-## 本地运行
+## 本地一键启动
+
+在 PowerShell 中运行：
 
 ```powershell
 cd D:\Users\DELL\Documents\财务系统\cross-border-finance-mvp
-pnpm install
-pnpm prisma:deploy
-pnpm dev
+.\start-finance-local.ps1
 ```
 
-默认地址：
+脚本会：
 
-- 前端：http://localhost:5173/
-- 后端：http://localhost:4000/api
+- 使用项目内 `prisma/dev.db`
+- 执行 `pnpm prisma:deploy`
+- 启动后端 `4000`
+- 启动前端 `5173`
+- 如端口被旧进程占用，默认先释放 `4000` 和 `5173`
+
+如不希望脚本释放端口：
+
+```powershell
+.\start-finance-local.ps1 -NoRestartPorts
+```
+
+## 当前本地地址
+
+- 前端网页：http://localhost:5173/
+- 经营总览：http://localhost:5173/#/dashboard
+- 后端 API：http://localhost:4000/api
 - 健康检查：http://localhost:4000/api/health
 - 就绪检查：http://localhost:4000/api/health/ready?month=2026-06
 
-## 验收测试
-
-默认读取桌面文件 `2026.6月系统运单明细.xlsx`。也可以用 `IMPORT_VERIFY_FILE` 指定其他 Excel。
-执行完整验收前，请保持 `pnpm dev` 启动的前后端服务正在运行。
+## 首次安装或数据库同步
 
 ```powershell
+pnpm install
+pnpm prisma:deploy
+```
+
+## Excel 表头模板
+
+当前后台模板 Key：
+
+```text
+system_waybill_detail
+```
+
+固定表头来自 `表头模版.xlsx`，共 23 列：
+
+```text
+运单号
+客户订单号
+用户
+服务
+收费重(KG)
+供应商收费重(KG)
+供应商
+供应商服务
+收付类型
+费用类型
+金额
+单价
+本币费用
+销售代表
+备注
+备注
+折合人民币
+客服代表
+下单时间
+内部备注
+实重
+件数
+主品名
+```
+
+上传模板只会写入 `ExcelImportTemplate`，不会导入业务数据。后续 Excel 导入会按这份模板做字段映射、缺失表头校验和模板差异记录。
+
+## 验收测试
+
+完整验收前，请保持 `pnpm dev` 或 `.\start-finance-local.ps1` 启动的前后端服务正在运行。
+
+默认读取桌面文件 `2026.6月系统运单明细.xlsx`。也可以用 `IMPORT_VERIFY_FILE` 指定其他 Excel：
+
+```powershell
+$env:IMPORT_VERIFY_FILE='D:/Users/DELL/Desktop/2026.6月系统运单明细.xlsx'
 pnpm verify:all
 ```
 
-如只想单独验证某一段，也可以运行：
+单独验收：
 
 ```powershell
 pnpm verify:import
 pnpm verify:ui
 ```
 
-验收内容：
+`pnpm verify:all` 覆盖：
 
-- Excel 文件存在
-- 预检识别月份、行数、票数、物流/服务拆分
-- 字段映射无必填缺失
-- 参数规则被导入计算读取
-- 正式导入生成批次
-- 订单、提成、风险、服务确认落库
-- 月度汇总与单票明细合计一致
-- RBAC 权限规则正确
-- 确认单生成、签名 token、员工签收、主管确认和签名证据落库
-- 前端页面、后端健康、数据库就绪、表头模板和仪表盘汇总可用
+- 后端构建
+- 前端构建
+- Excel 预检和正式导入
+- 固定表头模板读取
+- 原始台账逐行落库
+- 应收、应付、毛利和汇总一致性
+- 物流 / 服务类拆分
+- 风险复查
+- 物流提成和服务类确认
+- 个人确认单生成、员工签名、主管确认和证据链
+- 应收应付收付款登记和作废
+- 月结锁账、解锁、锁账后禁止导入
+- 前端页面、后端健康检查和数据库就绪检查
 
 ## 常用命令
 
 ```powershell
+pnpm dev
 pnpm --filter cross-border-finance-server build
 pnpm --filter cross-border-finance-client build
 pnpm verify:all
@@ -78,7 +145,9 @@ pnpm prisma:deploy
 
 ## Render 部署
 
-项目包含 `render.yaml`。Render 构建时执行：
+项目包含 `render.yaml`。
+
+构建命令：
 
 ```bash
 pnpm install --frozen-lockfile
@@ -91,15 +160,14 @@ pnpm build:render
 pnpm start:render
 ```
 
-Render 环境变量：
+建议环境变量：
 
 ```env
-DATABASE_URL=file:./dev.db
+DATABASE_URL=<PostgreSQL connection string>
 VITE_API_BASE_URL=/api
 PORT=4000
+AUTH_TOKEN_SECRET=<production secret>
 ```
-
-注意：Render 免费实例文件系统不适合作为长期财务生产数据库。正式多人使用建议使用 PostgreSQL，并把 `DATABASE_URL` 改为 PostgreSQL 连接串。
 
 ## Docker 部署
 
@@ -117,9 +185,10 @@ docker run --rm -p 4000:4000 xjd-finance-ui
 
 - `client/`：前端应用
 - `server/`：后端 API
-- `prisma/`：数据库模型和种子数据
-- `scripts/verify-all.ts`：构建、导入验收和 UI 冒烟总验收脚本
+- `prisma/`：数据库模型和本地 SQLite 数据
+- `scripts/verify-all.ts`：构建、导入验收和 UI smoke 总验收脚本
 - `scripts/verify-import.ts`：Excel 导入和财务工作流验收脚本
+- `start-finance-local.ps1`：Finance 项目本地一键启动脚本
 - `agents/finance/`：FP&A Analyst 规则
 - `docs/`：业务、API、部署和计算口径文档
 
