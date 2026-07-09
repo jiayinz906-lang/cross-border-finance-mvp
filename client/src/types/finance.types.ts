@@ -249,6 +249,18 @@ export type ReadinessStatus = {
     templateCount?: number;
     activeRuleCount?: number;
     month?: string;
+    environment?: string;
+    version?: string;
+    latestImportBatch?: {
+      batchNo: string;
+      fileName: string;
+      status: string;
+      importedRows: number;
+      importedOrders: number;
+      logisticsOrders: number;
+      serviceOrders: number;
+      createdAt: string;
+    } | null;
     summary?: {
       totalReceivable: number;
       totalPayable: number;

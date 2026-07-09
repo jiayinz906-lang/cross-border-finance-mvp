@@ -62,8 +62,9 @@ async function main() {
   const health = await requestJson<{ status?: string; service?: string }>(`${apiUrl}/health`);
   push(checks, "Backend health is ok", health.status === "ok", JSON.stringify(health));
 
-  const readiness = await requestJson<{ status?: string; checks?: Record<string, boolean>; details?: unknown }>(`${apiUrl}/health/ready?month=2026-06`);
+  const readiness = await requestJson<{ status?: string; checks?: Record<string, boolean>; details?: { latestImportBatch?: { batchNo?: string; importedOrders?: number } | null; version?: string } }>(`${apiUrl}/health/ready?month=2026-06`);
   push(checks, "Backend readiness is ok", readiness.status === "ready" && Object.values(readiness.checks ?? {}).every(Boolean), JSON.stringify(readiness.checks));
+  push(checks, "Backend readiness includes latest import batch", Boolean(readiness.details?.latestImportBatch?.batchNo) && Number(readiness.details?.latestImportBatch?.importedOrders ?? 0) > 0, JSON.stringify(readiness.details?.latestImportBatch));
 
   const templates = await requestJson<{ rows?: Array<{ templateKey: string; fileName: string; headerCount: number; headers: string[] }> }>(`${apiUrl}/finance/import-templates`);
   const systemTemplate = templates.rows?.find((row) => row.templateKey === "system_waybill_detail");

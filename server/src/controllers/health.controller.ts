@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { prisma } from "../prisma/client.js";
+import { env } from "../config/env.js";
 import { currentIsoTimestamp } from "../utils/date.js";
 
 export function healthController(_req: Request, res: Response) {
@@ -21,10 +22,14 @@ export async function readinessController(req: Request, res: Response) {
   const details: Record<string, unknown> = {};
 
   try {
-    const [templateCount, ruleCount, summary] = await Promise.all([
+    const [templateCount, ruleCount, summary, latestBatch] = await Promise.all([
       prisma.excelImportTemplate.count({ where: { templateKey: "system_waybill_detail" } }),
       prisma.parameterRule.count({ where: { isActive: true } }),
-      prisma.financeSummary.findUnique({ where: { month } })
+      prisma.financeSummary.findUnique({ where: { month } }),
+      prisma.importBatch.findFirst({
+        where: { month },
+        orderBy: { createdAt: "desc" }
+      })
     ]);
 
     checks.database = true;
@@ -34,6 +39,18 @@ export async function readinessController(req: Request, res: Response) {
     details.templateCount = templateCount;
     details.activeRuleCount = ruleCount;
     details.month = month;
+    details.environment = env.nodeEnv;
+    details.version = process.env.RENDER_GIT_COMMIT || process.env.GITHUB_SHA || "local";
+    details.latestImportBatch = latestBatch ? {
+      batchNo: latestBatch.batchNo,
+      fileName: latestBatch.fileName,
+      status: latestBatch.status,
+      importedRows: latestBatch.importedRows,
+      importedOrders: latestBatch.importedOrders,
+      logisticsOrders: latestBatch.logisticsOrders,
+      serviceOrders: latestBatch.serviceOrders,
+      createdAt: latestBatch.createdAt
+    } : null;
     details.summary = summary ? {
       totalReceivable: summary.totalReceivable,
       totalPayable: summary.totalPayable,

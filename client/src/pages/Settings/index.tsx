@@ -535,10 +535,18 @@ export default function Settings() {
               <Descriptions.Item label="表头模板">{readinessTag(readiness?.checks.importTemplate)}</Descriptions.Item>
               <Descriptions.Item label="参数规则">{readinessTag(readiness?.checks.parameterRules)}</Descriptions.Item>
               <Descriptions.Item label="月度汇总">{readinessTag(readiness?.checks.financeSummary)}</Descriptions.Item>
+              <Descriptions.Item label="运行环境">{readiness?.details?.environment ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="版本">{readiness?.details?.version ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="模板数">{readiness?.details?.templateCount ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="规则数">{readiness?.details?.activeRuleCount ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="总应收">{money(readiness?.details?.summary?.totalReceivable)}</Descriptions.Item>
               <Descriptions.Item label="总应付">{money(readiness?.details?.summary?.totalPayable)}</Descriptions.Item>
+              <Descriptions.Item label="最近导入批次">{readiness?.details?.latestImportBatch?.batchNo ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="最近导入文件">{readiness?.details?.latestImportBatch?.fileName ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="最近导入票数">{readiness?.details?.latestImportBatch?.importedOrders ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="最近导入时间">
+                {readiness?.details?.latestImportBatch?.createdAt ? String(readiness.details.latestImportBatch.createdAt).replace("T", " ").slice(0, 19) : "-"}
+              </Descriptions.Item>
             </Descriptions>
             {readiness?.details?.error && <Alert type="error" showIcon message="就绪检查错误" description={readiness.details.error} />}
           </Space>
