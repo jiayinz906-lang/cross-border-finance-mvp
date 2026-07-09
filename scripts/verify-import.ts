@@ -192,6 +192,28 @@ async function verifyMonthlyReportExport(checks: Check[], month: string) {
   assertCheck(checks, "Monthly report export includes CFO summary rows", summaryRows.length >= 5, String(summaryRows.length));
 }
 
+async function verifySystemBackupExport(checks: Check[], month: string) {
+  const exported = await workflowService.exportSystemBackup(month);
+  const workbook = XLSX.read(exported.buffer, { type: "buffer" });
+  const requiredSheets = [
+    "备份说明",
+    "月度汇总",
+    "导入批次",
+    "表头模板",
+    "参数规则",
+    "锁账状态",
+    "确认单",
+    "操作日志",
+    "导出记录"
+  ];
+  const missing = requiredSheets.filter((sheet) => !workbook.SheetNames.includes(sheet));
+  const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets["备份说明"] ?? {});
+
+  assertCheck(checks, "System backup export returns xlsx file", exported.fileName.endsWith(".xlsx") && exported.buffer.length > 1000, `${exported.fileName} / ${exported.buffer.length}`);
+  assertCheck(checks, "System backup export includes required sheets", missing.length === 0, missing.join(","));
+  assertCheck(checks, "System backup export includes backup summary", summaryRows.length >= 5, String(summaryRows.length));
+}
+
 async function verifySignature(checks: Check[], month: string) {
   const docs = await workflowService.generateLogisticsDocuments(month);
   const first = docs[0];
@@ -357,6 +379,7 @@ async function main() {
   await verifyRbac(checks);
   await verifyRiskReview(checks, imported.month);
   await verifyMonthlyReportExport(checks, imported.month);
+  await verifySystemBackupExport(checks, imported.month);
   await verifySignature(checks, imported.month);
   await verifyAging(checks, imported.month);
   await verifySettlements(checks, imported.month);

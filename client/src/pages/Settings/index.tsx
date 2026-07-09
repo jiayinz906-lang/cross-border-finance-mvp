@@ -13,6 +13,7 @@ import {
   getActionLogs,
   getMonthCloseStatus,
   lockMonth,
+  systemBackupExportUrl,
   unlockMonth,
   type ActionLogRow,
   type MonthCloseStatus
@@ -424,13 +425,29 @@ export default function Settings() {
         </Card>
 
         <Card title="运行地址与数据库">
-          <Descriptions column={1}>
-            <Descriptions.Item label="前端访问地址">http://localhost:5173/</Descriptions.Item>
-            <Descriptions.Item label="后端接口地址">{apiBaseUrl}</Descriptions.Item>
-            <Descriptions.Item label="本地后端端口">4000</Descriptions.Item>
-            <Descriptions.Item label="本地数据库">prisma/dev.db</Descriptions.Item>
-            <Descriptions.Item label="线上后端接口">https://cross-border-finance-server.onrender.com/api</Descriptions.Item>
-          </Descriptions>
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Descriptions column={1}>
+              <Descriptions.Item label="前端访问地址">http://localhost:5173/</Descriptions.Item>
+              <Descriptions.Item label="后端接口地址">{apiBaseUrl}</Descriptions.Item>
+              <Descriptions.Item label="本地后端端口">4000</Descriptions.Item>
+              <Descriptions.Item label="本地数据库">prisma/dev.db</Descriptions.Item>
+              <Descriptions.Item label="线上后端接口">https://cross-border-finance-server.onrender.com/api</Descriptions.Item>
+            </Descriptions>
+            <Alert
+              type="info"
+              showIcon
+              message="表头模版规范已写入后台，后续 Excel 导入会按后台模板进行字段匹配和质量校验。"
+              description="系统备份会导出表头模板、参数规则、导入批次、锁账状态、确认单、操作日志和导出记录，便于审计和迁移。"
+            />
+            <Space wrap>
+              <Button onClick={() => window.open(systemBackupExportUrl(selectedMonth), "_blank")}>
+                导出本月系统备份 Excel
+              </Button>
+              <Button onClick={() => window.open(systemBackupExportUrl(), "_blank")}>
+                导出全量系统备份 Excel
+              </Button>
+            </Space>
+          </Space>
         </Card>
 
         <Card title={`月度锁账控制（${selectedMonth}）`}>

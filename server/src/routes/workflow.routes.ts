@@ -6,6 +6,7 @@ import {
   createExportJobController,
   downloadConfirmationDocumentController,
   downloadExportJobController,
+  exportSystemBackupController,
   generateLogisticsDocumentsController,
   generateServiceDocumentsController,
   lockMonthController,
@@ -32,6 +33,7 @@ workflowRoutes.post("/documents/:id/void", voidDocumentController);
 workflowRoutes.get("/documents/:id/download", downloadConfirmationDocumentController);
 workflowRoutes.post("/exports", createExportJobController);
 workflowRoutes.get("/exports/:id/download", downloadExportJobController);
+workflowRoutes.get("/backup/export", requirePermission("reports:export"), exportSystemBackupController);
 workflowRoutes.post("/risks/:id/reviewed", markRiskReviewedController);
 workflowRoutes.post("/service-records/:id/confirm", confirmServiceRecordController);
 workflowRoutes.post("/commissions/:salespersonName/confirm", confirmSalespersonCommissionController);

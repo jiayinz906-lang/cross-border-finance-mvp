@@ -68,6 +68,13 @@ export async function downloadConfirmationDocumentController(req: Request, res: 
   res.send(file.buffer);
 }
 
+export async function exportSystemBackupController(req: Request, res: Response) {
+  const file = await workflowService.exportSystemBackup(req.query.month as string | undefined);
+  res.setHeader("Content-Type", file.contentType);
+  res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.fileName)}"`);
+  res.send(file.buffer);
+}
+
 export async function markRiskReviewedController(req: Request, res: Response) {
   res.json(await workflowService.markRiskReviewed(Number(req.params.id)));
 }

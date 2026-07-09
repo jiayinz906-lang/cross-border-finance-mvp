@@ -526,6 +526,173 @@ startxref
     };
   },
 
+  async exportSystemBackup(month?: string) {
+    const selectedMonth = month || undefined;
+    const workbook = XLSX.utils.book_new();
+    const [
+      summaries,
+      monthCloses,
+      importBatches,
+      templates,
+      rules,
+      documents,
+      actionLogs,
+      exportJobs
+    ] = await Promise.all([
+      prisma.financeSummary.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: { month: "desc" }
+      }),
+      prisma.monthClose.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: { month: "desc" }
+      }),
+      prisma.importBatch.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: { id: "desc" }
+      }),
+      prisma.excelImportTemplate.findMany({ orderBy: { id: "asc" } }),
+      prisma.parameterRule.findMany({ orderBy: [{ ruleGroup: "asc" }, { id: "asc" }] }),
+      prisma.confirmationDocument.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: [{ month: "desc" }, { id: "asc" }]
+      }),
+      prisma.actionLog.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: { id: "desc" },
+        take: 1000
+      }),
+      prisma.exportJob.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: { id: "desc" },
+        take: 500
+      })
+    ]);
+
+    appendSheet(workbook, [
+      { 项目: "备份范围", 内容: selectedMonth ?? "全部月份" },
+      { 项目: "生成时间", 内容: new Date().toISOString() },
+      { 项目: "月度汇总记录数", 内容: summaries.length },
+      { 项目: "导入批次数", 内容: importBatches.length },
+      { 项目: "模板记录数", 内容: templates.length },
+      { 项目: "参数规则数", 内容: rules.length },
+      { 项目: "确认单数", 内容: documents.length },
+      { 项目: "操作日志数", 内容: actionLogs.length },
+      { 项目: "说明", 内容: "该文件用于财务审计和关键配置备份，不替代生产数据库全量备份。" }
+    ], "备份说明");
+
+    appendSheet(workbook, summaries.map((item) => ({
+      月份: item.month,
+      总应收: money(item.totalReceivable),
+      总应付: money(item.totalPayable),
+      已回款: money(item.totalReceived),
+      已付款: money(item.totalPaid),
+      总毛利: money(item.totalGrossProfit),
+      毛利率: typeof item.grossProfitRate === "number" ? `${(item.grossProfitRate * 100).toFixed(2)}%` : "-",
+      总提成: money(item.totalCommission),
+      风险票数: item.riskOrderCount,
+      异常高利润: item.abnormalHighProfitOrderCount,
+      待主管确认: item.pendingSupervisorConfirmCount,
+      更新时间: item.updatedAt.toISOString()
+    })), "月度汇总");
+
+    appendSheet(workbook, importBatches.map((item) => ({
+      批次号: item.batchNo,
+      月份: item.month,
+      文件名: item.fileName,
+      工作表: item.sheetName,
+      导入模式: item.importMode,
+      状态: item.status,
+      明细行: item.importedRows,
+      订单数: item.importedOrders,
+      物流订单: item.logisticsOrders,
+      服务订单: item.serviceOrders,
+      应收: money(item.totalReceivable),
+      应付: money(item.totalPayable),
+      毛利: money(item.totalGrossProfit),
+      风险票: item.riskOrderCount,
+      异常高利润: item.abnormalHighProfitCount,
+      创建时间: item.createdAt.toISOString(),
+      回滚时间: item.revertedAt?.toISOString() ?? "-"
+    })), "导入批次");
+
+    appendSheet(workbook, templates.map((item) => ({
+      模板Key: item.templateKey,
+      文件名: item.fileName,
+      工作表: item.sheetName,
+      表头行: item.headerRowIndex,
+      表头JSON: item.headersJson,
+      创建时间: item.createdAt.toISOString(),
+      更新时间: item.updatedAt.toISOString()
+    })), "表头模板");
+
+    appendSheet(workbook, rules.map((item) => ({
+      规则Key: item.ruleKey,
+      分组: item.ruleGroup,
+      名称: item.label,
+      规则JSON: item.valueJson,
+      说明: item.description,
+      是否启用: item.isActive ? "是" : "否",
+      更新人: item.updatedBy,
+      更新时间: item.updatedAt.toISOString()
+    })), "参数规则");
+
+    appendSheet(workbook, monthCloses.map((item) => ({
+      月份: item.month,
+      状态: item.status,
+      锁账人: item.lockedBy,
+      锁账时间: item.lockedAt?.toISOString() ?? "-",
+      解锁人: item.unlockedBy,
+      解锁时间: item.unlockedAt?.toISOString() ?? "-",
+      说明: item.closeNote,
+      更新时间: item.updatedAt.toISOString()
+    })), "锁账状态");
+
+    appendSheet(workbook, documents.map((item) => ({
+      月份: item.month,
+      类型: item.documentType,
+      归属人: item.ownerName,
+      业务类型: item.businessType,
+      订单数: item.orderCount,
+      毛利: money(item.grossProfit),
+      提成: money(item.commissionAmount),
+      单据状态: item.documentStatus,
+      发送状态: item.sendStatus,
+      签名状态: item.signatureStatus,
+      主管状态: item.supervisorStatus,
+      签名时间: item.signedAt?.toISOString() ?? "-",
+      主管确认时间: item.confirmedAt?.toISOString() ?? "-",
+      签名证据: item.signatureEvidenceJson ?? "-"
+    })), "确认单");
+
+    appendSheet(workbook, actionLogs.map((item) => ({
+      ID: item.id,
+      月份: item.month,
+      对象类型: item.entityType,
+      对象ID: item.entityId,
+      动作: item.action,
+      操作人: item.operator,
+      内容: item.payloadJson,
+      时间: item.createdAt.toISOString()
+    })), "操作日志");
+
+    appendSheet(workbook, exportJobs.map((item) => ({
+      月份: item.month,
+      类型: item.exportType,
+      格式: item.fileFormat,
+      状态: item.status,
+      文件名: item.fileName,
+      创建时间: item.createdAt.toISOString(),
+      更新时间: item.updatedAt.toISOString()
+    })), "导出记录");
+
+    return {
+      fileName: `${selectedMonth ?? "all"}-system-backup.xlsx`,
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer
+    };
+  },
+
   async markRiskReviewed(id: number) {
     const risk = await prisma.riskRecord.update({
       where: { id },

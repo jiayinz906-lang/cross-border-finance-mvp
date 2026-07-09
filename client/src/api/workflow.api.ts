@@ -81,6 +81,11 @@ export function monthlyReportExportUrl(month = "2026-06") {
   return `${request.defaults.baseURL}/reports/monthly/export?month=${encodeURIComponent(month)}`;
 }
 
+export function systemBackupExportUrl(month?: string) {
+  const query = month ? `?month=${encodeURIComponent(month)}` : "";
+  return `${request.defaults.baseURL}/workflow/backup/export${query}`;
+}
+
 export function markRiskReviewed(id: number) {
   return request.post(`/workflow/risks/${id}/reviewed`);
 }
