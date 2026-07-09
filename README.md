@@ -1,80 +1,247 @@
-# cross-border-finance-mvp
+# XJD Finance UI
 
-轻量级“跨境物流财务管理系统 MVP”，用于替代 Excel 月度财务台账的第一阶段骨架。系统名称为“财务管理系统”。
+跨境物流 / 注册服务月度财务分析系统。系统把 Excel 原始台账导入数据库，并生成经营总览、业务利润、物流提成、注册确认、电子签名确认、操作员绩效、客户利润分析、风险复查、上游应付、参数规则和原始数据追溯。
 
-## 为什么只做财务模块
+## 当前能力
 
-本项目不是完整 ERP，只聚焦跨境物流 / 跨境电商财务核算、经营分析和管理层财务汇报。第一阶段不做 CRM、库存、采购、人事、权限、登录、复杂审批流和移动端。
+- Excel 自动表头映射、导入预检、确认写入数据库。
+- 后台保存固定表头模板，只保存表头规范，不写入模板业务数据。
+- 原始 Excel 每一行写入 `RawLedgerLine`，订单汇总可追溯回原始台账。
+- 应收、应付、毛利、风险、提成按单票明细聚合。
+- 物流业务和注册 / 证书 / 店铺租赁等服务类业务分开核算。
+- 汇率严格按原始表格标注：人民币按 1，美金 / 美元 / USD / 汇率未出按 6.85，其余按表格标注。
+- 参数规则、导入批次、确认单、签名证据、操作日志和系统备份均写入数据库。
+- 员工个人确认单支持生成、签名 token、员工签收、主管确认和证据留存。
+- 一键验收覆盖构建、导入、表头模板、应收应付、风险复查、提成、确认单、月结锁账和前后端可用性。
 
 ## 技术栈
 
-- 前端：React、TypeScript、Vite、Ant Design、React Router、Axios。
-- 后端：Node.js、Express、TypeScript、Prisma ORM、SQLite、tsx、dotenv、cors。
-- 项目管理：npm workspaces，不使用 pnpm、yarn 或全局 npm 包。
+- 前端：React、TypeScript、Vite、Ant Design、React Router、Axios
+- 后端：Node.js、Express、TypeScript、Prisma ORM
+- 本地数据库：SQLite `prisma/dev.db`
+- 生产建议：PostgreSQL，避免把 Render 免费实例文件系统作为长期财务数据库
 
-## 为什么使用 SQLite
+## 本地一键启动
 
-SQLite 不要求用户本地安装 MySQL、PostgreSQL、Redis、Docker 等额外服务，适合第一阶段本地开发、演示和单人验证。生产环境多人使用时建议迁移到 PostgreSQL，Prisma 可以帮助后续迁移。
-
-## 为什么使用 npm workspaces
-
-client 和 server 是独立子项目，但共享同一个根目录依赖安装和脚本入口。npm workspaces 能减少本地工具要求，并保持 VS Code 打开项目后的开发体验清晰。
-
-## 为什么第一阶段不安装 Excel 和图表依赖
-
-第一阶段目标是固定项目结构、数据库模型、页面模块、服务层职责和 Agent 规则。Excel 导入导出后续再接入，当前不安装 `xlsx`；图表后续再接入，当前不安装 `echarts` 或 `recharts`。
-
-## Agent 文件说明
-
-专用 Agent 规则位于 `agents/finance/finance-fpa-analyst.md`。它定义 FP&A Analyst Agent 的输入工作表、汇率处理、6.85 规则、成本补录、毛利计算、风险识别、提成、服务类业务和数据校验规则。
-
-## 本地运行步骤
-
-```bash
-cd cross-border-finance-mvp
-npm install
-cp .env.example .env
-npm run prisma:generate
-npm run prisma:migrate
-npm run prisma:seed
-npm run dev
-```
-
-Windows PowerShell 可用：
+在 PowerShell 中运行：
 
 ```powershell
-Copy-Item .env.example .env
+cd D:\Users\DELL\Documents\财务系统\cross-border-finance-mvp
+.\start-finance-local.ps1
 ```
 
-## 数据库初始化步骤
+脚本会：
 
-1. `npm run prisma:generate` 生成 Prisma Client。
-2. `npm run prisma:migrate` 初始化 SQLite 数据库。
-3. `npm run prisma:seed` 写入覆盖 CNY、USD、汇率缺失、成本缺失、高风险、异常高利润、服务类业务和主管待确认的模拟数据。
+- 使用项目内 `prisma/dev.db`
+- 执行 `pnpm prisma:deploy`
+- 启动后端 `4000`
+- 启动前端 `5173`
+- 如端口被旧进程占用，默认先释放 `4000` 和 `5173`
 
-## 项目目录说明
+如不希望脚本释放端口：
 
-- `client/`：React + Vite + Ant Design 前端。
-- `server/`：Express + Prisma 后端。
-- `prisma/`：Prisma schema 和 seed 数据。
-- `agents/finance/`：FP&A Analyst Agent 规则。
-- `docs/`：业务流程、数据库、API、页面、计算规则、云端部署和 Agent 说明。
-- `scripts/dev.mjs`：使用 Node.js 原生 `child_process` 同时启动前后端，不安装 concurrently。
+```powershell
+.\start-finance-local.ps1 -NoRestartPorts
+```
 
-## 后续开发阶段
+## 当前本地地址
 
-第二阶段可继续完善主管确认、报表导出、图表组件和历史导入批次追踪。汇率不接入外部 API，统一按原始 Excel 表格标注执行：`1` 视为人民币，美元/美金/USD/汇率未出按 `6.85`，其他数字汇率按表格标注值。
+- 前端网页：http://localhost:5173/
+- 经营总览：http://localhost:5173/#/dashboard
+- 后端 API：http://localhost:4000/api
+- 健康检查：http://localhost:4000/api/health
+- 就绪检查：http://localhost:4000/api/health/ready?month=2026-06
 
-## 云端部署注意事项
+## 首次安装或数据库同步
 
-后端端口使用 `PORT`，前端接口地址使用 `VITE_API_BASE_URL`，数据库地址使用 `DATABASE_URL`。前端可部署 GitHub Pages / Vercel / Netlify，后端可部署 Render / Railway / Fly.io / 云服务器。生产环境不需要配置汇率 API Key。
+```powershell
+pnpm install
+pnpm prisma:deploy
+```
 
-## 环境变量说明
+## Excel 表头模板
+
+当前后台模板 Key：
+
+```text
+system_waybill_detail
+```
+
+固定表头来自 `表头模版.xlsx`，共 23 列：
+
+```text
+运单号
+客户订单号
+用户
+服务
+收费重(KG)
+供应商收费重(KG)
+供应商
+供应商服务
+收付类型
+费用类型
+金额
+单价
+本币费用
+销售代表
+备注
+备注
+折合人民币
+客服代表
+下单时间
+内部备注
+实重
+件数
+主品名
+```
+
+上传模板只会写入 `ExcelImportTemplate`，不会导入业务数据。后续 Excel 导入会按这份模板做字段映射、缺失表头校验和模板差异记录。
+
+## 验收测试
+
+完整验收前，请保持 `pnpm dev` 或 `.\start-finance-local.ps1` 启动的前后端服务正在运行。
+
+默认读取桌面文件 `2026.6月系统运单明细.xlsx`。也可以用 `IMPORT_VERIFY_FILE` 指定其他 Excel：
+
+```powershell
+$env:IMPORT_VERIFY_FILE='D:/Users/DELL/Desktop/2026.6月系统运单明细.xlsx'
+pnpm verify:all
+```
+
+单独验收：
+
+```powershell
+pnpm doctor
+pnpm verify:import
+pnpm verify:ui
+```
+
+`pnpm doctor` 是非破坏性体检命令：不重新导入 Excel、不改数据库，只检查前端、后端、数据库就绪、固定表头模板和仪表盘汇总是否可用。
+
+`pnpm verify:all` 覆盖：
+
+- 后端构建
+- 前端构建
+- Excel 预检和正式导入
+- 固定表头模板读取
+- 原始台账逐行落库
+- 应收、应付、毛利和汇总一致性
+- 物流 / 服务类拆分
+- 风险复查
+- 物流提成和服务类确认
+- 个人确认单生成、员工签名、主管确认和证据链
+- 应收应付收付款登记和作废
+- 月结锁账、解锁、锁账后禁止导入
+- 前端页面、后端健康检查和数据库就绪检查
+
+## 常用命令
+
+```powershell
+pnpm dev
+pnpm --filter cross-border-finance-server build
+pnpm --filter cross-border-finance-client build
+pnpm doctor
+pnpm backup:system
+pnpm backup:db
+pnpm verify:all
+pnpm verify:import
+pnpm verify:ui
+pnpm prisma:deploy
+```
+
+## 系统备份
+
+网页端可以在“参数规则”页面导出本月或全量系统备份 Excel。命令行也可以直接导出：
+
+```powershell
+pnpm backup:system
+```
+
+默认导出 `2026-06` 到 `outputs/backups/`。可用环境变量指定：
+
+```powershell
+$env:BACKUP_MONTH='2026-06'
+$env:BACKUP_OUTPUT_DIR='D:/Users/DELL/Desktop'
+pnpm backup:system
+```
+
+系统备份 Excel 包含月度汇总、导入批次、表头模板、参数规则、锁账状态、确认单、操作日志和导出记录；它用于审计和关键配置归档，不替代生产数据库全量备份。
+
+本地 SQLite 数据库快照：
+
+```powershell
+pnpm backup:db
+```
+
+默认复制 `prisma/dev.db` 到 `outputs/db-backups/`。如需指定位置：
+
+```powershell
+$env:DB_BACKUP_OUTPUT_DIR='D:/Users/DELL/Desktop'
+pnpm backup:db
+```
+
+SQLite 快照用于本地测试前后快速留档；生产 PostgreSQL 应使用云数据库自己的备份和恢复机制。
+
+## Render 部署
+
+项目包含 `render.yaml`。
+
+构建命令：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build:render
+```
+
+`pnpm build:render` 只同步数据库结构并构建前后端，不会自动写入演示数据。真实业务数据应通过 Excel 导入写入数据库。
+
+启动命令：
+
+```bash
+pnpm start:render
+```
+
+建议环境变量：
 
 ```env
-DATABASE_URL="file:./dev.db"
+DATABASE_URL=<PostgreSQL connection string>
+VITE_API_BASE_URL=/api
 PORT=4000
-VITE_API_BASE_URL="http://localhost:4000/api"
+AUTH_TOKEN_SECRET=<production secret>
 ```
 
-汇率计算只读取原始 Excel 标注，不使用外部接口。
+本地如需演示种子数据，可手动执行：
+
+```powershell
+pnpm prisma:seed
+```
+
+生产环境默认禁止执行种子数据写入。只有明确做演示库重置时，才可设置 `ALLOW_PRODUCTION_SEED=true` 后执行。
+
+## Docker 部署
+
+```powershell
+docker build -t xjd-finance-ui .
+docker run --rm -p 4000:4000 xjd-finance-ui
+```
+
+容器访问：
+
+- 前端：http://localhost:4000/
+- 后端：http://localhost:4000/api
+
+## 目录说明
+
+- `client/`：前端应用
+- `server/`：后端 API
+- `prisma/`：数据库模型和本地 SQLite 数据
+- `scripts/verify-all.ts`：构建、导入验收和 UI smoke 总验收脚本
+- `scripts/verify-import.ts`：Excel 导入和财务工作流验收脚本
+- `start-finance-local.ps1`：Finance 项目本地一键启动脚本
+- `agents/finance/`：FP&A Analyst 规则
+- `docs/`：业务、API、部署和计算口径文档
+
+## 当前线上地址
+
+- GitHub Pages：https://jiayinz906-lang.github.io/cross-border-finance-mvp/
+- Render API：https://cross-border-finance-server.onrender.com/api
