@@ -3,11 +3,13 @@ services:
     name: cross-border-finance-server
     runtime: node
     plan: free
-    buildCommand: export DATABASE_URL=file:./dev.db && export VITE_API_BASE_URL=/api && pnpm install --frozen-lockfile && pnpm build:render
+    buildCommand: pnpm install --frozen-lockfile && pnpm build:render
     startCommand: pnpm start:render
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
         value: file:./dev.db
+      - key: VITE_API_BASE_URL
+        value: /api
       - key: AUTH_TOKEN_SECRET
         generateValue: true

@@ -158,6 +158,8 @@ pnpm install --frozen-lockfile
 pnpm build:render
 ```
 
+`pnpm build:render` 只同步数据库结构并构建前后端，不会自动写入演示数据。真实业务数据应通过 Excel 导入写入数据库。
+
 启动命令：
 
 ```bash
@@ -171,6 +173,12 @@ DATABASE_URL=<PostgreSQL connection string>
 VITE_API_BASE_URL=/api
 PORT=4000
 AUTH_TOKEN_SECRET=<production secret>
+```
+
+本地如需演示种子数据，可手动执行：
+
+```powershell
+pnpm prisma:seed
 ```
 
 ## Docker 部署

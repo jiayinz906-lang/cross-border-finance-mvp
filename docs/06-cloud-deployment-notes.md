@@ -24,6 +24,8 @@
 
 Render 免费实例的文件系统不适合作为长期财务生产数据库。正式上线建议使用 Render PostgreSQL 或外部 PostgreSQL。
 
+Render 构建命令不要自动执行 `pnpm prisma:seed`。构建阶段只同步数据库结构和构建前后端，真实业务数据通过 Excel 导入写入数据库。
+
 建议环境变量：
 
 ```env

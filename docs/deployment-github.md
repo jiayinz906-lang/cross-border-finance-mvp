@@ -37,6 +37,14 @@ VITE_API_BASE_URL=https://your-backend.example.com/api
 
 后端可以使用本项目的 `Dockerfile` 或 `render.yaml`。
 
+Render 构建命令：
+
+```bash
+pnpm install --frozen-lockfile && pnpm build:render
+```
+
+`pnpm build:render` 只执行 Prisma 结构同步和前后端构建，不会自动执行 `pnpm prisma:seed`。生产库不应在构建阶段写入演示数据。
+
 生产环境建议：
 
 ```env
@@ -46,6 +54,8 @@ AUTH_TOKEN_SECRET=<production secret>
 ```
 
 SQLite 只适合本地验证、演示或单人短期测试。正式多人使用必须使用 PostgreSQL，并做好数据库备份。
+
+真实业务数据应通过系统 Excel 导入功能写入数据库。
 
 ## 本地验证
 
