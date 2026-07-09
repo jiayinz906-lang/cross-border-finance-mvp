@@ -142,6 +142,7 @@ pnpm --filter cross-border-finance-server build
 pnpm --filter cross-border-finance-client build
 pnpm doctor
 pnpm backup:system
+pnpm backup:db
 pnpm verify:all
 pnpm verify:import
 pnpm verify:ui
@@ -165,6 +166,21 @@ pnpm backup:system
 ```
 
 系统备份 Excel 包含月度汇总、导入批次、表头模板、参数规则、锁账状态、确认单、操作日志和导出记录；它用于审计和关键配置归档，不替代生产数据库全量备份。
+
+本地 SQLite 数据库快照：
+
+```powershell
+pnpm backup:db
+```
+
+默认复制 `prisma/dev.db` 到 `outputs/db-backups/`。如需指定位置：
+
+```powershell
+$env:DB_BACKUP_OUTPUT_DIR='D:/Users/DELL/Desktop'
+pnpm backup:db
+```
+
+SQLite 快照用于本地测试前后快速留档；生产 PostgreSQL 应使用云数据库自己的备份和恢复机制。
 
 ## Render 部署
 

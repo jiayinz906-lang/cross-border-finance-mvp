@@ -54,6 +54,14 @@ pnpm backup:system
 
 系统备份 Excel 用于审计、配置留档和交接，不替代 PostgreSQL 或 SQLite 数据库级全量备份。
 
+本地 SQLite 数据库快照：
+
+```powershell
+pnpm backup:db
+```
+
+默认复制 `prisma/dev.db` 到 `outputs/db-backups/`。生产 PostgreSQL 应使用云数据库自己的定时备份、快照和恢复机制。
+
 ## 验收入口
 
 日常体检：
