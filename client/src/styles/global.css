@@ -1551,6 +1551,12 @@ body {
   box-shadow: 0 20px 40px rgba(31, 45, 78, 0.08);
 }
 
+.customer-scope-alert {
+  margin: 0 0 18px;
+  border-color: #b9d7ff;
+  background: #f3f8ff;
+}
+
 .customer-profit-card .ant-card-head {
   min-height: 76px;
   padding: 0 24px;
