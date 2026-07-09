@@ -8,10 +8,12 @@ import { authService, parseAuthToken } from "../server/src/services/auth.service
 import { financeService } from "../server/src/services/finance.service.js";
 import { payableService } from "../server/src/services/payable.service.js";
 import { receivableService } from "../server/src/services/receivable.service.js";
+import { reportService } from "../server/src/services/report.service.js";
 import { riskService } from "../server/src/services/risk.service.js";
 import { settlementService } from "../server/src/services/settlement.service.js";
 import { excelService } from "../server/src/services/excel.service.js";
 import { workflowService } from "../server/src/services/workflow.service.js";
+import * as XLSX from "xlsx";
 
 type Check = {
   name: string;
@@ -164,6 +166,30 @@ async function verifyRiskReview(checks: Check[], month: string) {
   assertCheck(checks, "Risk review saves reviewer", reviewed.reviewedBy === "verify-import", reviewed.reviewedBy ?? undefined);
   assertCheck(checks, "Risk review saves reviewedAt", Boolean(reviewed.reviewedAt), reviewed.reviewedAt?.toISOString());
   assertCheck(checks, "Risk review action log written", logs.some((log) => log.action === "review_risk_with_note"), logs.map((log) => log.action).join(","));
+}
+
+async function verifyMonthlyReportExport(checks: Check[], month: string) {
+  const exported = await reportService.exportMonthlyReport(month);
+  const workbook = XLSX.read(exported.buffer, { type: "buffer" });
+  const requiredSheets = [
+    "CFO管理层摘要",
+    "月度营收毛利总览",
+    "业务类型利润汇总",
+    "单票毛利明细",
+    "应收回款跟进表",
+    "上游应付分析",
+    "供应商应付占比",
+    "风险复查",
+    "业务员提成汇总",
+    "注册服务主管确认",
+    "参数规则与假设"
+  ];
+  const missing = requiredSheets.filter((sheet) => !workbook.SheetNames.includes(sheet));
+  const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets["CFO管理层摘要"] ?? {});
+
+  assertCheck(checks, "Monthly report export returns xlsx file", exported.fileName.endsWith(".xlsx") && exported.buffer.length > 1000, `${exported.fileName} / ${exported.buffer.length}`);
+  assertCheck(checks, "Monthly report export includes required sheets", missing.length === 0, missing.join(","));
+  assertCheck(checks, "Monthly report export includes CFO summary rows", summaryRows.length >= 5, String(summaryRows.length));
 }
 
 async function verifySignature(checks: Check[], month: string) {
@@ -320,6 +346,7 @@ async function main() {
   const imported = await verifyImport(checks);
   await verifyRbac(checks);
   await verifyRiskReview(checks, imported.month);
+  await verifyMonthlyReportExport(checks, imported.month);
   await verifySignature(checks, imported.month);
   await verifyAging(checks, imported.month);
   await verifySettlements(checks, imported.month);

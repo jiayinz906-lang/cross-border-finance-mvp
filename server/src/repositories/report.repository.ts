@@ -8,12 +8,16 @@ export const reportRepository = {
     const selectedMonth = month ?? summary?.month;
     const where = selectedMonth ? { financeOrder: { month: selectedMonth } } : undefined;
 
-    const [risks, commissions, serviceRecords] = await Promise.all([
+    const [orders, risks, commissions, serviceRecords] = await Promise.all([
+      prisma.financeOrder.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: { orderNo: "asc" }
+      }),
       prisma.riskRecord.findMany({ where, include: { financeOrder: true } }),
       prisma.commissionRecord.findMany({ where, include: { financeOrder: true } }),
       prisma.serviceBusinessRecord.findMany({ where, include: { financeOrder: true } })
     ]);
 
-    return { summary, risks, commissions, serviceRecords };
+    return { summary, orders, risks, commissions, serviceRecords };
   }
 };
