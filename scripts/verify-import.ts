@@ -6,6 +6,7 @@ import { can } from "../server/src/config/rbac.js";
 import { prisma } from "../server/src/prisma/client.js";
 import { payableService } from "../server/src/services/payable.service.js";
 import { receivableService } from "../server/src/services/receivable.service.js";
+import { settlementService } from "../server/src/services/settlement.service.js";
 import { excelService } from "../server/src/services/excel.service.js";
 import { workflowService } from "../server/src/services/workflow.service.js";
 
@@ -167,6 +168,49 @@ async function verifyAging(checks: Check[], month: string) {
   assertCheck(checks, "Payable buckets match outstanding", closeEnough(payableBuckets, payableOutstanding), `${payableBuckets} / ${payableOutstanding}`);
 }
 
+async function verifySettlements(checks: Check[], month: string) {
+  const order = await prisma.financeOrder.findFirstOrThrow({
+    where: {
+      month,
+      adjustedReceivable: { gt: 100 },
+      adjustedPayable: { gt: 100 }
+    },
+    orderBy: { orderNo: "asc" }
+  });
+
+  await settlementService.recordReceipt(order.id, {
+    amount: 100,
+    operator: "verify-import",
+    note: "verification receipt"
+  });
+  await settlementService.recordPayment(order.id, {
+    amount: 80,
+    operator: "verify-import",
+    note: "verification payment"
+  });
+
+  const [updatedOrder, summary, receivables, payables, logs] = await Promise.all([
+    prisma.financeOrder.findUniqueOrThrow({ where: { id: order.id } }),
+    prisma.financeSummary.findUniqueOrThrow({ where: { month } }),
+    receivableService.listReceivables(month),
+    payableService.listPayables(month),
+    workflowService.actionLogs({ month, entityType: "settlement_record" })
+  ]);
+
+  assertCheck(checks, "Receipt updates order received amount", closeEnough(updatedOrder.receivedAmount, 100), String(updatedOrder.receivedAmount));
+  assertCheck(checks, "Payment updates order paid amount", closeEnough(updatedOrder.paidAmount, 80), String(updatedOrder.paidAmount));
+  assertCheck(checks, "Receipt sets partial received status", updatedOrder.receivableStatus === "partial_received", updatedOrder.receivableStatus);
+  assertCheck(checks, "Payment sets partial paid status", updatedOrder.payableStatus === "partial_paid", updatedOrder.payableStatus);
+  assertCheck(checks, "Summary total received updated", closeEnough(summary.totalReceived, 100), String(summary.totalReceived));
+  assertCheck(checks, "Summary total paid updated", closeEnough(summary.totalPaid, 80), String(summary.totalPaid));
+
+  const receivableRow = receivables.rows.find((row) => row.id === order.id);
+  const payableRow = payables.rows.find((row) => row.id === order.id);
+  assertCheck(checks, "Receivable aging reflects receipt", closeEnough(receivableRow?.outstandingReceivable ?? 0, order.adjustedReceivable - 100), `${receivableRow?.outstandingReceivable}`);
+  assertCheck(checks, "Payable aging reflects payment", closeEnough(payableRow?.outstandingPayable ?? 0, order.adjustedPayable - 80), `${payableRow?.outstandingPayable}`);
+  assertCheck(checks, "Settlement action logs written", logs.some((log) => log.action === "record_receipt") && logs.some((log) => log.action === "record_payment"), logs.map((log) => log.action).join(","));
+}
+
 async function verifyMonthClose(
   checks: Check[],
   input: { month: string; buffer: Buffer; fileName: string; batchId: number }
@@ -208,6 +252,7 @@ async function main() {
   await verifyRbac(checks);
   await verifySignature(checks, imported.month);
   await verifyAging(checks, imported.month);
+  await verifySettlements(checks, imported.month);
   await verifyMonthClose(checks, imported);
 
   const failed = checks.filter((check) => !check.pass);

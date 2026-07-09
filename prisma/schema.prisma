@@ -53,6 +53,24 @@ model FinanceOrder {
   riskRecords                 RiskRecord[]
   costAdjustments             CostAdjustment[]
   serviceBusinessRecords      ServiceBusinessRecord[]
+  settlementRecords           SettlementRecord[]
+}
+
+model SettlementRecord {
+  id              Int          @id @default(autoincrement())
+  financeOrderId  Int
+  financeOrder    FinanceOrder @relation(fields: [financeOrderId], references: [id])
+  month           String
+  direction       String
+  amount          Float
+  settledAt       DateTime
+  counterparty    String?
+  operator        String       @default("finance")
+  note            String?
+  createdAt       DateTime     @default(now())
+
+  @@index([month, direction])
+  @@index([financeOrderId, direction])
 }
 
 model RawLedgerLine {

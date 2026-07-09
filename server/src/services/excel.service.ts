@@ -781,6 +781,7 @@ export const excelService = {
     });
 
     await prisma.serviceBusinessRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
+    await prisma.settlementRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
     await prisma.costAdjustment.deleteMany({ where: { financeOrder: { month: parsed.month } } });
     await prisma.riskRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
     await prisma.commissionRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
@@ -908,6 +909,7 @@ export const excelService = {
     await assertMonthOpen(batch.month, "回滚导入批次");
 
     await prisma.serviceBusinessRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
+    await prisma.settlementRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
     await prisma.costAdjustment.deleteMany({ where: { financeOrder: { importBatchId: id } } });
     await prisma.riskRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
     await prisma.commissionRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });

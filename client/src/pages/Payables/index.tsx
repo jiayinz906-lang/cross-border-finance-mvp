@@ -1,7 +1,7 @@
-import { Card, Col, Row, Statistic, Table, Tag } from "antd";
+import { Button, Card, Col, DatePicker, Input, InputNumber, Modal, Row, Space, Statistic, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useState } from "react";
-import { getPayables } from "../../api/payables.api";
+import { getPayables, recordPayment } from "../../api/payables.api";
 import { OrderNoPopup } from "../../components/OrderNoPopup";
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
@@ -12,10 +12,19 @@ const agingOrder: AgingBucket[] = ["0-30", "31-60", "61-90", "90+"];
 
 export default function Payables() {
   const [data, setData] = useState<PayableResponse | null>(null);
+  const [selectedRow, setSelectedRow] = useState<PayableRow | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentDate, setPaymentDate] = useState<string | undefined>();
+  const [paymentNote, setPaymentNote] = useState("");
+  const [savingPayment, setSavingPayment] = useState(false);
   const { selectedMonth } = useSelectedMonth();
 
-  useEffect(() => {
+  const loadData = () => {
     getPayables(selectedMonth).then((res) => setData(res.data));
+  };
+
+  useEffect(() => {
+    loadData();
   }, [selectedMonth]);
 
   const rows = data?.rows ?? [];
@@ -40,8 +49,51 @@ export default function Payables() {
     { title: "账龄", dataIndex: "agingDays", width: 90, align: "right", render: (value) => `${value}天` },
     { title: "账龄段", dataIndex: "agingBucket", width: 100, render: (value) => <Tag color={value === "90+" ? "red" : value === "61-90" ? "orange" : "blue"}>{value}</Tag> },
     { title: "风险", dataIndex: "overdue", width: 100, render: (value) => value ? <Tag color="red">逾期</Tag> : <Tag color="green">正常</Tag> },
-    { title: "状态", dataIndex: "payableStatus", width: 110, render: (value) => <Tag>{value}</Tag> }
+    { title: "状态", dataIndex: "payableStatus", width: 110, render: (value) => <Tag>{value}</Tag> },
+    {
+      title: "操作",
+      fixed: "right",
+      width: 110,
+      render: (_, row) => (
+        <Button
+          size="small"
+          disabled={row.outstandingPayable <= 0}
+          onClick={() => {
+            setSelectedRow(row);
+            setPaymentAmount(row.outstandingPayable);
+            setPaymentDate(undefined);
+            setPaymentNote("");
+          }}
+        >
+          登记付款
+        </Button>
+      )
+    }
   ];
+
+  const submitPayment = async () => {
+    if (!selectedRow) return;
+    if (!paymentAmount || paymentAmount <= 0) {
+      message.error("付款金额必须大于 0");
+      return;
+    }
+    setSavingPayment(true);
+    try {
+      await recordPayment(selectedRow.id, {
+        amount: paymentAmount,
+        settledAt: paymentDate,
+        operator: "财务",
+        note: paymentNote
+      });
+      message.success("付款已登记，应付账龄已刷新");
+      setSelectedRow(null);
+      loadData();
+    } catch {
+      message.error("付款登记失败，请检查是否已锁账或后端服务是否可用");
+    } finally {
+      setSavingPayment(false);
+    }
+  };
 
   return (
     <>
@@ -80,9 +132,34 @@ export default function Payables() {
           rowKey="id"
           dataSource={rows}
           columns={detailColumns}
-          scroll={{ x: 1350 }}
+          scroll={{ x: 1480 }}
         />
       </Card>
+
+      <Modal
+        open={Boolean(selectedRow)}
+        title="登记供应商付款"
+        okText="确认登记"
+        cancelText="取消"
+        confirmLoading={savingPayment}
+        onOk={submitPayment}
+        onCancel={() => setSelectedRow(null)}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <div>订单：<b>{selectedRow?.orderNo}</b> / 供应商：{selectedRow?.supplierName || "未指定供应商"}</div>
+          <div>剩余未付款：<b>{formatMoney(selectedRow?.outstandingPayable ?? 0)}</b></div>
+          <InputNumber
+            style={{ width: "100%" }}
+            min={0}
+            precision={2}
+            value={paymentAmount}
+            onChange={(value) => setPaymentAmount(Number(value ?? 0))}
+            placeholder="付款金额"
+          />
+          <DatePicker style={{ width: "100%" }} onChange={(_, value) => setPaymentDate(Array.isArray(value) ? value[0] : value)} />
+          <Input.TextArea value={paymentNote} onChange={(event) => setPaymentNote(event.target.value)} placeholder="备注，例如银行回单号、付款账户" />
+        </Space>
+      </Modal>
     </>
   );
 }
