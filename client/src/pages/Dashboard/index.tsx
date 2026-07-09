@@ -9,6 +9,7 @@ import {
 import { Button, Card, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { getFinanceDashboard } from "../../api/finance.api";
 import { monthlyReportExportUrl } from "../../api/workflow.api";
 import { ImportButton } from "../../components/ImportButton";
@@ -161,6 +162,7 @@ const rankingColumns: ColumnsType<RankingRow> = [
 ];
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
   const load = useCallback(() => {
     getFinanceDashboard().then((res) => setData(res.data));
@@ -213,7 +215,7 @@ export default function Dashboard() {
     <div className="overview-page">
       <header className="overview-topbar">
         <div className="overview-title-block">
-          <Button type="text" icon={<MenuOutlined />} className="overview-menu-btn" />
+          <Button type="text" icon={<MenuOutlined />} className="overview-menu-btn" onClick={() => navigate("/finance-ledger")} />
           <h1>经营总览</h1>
           <span>数据概览与经营分析</span>
         </div>
@@ -232,16 +234,16 @@ export default function Dashboard() {
 
       <section className="overview-main-grid">
         <TrendPanel data={trend} />
-        <Card className="overview-card" title="业务类型利润同比环比变化" extra={<a>查看更多</a>}>
+        <Card className="overview-card" title="业务类型利润同比环比变化" extra={<Button type="link" onClick={() => navigate("/profit-analysis")}>查看更多</Button>}>
           <Table rowKey="businessType" columns={businessColumns} dataSource={businessRows.slice(0, 6)} pagination={false} size="small" />
         </Card>
       </section>
 
       <section className="overview-three-grid">
-        <Card className="overview-card" title="业务员毛利排行（本月）" extra={<a>查看更多</a>}>
+        <Card className="overview-card" title="业务员毛利排行（本月）" extra={<Button type="link" onClick={() => navigate("/commission")}>查看更多</Button>}>
           <Table rowKey="rank" columns={rankingColumns} dataSource={rankingRows} pagination={false} size="small" />
         </Card>
-        <Card className="overview-card" title="客户利润概览" extra={<a>查看更多</a>}>
+        <Card className="overview-card" title="客户利润概览" extra={<Button type="link" onClick={() => navigate("/customer-profit")}>查看更多</Button>}>
           <div className="customer-summary">
             <CustomerDonut companyProfit={companyProfit} personalProfit={personalProfit} />
             <div className="customer-side-metrics">
@@ -254,7 +256,7 @@ export default function Dashboard() {
             </div>
           </div>
         </Card>
-        <Card className="overview-card" title="上游应付集中度" extra={<a>查看更多</a>}>
+        <Card className="overview-card" title="上游应付集中度" extra={<Button type="link" onClick={() => navigate("/payables")}>查看更多</Button>}>
           <Table
             rowKey="name"
             pagination={false}
@@ -279,7 +281,7 @@ export default function Dashboard() {
       </section>
 
       <section className="overview-risk-grid">
-        <Card className="overview-card risk-card" title="风险趋势（本月）" extra={<a>查看更多</a>}>
+        <Card className="overview-card risk-card" title="风险趋势（本月）" extra={<Button type="link" onClick={() => navigate("/risks")}>查看更多</Button>}>
           <div className="risk-mini-grid">
             {riskItem("高风险票数", riskCount, "+2")}
             {riskItem("中风险票数", Math.max(riskCount - 5, 0), "-1")}

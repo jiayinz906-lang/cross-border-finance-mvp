@@ -42,6 +42,7 @@ function toPlainMoney(value?: number | null) {
 export default function ProfitAnalysis() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showBusinessSummary, setShowBusinessSummary] = useState(true);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -222,16 +223,29 @@ export default function ProfitAnalysis() {
       <Card
         className="profit-summary-card"
         title="业务类型利润汇总（物流 / 注册分开）"
-        extra={<Button type="text" size="small" className="profit-link-btn">不展示费用类型汇总</Button>}
+        extra={(
+          <Button
+            type="text"
+            size="small"
+            className="profit-link-btn"
+            onClick={() => setShowBusinessSummary((value) => !value)}
+          >
+            {showBusinessSummary ? "隐藏业务类型汇总" : "展示业务类型汇总"}
+          </Button>
+        )}
       >
-        <Table
-          rowKey="businessType"
-          loading={loading}
-          columns={columns}
-          dataSource={businessRows}
-          pagination={false}
-          scroll={{ x: 1120 }}
-        />
+        {showBusinessSummary ? (
+          <Table
+            rowKey="businessType"
+            loading={loading}
+            columns={columns}
+            dataSource={businessRows}
+            pagination={false}
+            scroll={{ x: 1120 }}
+          />
+        ) : (
+          <div className="profit-hidden-summary">业务类型汇总已隐藏，可通过右上角按钮恢复展示。</div>
+        )}
       </Card>
     </div>
   );

@@ -232,7 +232,7 @@ export default function Risks() {
       width: 230,
       render: (_, row) => (
         <Space size={6}>
-          <Button size="small">详情</Button>
+          <Button size="small" onClick={() => setExpandedKeys([row.id])}>详情</Button>
           <Button size="small" onClick={() => setSelectedRisk(row)}>原始数据</Button>
           <Button size="small" onClick={() => handleMarkReviewed(row)}>
             标记复核

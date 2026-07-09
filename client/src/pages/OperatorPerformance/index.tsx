@@ -84,7 +84,7 @@ const rules: PerformanceRule[] = [
 ];
 
 function toPlainMoney(value?: number | null) {
-  return formatMoney(value).replace("CN楼", "楼").replace(/\s/g, "");
+  return formatMoney(value).replace("CN¥", "¥").replace(/\s/g, "");
 }
 
 function classifyOrder(order: FinanceOrder): PerformanceCategory | null {

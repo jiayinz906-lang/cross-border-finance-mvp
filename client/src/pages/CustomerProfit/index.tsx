@@ -45,7 +45,7 @@ type CustomerAnalysis = {
 const palette = ["#3574df", "#20a878", "#df9419", "#dc4853", "#716bb2", "#31aeb0", "#9aa8ba"];
 
 function toPlainMoney(value?: number | null) {
-  return formatMoney(value).replace("CN楼", "楼").replace(/\s/g, "");
+  return formatMoney(value).replace("CN¥", "¥").replace(/\s/g, "");
 }
 
 function pctText(value?: number | null) {

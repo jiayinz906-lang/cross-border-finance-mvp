@@ -1,4 +1,4 @@
-import { Button, Card, Progress, Space, Table, Tag, message } from "antd";
+import { Button, Card, Descriptions, Modal, Progress, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getFinanceDashboard } from "../../api/finance.api";
@@ -25,7 +25,7 @@ type MetricCard = {
 };
 
 function toPlainMoney(value?: number | null) {
-  return formatMoney(value).replace("CN楼", "楼").replace(/\s/g, "");
+  return formatMoney(value).replace("CN¥", "¥").replace(/\s/g, "");
 }
 
 function signTime(row: ConfirmationDocument) {
@@ -36,6 +36,7 @@ export default function SignatureConfirm() {
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<ConfirmationDocument | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -127,7 +128,7 @@ export default function SignatureConfirm() {
       width: 450,
       render: (_, row) => (
         <Space size={6} wrap>
-          <Button size="small" onClick={() => message.info(`${row.ownerName} 确认单金额 ${toPlainMoney(row.commissionAmount)}`)}>查看个人确认单</Button>
+          <Button size="small" onClick={() => setSelectedDocument(row)}>查看个人确认单</Button>
           <Button size="small" onClick={() => handleSend(row)}>发送签名链接</Button>
           <Button size="small" onClick={() => navigator.clipboard?.writeText(`${location.origin}${row.signatureUrl ?? ""}`)}>复制链接</Button>
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>下载 PDF</Button>
@@ -168,6 +169,27 @@ export default function SignatureConfirm() {
         <Progress className="signature-progress" percent={progressPercent} showInfo={false} strokeColor={{ "0%": "#5274ef", "100%": "#40c58d" }} trailColor="#eef3f9" />
         <Table rowKey="id" className="signature-summary-table" loading={loading} columns={columns} dataSource={documents} pagination={false} scroll={{ x: 1680 }} />
       </Card>
+
+      <Modal
+        open={Boolean(selectedDocument)}
+        title={`${selectedDocument?.ownerName ?? ""} 个人提成确认单`}
+        footer={<Button type="primary" onClick={() => setSelectedDocument(null)}>关闭</Button>}
+        onCancel={() => setSelectedDocument(null)}
+        width={720}
+      >
+        <Descriptions bordered column={1} size="small">
+          <Descriptions.Item label="业务类型">{selectedDocument?.businessType || "logistics"}</Descriptions.Item>
+          <Descriptions.Item label="订单数量">{selectedDocument?.orderCount ?? 0}</Descriptions.Item>
+          <Descriptions.Item label="最终提成金额">{toPlainMoney(selectedDocument?.commissionAmount)}</Descriptions.Item>
+          <Descriptions.Item label="确认单状态">{selectedDocument?.documentStatus}</Descriptions.Item>
+          <Descriptions.Item label="发送状态">{selectedDocument?.sendStatus}</Descriptions.Item>
+          <Descriptions.Item label="员工签名状态">{selectedDocument?.signatureStatus}</Descriptions.Item>
+          <Descriptions.Item label="主管确认状态">{selectedDocument?.supervisorStatus}</Descriptions.Item>
+          <Descriptions.Item label="签名链接">
+            {selectedDocument?.signatureUrl ? `${location.origin}${selectedDocument.signatureUrl}` : "待发送后生成"}
+          </Descriptions.Item>
+        </Descriptions>
+      </Modal>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Button, Card, Space, Table, Tag, message } from "antd";
+import { Button, Card, Modal, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCommissions } from "../../api/commissions.api";
@@ -64,6 +64,7 @@ export default function Commission() {
   const [records, setRecords] = useState<CommissionRecord[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selectedSalesperson, setSelectedSalesperson] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -206,7 +207,11 @@ export default function Commission() {
       title: "票数",
       dataIndex: "orderCount",
       width: 90,
-      render: (value: number) => <Button type="link" className="commission-ticket-link">{value} 票 ▾</Button>
+      render: (value: number, row) => (
+        <Button type="link" className="commission-ticket-link" onClick={() => setSelectedSalesperson(row.salespersonName)}>
+          {value} 票 ▾
+        </Button>
+      )
     },
     { title: "物流调整后毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
     { title: "汇总毛利率", dataIndex: "grossProfitRate", align: "right", render: formatPercent },
@@ -290,6 +295,33 @@ export default function Commission() {
           scroll={{ x: 1300 }}
         />
       </Card>
+
+      <Modal
+        open={Boolean(selectedSalesperson)}
+        title={`${selectedSalesperson ?? ""} 物流提成订单明细`}
+        footer={<Button type="primary" onClick={() => setSelectedSalesperson(null)}>关闭</Button>}
+        width={860}
+        onCancel={() => setSelectedSalesperson(null)}
+      >
+        <Table
+          rowKey="id"
+          size="small"
+          pagination={false}
+          dataSource={records.filter((item) => item.salespersonName === selectedSalesperson)}
+          columns={[
+            { title: "单号", dataIndex: ["financeOrder", "orderNo"], width: 140 },
+            { title: "毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
+            { title: "提成比例", dataIndex: "commissionRate", align: "right", render: rateText },
+            { title: "提成金额", dataIndex: "commissionAmount", align: "right", render: toPlainMoney },
+            {
+              title: "状态",
+              dataIndex: "confirmStatus",
+              width: 100,
+              render: (status: string) => status === "confirmed" ? <Tag color="green">已确认</Tag> : <Tag color="gold">待确认</Tag>
+            }
+          ]}
+        />
+      </Modal>
     </div>
   );
 }
