@@ -2,6 +2,11 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 const month = "2026-06";
+
+if (process.env.NODE_ENV === "production" && process.env.ALLOW_PRODUCTION_SEED !== "true") {
+  throw new Error("Refusing to seed production database. Set ALLOW_PRODUCTION_SEED=true only for an intentional demo reset.");
+}
+
 const systemWaybillHeaders = [
   "运单号",
   "客户订单号",

@@ -181,6 +181,8 @@ AUTH_TOKEN_SECRET=<production secret>
 pnpm prisma:seed
 ```
 
+生产环境默认禁止执行种子数据写入。只有明确做演示库重置时，才可设置 `ALLOW_PRODUCTION_SEED=true` 后执行。
+
 ## Docker 部署
 
 ```powershell
