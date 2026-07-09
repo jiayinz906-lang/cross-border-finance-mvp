@@ -146,6 +146,16 @@ export type ParameterRule = {
   updatedAt: string;
 };
 
+export type AuthRole = {
+  role: string;
+  label: string;
+  permissions: string[];
+};
+
+export type AuthContext = AuthRole & {
+  roles: AuthRole[];
+};
+
 export type ImportTemplateResult = {
   templateKey: string;
   fileName: string;

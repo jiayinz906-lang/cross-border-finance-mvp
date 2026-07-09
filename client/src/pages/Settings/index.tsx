@@ -1,13 +1,20 @@
-import { Alert, Button, Card, Descriptions, Input, Popconfirm, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Descriptions, Input, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useState } from "react";
-import { getImportBatches, getParameterRules, rollbackImportBatch, updateParameterRule } from "../../api/finance.api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  getAuthContext,
+  getImportBatches,
+  getParameterRules,
+  rollbackImportBatch,
+  updateParameterRule
+} from "../../api/finance.api";
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
-import type { ImportBatch, ParameterRule } from "../../types/finance.types";
+import type { AuthContext, ImportBatch, ParameterRule } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
+const roleStorageKey = "xjd-finance-role";
 
 type RuleDraft = Record<string, { valueJson: string; description: string }>;
 
@@ -28,6 +35,8 @@ function prettyJson(value: unknown) {
 
 export default function Settings() {
   const { selectedMonth } = useSelectedMonth();
+  const [auth, setAuth] = useState<AuthContext | null>(null);
+  const [currentRole, setCurrentRole] = useState(() => localStorage.getItem(roleStorageKey) || "admin");
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [rules, setRules] = useState<ParameterRule[]>([]);
   const [ruleDrafts, setRuleDrafts] = useState<RuleDraft>({});
@@ -35,6 +44,15 @@ export default function Settings() {
   const [rulesLoading, setRulesLoading] = useState(false);
   const [savingRuleKey, setSavingRuleKey] = useState<string | null>(null);
   const [rollingBackId, setRollingBackId] = useState<number | null>(null);
+
+  const permissions = useMemo(() => new Set(auth?.permissions ?? []), [auth]);
+  const canWriteRules = permissions.has("rules:write");
+  const canRollback = permissions.has("finance:rollback");
+
+  const loadAuth = useCallback(async () => {
+    const res = await getAuthContext();
+    setAuth(res.data);
+  }, []);
 
   const loadBatches = useCallback(async () => {
     setLoading(true);
@@ -66,12 +84,22 @@ export default function Settings() {
   }, []);
 
   useEffect(() => {
+    loadAuth().catch(() => message.error("角色权限加载失败"));
+  }, [loadAuth, currentRole]);
+
+  useEffect(() => {
     loadBatches();
   }, [loadBatches]);
 
   useEffect(() => {
     loadRules();
   }, [loadRules]);
+
+  const changeRole = (role: string) => {
+    localStorage.setItem(roleStorageKey, role);
+    setCurrentRole(role);
+    message.success("角色已切换，后续请求会按新角色权限执行");
+  };
 
   const rollback = async (id: number) => {
     setRollingBackId(id);
@@ -80,7 +108,7 @@ export default function Settings() {
       message.success("批次已回滚，当前月份汇总已重新计算");
       await loadBatches();
     } catch {
-      message.error("批次回滚失败，请检查该批次是否已经回滚或不存在");
+      message.error("批次回滚失败，请检查角色权限或批次状态");
     } finally {
       setRollingBackId(null);
     }
@@ -101,12 +129,12 @@ export default function Settings() {
       await updateParameterRule(rule.ruleKey, {
         valueJson: draft.valueJson,
         description: draft.description,
-        updatedBy: "finance-admin"
+        updatedBy: auth?.label ?? "finance-admin"
       });
       message.success("参数规则已保存");
       await loadRules();
     } catch {
-      message.error("参数规则保存失败，请检查后端服务或 JSON 格式");
+      message.error("参数规则保存失败，请检查角色权限、后端服务或 JSON 格式");
     } finally {
       setSavingRuleKey(null);
     }
@@ -135,10 +163,10 @@ export default function Settings() {
           description="回滚会删除该批次写入的订单、提成、风险和服务确认记录，并重新计算月度汇总。"
           okText="确认回滚"
           cancelText="取消"
-          disabled={row.status !== "active"}
+          disabled={row.status !== "active" || !canRollback}
           onConfirm={() => rollback(row.id)}
         >
-          <Button danger size="small" disabled={row.status !== "active"} loading={rollingBackId === row.id}>
+          <Button danger size="small" disabled={row.status !== "active" || !canRollback} loading={rollingBackId === row.id}>
             回滚
           </Button>
         </Popconfirm>
@@ -164,6 +192,7 @@ export default function Settings() {
       dataIndex: "valueJson",
       render: (_, row) => (
         <Input.TextArea
+          disabled={!canWriteRules}
           value={ruleDrafts[row.ruleKey]?.valueJson ?? row.valueJson}
           autoSize={{ minRows: 3, maxRows: 8 }}
           onChange={(event) => setRuleDrafts((prev) => ({
@@ -182,6 +211,7 @@ export default function Settings() {
       width: 280,
       render: (_, row) => (
         <Input.TextArea
+          disabled={!canWriteRules}
           value={ruleDrafts[row.ruleKey]?.description ?? row.description ?? ""}
           autoSize={{ minRows: 3, maxRows: 8 }}
           onChange={(event) => setRuleDrafts((prev) => ({
@@ -198,7 +228,7 @@ export default function Settings() {
       title: "操作",
       width: 100,
       render: (_, row) => (
-        <Button type="primary" size="small" loading={savingRuleKey === row.ruleKey} onClick={() => saveRule(row)}>
+        <Button type="primary" size="small" disabled={!canWriteRules} loading={savingRuleKey === row.ruleKey} onClick={() => saveRule(row)}>
           保存
         </Button>
       )
@@ -213,6 +243,30 @@ export default function Settings() {
       />
 
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
+        <Card title="角色权限">
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Space wrap>
+              <span>当前角色</span>
+              <Select
+                value={currentRole}
+                style={{ width: 220 }}
+                options={(auth?.roles ?? []).map((role) => ({ label: role.label, value: role.role }))}
+                onChange={changeRole}
+              />
+              <Tag color="blue">{auth?.label ?? currentRole}</Tag>
+            </Space>
+            <Space wrap>
+              {(auth?.permissions ?? []).map((permission) => <Tag key={permission}>{permission}</Tag>)}
+            </Space>
+            <Alert
+              type="info"
+              showIcon
+              message="当前为轻量级角色模式"
+              description="角色保存在本机浏览器，用请求头传给后端。后端已对导入、回滚、参数保存等敏感接口做权限校验；后续可替换为正式登录账号。"
+            />
+          </Space>
+        </Card>
+
         <Card title="运行地址与数据库">
           <Descriptions column={1}>
             <Descriptions.Item label="前端访问地址">http://localhost:5173/</Descriptions.Item>
@@ -223,16 +277,13 @@ export default function Settings() {
           </Descriptions>
         </Card>
 
-        <Card
-          title="数据库参数规则"
-          extra={<Button onClick={loadRules} loading={rulesLoading}>刷新规则</Button>}
-        >
+        <Card title="数据库参数规则" extra={<Button onClick={loadRules} loading={rulesLoading}>刷新规则</Button>}>
           <Alert
             type="warning"
             showIcon
             style={{ marginBottom: 12 }}
             message="规则值以 JSON 保存"
-            description="修改规则后保存到后端数据库，后续导入和计算将逐步改为读取这里的统一口径。保存前会校验 JSON 格式。"
+            description={canWriteRules ? "修改规则后保存到后端数据库，后续导入和计算会读取这里的统一口径。" : "当前角色只能查看参数规则，不能保存修改。"}
           />
           <Table
             rowKey="ruleKey"
@@ -244,16 +295,13 @@ export default function Settings() {
           />
         </Card>
 
-        <Card
-          title={`导入批次记录（${selectedMonth}）`}
-          extra={<Button onClick={loadBatches} loading={loading}>刷新</Button>}
-        >
+        <Card title={`导入批次记录（${selectedMonth}）`} extra={<Button onClick={loadBatches} loading={loading}>刷新</Button>}>
           <Alert
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
             message="Excel 导入已具备可追溯批次"
-            description="每次确认写入都会生成批次号。当前仅允许回滚当前生效批次；回滚后会删除该批次订单和派生记录，并重新计算汇总。"
+            description={canRollback ? "当前角色可以回滚生效批次。回滚会删除该批次订单和派生记录，并重新计算汇总。" : "当前角色只能查看批次，不能回滚。"}
           />
           <Table
             rowKey="id"

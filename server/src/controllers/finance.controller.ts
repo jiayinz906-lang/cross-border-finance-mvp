@@ -1,4 +1,6 @@
 import type { Request, Response } from "express";
+import { authContext } from "../config/rbac.js";
+import { currentRole } from "../middleware/rbac.middleware.js";
 import { excelService } from "../services/excel.service.js";
 import { financeService } from "../services/finance.service.js";
 
@@ -16,6 +18,10 @@ export async function dashboardController(req: Request, res: Response) {
 
 export async function monthsController(_req: Request, res: Response) {
   res.json(await financeService.listMonths());
+}
+
+export function authContextController(req: Request, res: Response) {
+  res.json(authContext(currentRole(req)));
 }
 
 export async function parameterRulesController(_req: Request, res: Response) {

@@ -24,6 +24,10 @@ export function getFinanceMonths() {
   return request.get("/finance/months");
 }
 
+export function getAuthContext() {
+  return request.get("/finance/auth-context");
+}
+
 export function importFinanceExcel(file: File) {
   const formData = new FormData();
   formData.append("file", file);
