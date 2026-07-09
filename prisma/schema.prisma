@@ -65,8 +65,12 @@ model SettlementRecord {
   amount          Float
   settledAt       DateTime
   counterparty    String?
+  status          String       @default("active")
   operator        String       @default("finance")
   note            String?
+  voidedBy        String?
+  voidedAt        DateTime?
+  voidReason      String?
   createdAt       DateTime     @default(now())
 
   @@index([month, direction])

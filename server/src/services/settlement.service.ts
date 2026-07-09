@@ -9,6 +9,11 @@ type SettlementInput = {
   note?: string;
 };
 
+type VoidSettlementInput = {
+  operator?: string;
+  reason?: string;
+};
+
 function statusByAmounts(total: number, settled: number, kind: SettlementDirection) {
   if (settled <= 0) return kind === "receivable" ? "unreceived" : "unpaid";
   if (settled + 0.01 >= total) return kind === "receivable" ? "received" : "paid";
@@ -137,6 +142,64 @@ async function createSettlement(orderId: number, direction: SettlementDirection,
   return { record, order: updatedOrder };
 }
 
+async function voidSettlement(id: number, direction: SettlementDirection, input: VoidSettlementInput = {}) {
+  const record = await prisma.settlementRecord.findUniqueOrThrow({
+    where: { id },
+    include: { financeOrder: true }
+  });
+  if (record.direction !== direction) throw new Error("收付款记录类型不匹配。");
+  if (record.status === "voided") throw new Error("该收付款记录已作废。");
+  await assertMonthOpen(record.month);
+
+  const order = record.financeOrder;
+  const operator = input.operator || "finance";
+  const nextSettled = direction === "receivable"
+    ? Math.max(0, order.receivedAmount - record.amount)
+    : Math.max(0, order.paidAmount - record.amount);
+
+  const [voidedRecord, updatedOrder] = await prisma.$transaction([
+    prisma.settlementRecord.update({
+      where: { id },
+      data: {
+        status: "voided",
+        voidedBy: operator,
+        voidedAt: new Date(),
+        voidReason: input.reason
+      }
+    }),
+    prisma.financeOrder.update({
+      where: { id: order.id },
+      data: direction === "receivable"
+        ? {
+            receivedAmount: nextSettled,
+            receivableStatus: statusByAmounts(order.adjustedReceivable, nextSettled, direction)
+          }
+        : {
+            paidAmount: nextSettled,
+            payableStatus: statusByAmounts(order.adjustedPayable, nextSettled, direction)
+          }
+    })
+  ]);
+
+  await rebuildFinanceSummary(record.month);
+  await writeActionLog({
+    month: record.month,
+    entityType: "settlement_record",
+    entityId: record.id,
+    action: direction === "receivable" ? "void_receipt" : "void_payment",
+    operator,
+    payload: {
+      orderId: order.id,
+      orderNo: order.orderNo,
+      amount: record.amount,
+      reason: input.reason,
+      status: direction === "receivable" ? updatedOrder.receivableStatus : updatedOrder.payableStatus
+    }
+  });
+
+  return { record: voidedRecord, order: updatedOrder };
+}
+
 export const settlementService = {
   recordReceipt(orderId: number, input: SettlementInput) {
     return createSettlement(orderId, "receivable", input);
@@ -144,6 +207,14 @@ export const settlementService = {
 
   recordPayment(orderId: number, input: SettlementInput) {
     return createSettlement(orderId, "payable", input);
+  },
+
+  voidReceipt(id: number, input: VoidSettlementInput) {
+    return voidSettlement(id, "receivable", input);
+  },
+
+  voidPayment(id: number, input: VoidSettlementInput) {
+    return voidSettlement(id, "payable", input);
   },
 
   listSettlements(month?: string, direction?: SettlementDirection) {

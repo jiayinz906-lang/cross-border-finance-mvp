@@ -1,7 +1,7 @@
-import { Button, Card, Col, DatePicker, Input, InputNumber, Modal, Row, Space, Statistic, Table, Tag, message } from "antd";
+import { Button, Card, Col, DatePicker, Input, InputNumber, Modal, Popconfirm, Row, Space, Statistic, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useState } from "react";
-import { getPayables, recordPayment } from "../../api/payables.api";
+import { getPayables, getPaymentRecords, recordPayment, voidPayment } from "../../api/payables.api";
 import { OrderNoPopup } from "../../components/OrderNoPopup";
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
@@ -10,8 +10,21 @@ import { formatMoney } from "../../utils/formatMoney";
 
 const agingOrder: AgingBucket[] = ["0-30", "31-60", "61-90", "90+"];
 
+type SettlementRow = {
+  id: number;
+  amount: number;
+  status: string;
+  settledAt: string;
+  counterparty?: string | null;
+  operator: string;
+  note?: string | null;
+  voidReason?: string | null;
+  financeOrder?: { orderNo: string };
+};
+
 export default function Payables() {
   const [data, setData] = useState<PayableResponse | null>(null);
+  const [settlements, setSettlements] = useState<SettlementRow[]>([]);
   const [selectedRow, setSelectedRow] = useState<PayableRow | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentDate, setPaymentDate] = useState<string | undefined>();
@@ -20,7 +33,13 @@ export default function Payables() {
   const { selectedMonth } = useSelectedMonth();
 
   const loadData = () => {
-    getPayables(selectedMonth).then((res) => setData(res.data));
+    Promise.all([
+      getPayables(selectedMonth),
+      getPaymentRecords(selectedMonth)
+    ]).then(([payableRes, settlementRes]) => {
+      setData(payableRes.data);
+      setSettlements(settlementRes.data.rows ?? []);
+    });
   };
 
   useEffect(() => {
@@ -95,6 +114,35 @@ export default function Payables() {
     }
   };
 
+  const submitVoidPayment = async (record: SettlementRow) => {
+    try {
+      await voidPayment(record.id, { operator: "财务", reason: "登记错误，财务作废" });
+      message.success("付款记录已作废，应付账龄已刷新");
+      loadData();
+    } catch {
+      message.error("付款作废失败，请检查是否已锁账或后端服务是否可用");
+    }
+  };
+
+  const settlementColumns: ColumnsType<SettlementRow> = [
+    { title: "订单编号", dataIndex: ["financeOrder", "orderNo"], width: 150 },
+    { title: "供应商", dataIndex: "counterparty", width: 160, render: (value) => value || "未指定供应商" },
+    { title: "金额", dataIndex: "amount", align: "right", render: formatMoney },
+    { title: "登记日期", dataIndex: "settledAt", width: 160, render: (value) => String(value).replace("T", " ").slice(0, 19) },
+    { title: "状态", dataIndex: "status", width: 100, render: (value) => value === "voided" ? <Tag color="red">已作废</Tag> : <Tag color="green">有效</Tag> },
+    { title: "操作人", dataIndex: "operator", width: 100 },
+    { title: "备注", dataIndex: "note", ellipsis: true, render: (value, row) => row.status === "voided" ? row.voidReason || value || "-" : value || "-" },
+    {
+      title: "操作",
+      width: 100,
+      render: (_, row) => (
+        <Popconfirm title="确认作废该付款记录？" okText="确认作废" cancelText="取消" disabled={row.status === "voided"} onConfirm={() => submitVoidPayment(row)}>
+          <Button danger size="small" disabled={row.status === "voided"}>作废</Button>
+        </Popconfirm>
+      )
+    }
+  ];
+
   return (
     <>
       <PageHeader title="上游应付" description="按订单编号追踪供应商应付、付款状态和未付款金额。" />
@@ -133,6 +181,17 @@ export default function Payables() {
           dataSource={rows}
           columns={detailColumns}
           scroll={{ x: 1480 }}
+        />
+      </Card>
+
+      <Card title="付款登记记录" style={{ marginTop: 16 }}>
+        <Table
+          rowKey="id"
+          size="small"
+          dataSource={settlements}
+          columns={settlementColumns}
+          pagination={{ pageSize: 6 }}
+          scroll={{ x: 1000 }}
         />
       </Card>
 

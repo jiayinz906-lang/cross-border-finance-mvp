@@ -20,3 +20,12 @@ export async function paymentRecordsController(req: Request, res: Response) {
     rows: await settlementService.listSettlements(req.query.month as string | undefined, "payable")
   });
 }
+
+export async function voidPaymentController(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ message: "付款记录 ID 无效" });
+    return;
+  }
+  res.json(await settlementService.voidPayment(id, req.body ?? {}));
+}

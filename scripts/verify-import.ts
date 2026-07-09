@@ -178,12 +178,12 @@ async function verifySettlements(checks: Check[], month: string) {
     orderBy: { orderNo: "asc" }
   });
 
-  await settlementService.recordReceipt(order.id, {
+  const receipt = await settlementService.recordReceipt(order.id, {
     amount: 100,
     operator: "verify-import",
     note: "verification receipt"
   });
-  await settlementService.recordPayment(order.id, {
+  const payment = await settlementService.recordPayment(order.id, {
     amount: 80,
     operator: "verify-import",
     note: "verification payment"
@@ -209,6 +209,28 @@ async function verifySettlements(checks: Check[], month: string) {
   assertCheck(checks, "Receivable aging reflects receipt", closeEnough(receivableRow?.outstandingReceivable ?? 0, order.adjustedReceivable - 100), `${receivableRow?.outstandingReceivable}`);
   assertCheck(checks, "Payable aging reflects payment", closeEnough(payableRow?.outstandingPayable ?? 0, order.adjustedPayable - 80), `${payableRow?.outstandingPayable}`);
   assertCheck(checks, "Settlement action logs written", logs.some((log) => log.action === "record_receipt") && logs.some((log) => log.action === "record_payment"), logs.map((log) => log.action).join(","));
+
+  await settlementService.voidReceipt(receipt.record.id, {
+    operator: "verify-import",
+    reason: "verification void receipt"
+  });
+  await settlementService.voidPayment(payment.record.id, {
+    operator: "verify-import",
+    reason: "verification void payment"
+  });
+
+  const [voidedOrder, voidedSummary, voidLogs] = await Promise.all([
+    prisma.financeOrder.findUniqueOrThrow({ where: { id: order.id } }),
+    prisma.financeSummary.findUniqueOrThrow({ where: { month } }),
+    workflowService.actionLogs({ month, entityType: "settlement_record" })
+  ]);
+  assertCheck(checks, "Voiding receipt restores received amount", closeEnough(voidedOrder.receivedAmount, 0), String(voidedOrder.receivedAmount));
+  assertCheck(checks, "Voiding payment restores paid amount", closeEnough(voidedOrder.paidAmount, 0), String(voidedOrder.paidAmount));
+  assertCheck(checks, "Voiding receipt restores receivable status", voidedOrder.receivableStatus === "unreceived", voidedOrder.receivableStatus);
+  assertCheck(checks, "Voiding payment restores payable status", voidedOrder.payableStatus === "unpaid", voidedOrder.payableStatus);
+  assertCheck(checks, "Voiding restores summary received", closeEnough(voidedSummary.totalReceived, 0), String(voidedSummary.totalReceived));
+  assertCheck(checks, "Voiding restores summary paid", closeEnough(voidedSummary.totalPaid, 0), String(voidedSummary.totalPaid));
+  assertCheck(checks, "Settlement void action logs written", voidLogs.some((log) => log.action === "void_receipt") && voidLogs.some((log) => log.action === "void_payment"), voidLogs.map((log) => log.action).join(","));
 }
 
 async function verifyMonthClose(

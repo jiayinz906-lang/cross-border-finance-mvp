@@ -11,3 +11,7 @@ export function recordReceipt(orderId: number, data: { amount: number; settledAt
 export function getReceiptRecords(month?: string) {
   return request.get("/receivables/settlements", month ? { params: { month } } : undefined);
 }
+
+export function voidReceipt(id: number, data: { operator?: string; reason?: string }) {
+  return request.post(`/receivables/settlements/${id}/void`, data);
+}
