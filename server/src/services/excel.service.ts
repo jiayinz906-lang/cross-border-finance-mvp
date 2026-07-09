@@ -241,6 +241,7 @@ function normalizeHeader(value: CellValue) {
 }
 
 function normalizeUploadFileName(value: string) {
+  if (/[^\x00-\x7F]/.test(value)) return value;
   const decoded = Buffer.from(value, "latin1").toString("utf8");
   return decoded.includes("�") ? value : decoded;
 }
@@ -274,12 +275,17 @@ function mapRawRow(row: RawRow, mapping: HeaderMapping): CanonicalRow {
   return mapped;
 }
 
-function templateDiagnostics(headers: string[]) {
+async function loadTemplateHeaders() {
+  const template = await prisma.excelImportTemplate.findUnique({ where: { templateKey } });
+  return safeJson<string[]>(template?.headersJson, templateHeaders);
+}
+
+function templateDiagnostics(headers: string[], expectedHeaders = templateHeaders) {
   const current = headers.map(normalizeHeader);
-  const expected = templateHeaders.map(normalizeHeader);
+  const expected = expectedHeaders.map(normalizeHeader);
   return {
     matchExact: JSON.stringify(current) === JSON.stringify(expected),
-    missingTemplateHeaders: templateHeaders.filter((header) => !current.includes(normalizeHeader(header))),
+    missingTemplateHeaders: expectedHeaders.filter((header) => !current.includes(normalizeHeader(header))),
     extraHeaders: headers.filter((header) => !expected.includes(normalizeHeader(header)))
   };
 }
@@ -471,12 +477,12 @@ function mappingReport(mapping: HeaderMapping) {
   return (Object.entries(mapping) as [CanonicalField, string][]).map(([field, sourceHeader]) => ({ field, sourceHeader }));
 }
 
-function importAudit(headers: string[], mapping: HeaderMapping, rules?: ImportRules) {
+function importAudit(headers: string[], mapping: HeaderMapping, rules?: ImportRules, expectedHeaders = templateHeaders) {
   return {
     parserMode: "auto-header-mapping",
     fieldMapping: mappingReport(mapping),
     missingRequiredFields: missingRequiredFields(mapping),
-    template: templateDiagnostics(headers),
+    template: templateDiagnostics(headers, expectedHeaders),
     activeRules: rules,
     agency: agencyRuntimeProfile,
     selfHostedStack
@@ -701,7 +707,8 @@ async function parseWorkbook(buffer: Buffer, originalName: string) {
   const month = finalized[0]?.month ?? monthOf(new Date());
   const monthOrders = finalized.filter((order) => order.month === month);
   const summary = summarizeOrders(monthOrders, rules);
-  const audit = importAudit(headers, mapping, rules);
+  const expectedHeaders = await loadTemplateHeaders();
+  const audit = importAudit(headers, mapping, rules, expectedHeaders);
   const qualityReport = buildQualityReport({ orders: monthOrders, rawLines, rules });
 
   return {
@@ -877,7 +884,7 @@ export const excelService = {
       headers: detail.headers,
       importedRows: 0,
       importedOrders: 0,
-      audit: importAudit(detail.headers, detail.mapping)
+      audit: importAudit(detail.headers, detail.mapping, undefined, detail.headers)
     };
   },
 
