@@ -1,8 +1,11 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { excelService } from "../server/src/services/excel.service.js";
+import { can } from "../server/src/config/rbac.js";
 import { prisma } from "../server/src/prisma/client.js";
+import { excelService } from "../server/src/services/excel.service.js";
+import { workflowService } from "../server/src/services/workflow.service.js";
 
 type Check = {
   name: string;
@@ -10,8 +13,25 @@ type Check = {
   detail?: string;
 };
 
-const defaultExcelPath = "D:/Users/DELL/Desktop/2026.6月系统运单明细.xlsx";
-const excelPath = process.env.IMPORT_VERIFY_FILE || defaultExcelPath;
+function findDefaultExcelPath() {
+  const candidates = [
+    process.env.IMPORT_VERIFY_FILE,
+    "D:/Users/DELL/Desktop/2026.6月系统运单明细.xlsx",
+    path.join(os.homedir(), "Desktop", "2026.6月系统运单明细.xlsx")
+  ].filter(Boolean) as string[];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  const desktop = path.join(os.homedir(), "Desktop");
+  if (fs.existsSync(desktop)) {
+    const match = fs.readdirSync(desktop).find((name) => name.includes("系统运单明细") && name.endsWith(".xlsx"));
+    if (match) return path.join(desktop, match);
+  }
+
+  return candidates[0] ?? "";
+}
 
 function assertCheck(checks: Check[], name: string, pass: boolean, detail?: string) {
   checks.push({ name, pass, detail });
@@ -21,9 +41,8 @@ function closeEnough(a: number, b: number, tolerance = 0.01) {
   return Math.abs(a - b) <= tolerance;
 }
 
-async function main() {
-  const checks: Check[] = [];
-
+async function verifyImport(checks: Check[]) {
+  const excelPath = findDefaultExcelPath();
   assertCheck(checks, "Excel file exists", fs.existsSync(excelPath), excelPath);
   if (!fs.existsSync(excelPath)) {
     throw new Error(`Verification Excel not found: ${excelPath}`);
@@ -65,6 +84,50 @@ async function main() {
   assertCheck(checks, "Summary receivable matches orders", closeEnough(summary?.totalReceivable ?? 0, orderReceivable), `${summary?.totalReceivable} / ${orderReceivable}`);
   assertCheck(checks, "Summary payable matches orders", closeEnough(summary?.totalPayable ?? 0, orderPayable), `${summary?.totalPayable} / ${orderPayable}`);
   assertCheck(checks, "Summary profit matches orders", closeEnough(summary?.totalGrossProfit ?? 0, orderProfit), `${summary?.totalGrossProfit} / ${orderProfit}`);
+
+  return imported.month;
+}
+
+async function verifyRbac(checks: Check[]) {
+  assertCheck(checks, "Admin can rollback", can("admin", "finance:rollback"));
+  assertCheck(checks, "Sales cannot rollback", !can("sales", "finance:rollback"));
+  assertCheck(checks, "Finance can import", can("finance", "finance:import"));
+  assertCheck(checks, "Executive cannot write rules", !can("executive", "rules:write"));
+}
+
+async function verifySignature(checks: Check[], month: string) {
+  const docs = await workflowService.generateLogisticsDocuments(month);
+  const first = docs[0];
+  assertCheck(checks, "Signature documents generated", Boolean(first), String(docs.length));
+  if (!first) return;
+
+  const sent = await workflowService.sendSignatureLink(first.id);
+  assertCheck(checks, "Signature token generated", Boolean(sent.signatureToken), sent.signatureToken ?? undefined);
+  assertCheck(checks, "Signature token expiry generated", Boolean(sent.signatureTokenExpiresAt), sent.signatureTokenExpiresAt?.toISOString());
+
+  const signed = await workflowService.signByToken(sent.signatureToken!, {
+    ip: "127.0.0.1",
+    userAgent: "verify-import-employee",
+    role: "sales"
+  });
+  assertCheck(checks, "Employee signed by token", signed.signatureStatus === "signed", signed.signatureStatus);
+  assertCheck(checks, "Employee evidence stored", Boolean(signed.signatureEvidenceJson), signed.signatureEvidenceJson ?? undefined);
+
+  const confirmed = await workflowService.supervisorConfirm(first.id, {
+    ip: "127.0.0.1",
+    userAgent: "verify-import-supervisor",
+    role: "supervisor"
+  });
+  const evidence = confirmed.signatureEvidenceJson ? JSON.parse(confirmed.signatureEvidenceJson) : null;
+  assertCheck(checks, "Supervisor confirmed", confirmed.supervisorStatus === "confirmed", confirmed.supervisorStatus);
+  assertCheck(checks, "Supervisor evidence stored", evidence?.supervisor?.role === "supervisor", JSON.stringify(evidence));
+}
+
+async function main() {
+  const checks: Check[] = [];
+  const month = await verifyImport(checks);
+  await verifyRbac(checks);
+  await verifySignature(checks, month);
 
   const failed = checks.filter((check) => !check.pass);
   for (const check of checks) {
