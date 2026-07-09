@@ -32,12 +32,28 @@ export function importFinanceExcel(file: File) {
   });
 }
 
+export function previewFinanceExcel(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request.post("/finance/import-preview", formData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
+}
+
 export function importFinanceTemplate(file: File) {
   const formData = new FormData();
   formData.append("file", file);
   return request.post("/finance/import-template", formData, {
     headers: { "Content-Type": "multipart/form-data" }
   });
+}
+
+export function getImportBatches(month?: string) {
+  return request.get("/finance/import-batches", params(month));
+}
+
+export function rollbackImportBatch(id: number) {
+  return request.post(`/finance/import-batches/${id}/rollback`);
 }
 
 export function getAgentRules() {

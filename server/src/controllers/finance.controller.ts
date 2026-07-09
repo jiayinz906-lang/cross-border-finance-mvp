@@ -18,14 +18,22 @@ export async function monthsController(_req: Request, res: Response) {
   res.json(await financeService.listMonths());
 }
 
+export async function importPreviewController(req: Request, res: Response) {
+  if (!req.file?.buffer) {
+    res.status(400).json({ message: "请上传 Excel 文件" });
+    return;
+  }
+
+  res.json(excelService.previewWorkbook(req.file.buffer, req.file.originalname));
+}
+
 export async function importExcelController(req: Request, res: Response) {
   if (!req.file?.buffer) {
     res.status(400).json({ message: "请上传 Excel 文件" });
     return;
   }
 
-  const result = await excelService.importWorkbook(req.file.buffer, req.file.originalname);
-  res.json(result);
+  res.json(await excelService.importWorkbook(req.file.buffer, req.file.originalname));
 }
 
 export async function importTemplateController(req: Request, res: Response) {
@@ -34,8 +42,21 @@ export async function importTemplateController(req: Request, res: Response) {
     return;
   }
 
-  const result = await excelService.saveImportTemplate(req.file.buffer, req.file.originalname);
-  res.json(result);
+  res.json(await excelService.saveImportTemplate(req.file.buffer, req.file.originalname));
+}
+
+export async function importBatchesController(req: Request, res: Response) {
+  res.json({ rows: await excelService.listImportBatches(req.query.month as string | undefined) });
+}
+
+export async function rollbackImportBatchController(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ message: "导入批次 ID 无效" });
+    return;
+  }
+
+  res.json(await excelService.rollbackImportBatch(id));
 }
 
 export function agentRulesController(_req: Request, res: Response) {

@@ -68,11 +68,24 @@ type DraftOrder = {
   remark?: string;
 };
 
-const serviceBusinessKeywords = ["注册", "证书", "店铺", "商标", "注销", "EAC", "COC", "DOC", "租赁"];
 const fallbackExchangeRate = 6.85;
 const templateKey = "system_waybill_detail";
 
+const serviceBusinessKeywords = [
+  "注册",
+  "注销",
+  "证书",
+  "店铺",
+  "租赁",
+  "商标",
+  "财税",
+  "EAC",
+  "COC",
+  "DOC"
+];
+
 const requiredCanonicalFields: CanonicalField[] = ["orderNo", "direction", "feeType"];
+
 const templateHeaders = [
   "运单号",
   "客户订单号",
@@ -99,7 +112,7 @@ const templateHeaders = [
 
 const fieldAliases: Record<CanonicalField, string[]> = {
   orderNo: ["运单号", "单号", "订单号", "物流单号", "系统单号", "运单编号"],
-  customerOrderNo: ["客户订单号", "原始订单号", "客户单号", "平台订单号", "客户编号"],
+  customerOrderNo: ["客户订单号", "原始订单号", "平台订单号", "客户单号", "客户编号"],
   customerName: ["用户", "客户", "客户名称", "公司", "客户公司"],
   service: ["服务", "业务类型", "业务类别", "项目", "产品服务"],
   supplier: ["供应商", "上游供应商", "服务商", "渠道商"],
@@ -109,7 +122,7 @@ const fieldAliases: Record<CanonicalField, string[]> = {
   localAmount: ["本币费用", "人民币金额", "折算金额", "折合人民币", "RMB金额"],
   salespersonName: ["销售代表", "业务员", "销售", "业务代表", "负责人"],
   remark: ["备注", "备注_1", "说明"],
-  exchangeRate: ["汇率", "折合人民币", "币种汇率"],
+  exchangeRate: ["汇率", "币种汇率"],
   customerServiceName: ["客服代表", "客服", "操作员", "客服人员", "客户代表", "跟单客服", "销售助理"],
   orderDate: ["下单时间", "订单时间", "日期", "下单日期", "创建时间"],
   internalRemark: ["内部备注", "内部说明", "财务备注"],
@@ -130,7 +143,9 @@ function number(value: CellValue): number {
 
 function nullableNumber(value: CellValue): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  const parsed = Number(text(value).replace(/,/g, ""));
+  const raw = text(value).replace(/,/g, "");
+  if (!raw) return null;
+  const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -145,9 +160,7 @@ function normalizeUploadFileName(value: string) {
 
 function buildHeaderMapping(headers: string[]): HeaderMapping {
   const normalizedSource = new Map<string, string>();
-  for (const header of headers) {
-    normalizedSource.set(normalizeHeader(header), header);
-  }
+  for (const header of headers) normalizedSource.set(normalizeHeader(header), header);
 
   const mapping: HeaderMapping = {};
   for (const [field, aliases] of Object.entries(fieldAliases) as [CanonicalField, string[]][]) {
@@ -195,7 +208,7 @@ function markedExchangeRate(row: CanonicalRow): { rate: number; status: string; 
     return {
       rate: parsed,
       status: "confirmed",
-      source: parsed === 1 ? "原始表格标注 1，按人民币" : `原始表格标注汇率 ${parsed}`
+      source: parsed === 1 ? "原始表格标注 1，按人民币计算" : `原始表格标注汇率 ${parsed}`
     };
   }
 
@@ -309,8 +322,8 @@ function finalize(order: DraftOrder): DraftOrder {
 
   const notes = [];
   if (order.exchangeRateStatus === "pending") notes.push("汇率缺失或非数字，待主管复核");
-  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate < 0.1) notes.push("利润率低于 10%");
-  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate > 0.5) notes.push("利润率高于 50%");
+  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate < 0.1) notes.push("利润率低于10%");
+  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate > 0.5) notes.push("利润率高于50%");
   if (order.adjustedPayable === 0 && !order.isServiceBusiness) notes.push("未识别到应付成本");
   if (order.isServiceBusiness) notes.push("注册/证书/店铺等服务类业务，进入主管确认，不计入物流利润分析");
   order.needSupervisorConfirm = order.needSupervisorConfirm || notes.length > 0;
@@ -359,7 +372,7 @@ function extractHeaders(workbook: XLSX.WorkBook): { sheetName: string; headerRow
     }
   }
 
-  throw new Error("Excel 文件没有找到系统运单明细工作表，请确认至少包含：运单号、收付类型、费用类型");
+  throw new Error("Excel 文件没有找到系统运单明细工作表，请确认至少包含：运单号、收付类型、费用类型。");
 }
 
 function findDetailSheet(workbook: XLSX.WorkBook) {
@@ -370,10 +383,7 @@ function findDetailSheet(workbook: XLSX.WorkBook) {
 }
 
 function mappingReport(mapping: HeaderMapping) {
-  return (Object.entries(mapping) as [CanonicalField, string][]).map(([field, sourceHeader]) => ({
-    field,
-    sourceHeader
-  }));
+  return (Object.entries(mapping) as [CanonicalField, string][]).map(([field, sourceHeader]) => ({ field, sourceHeader }));
 }
 
 function importAudit(headers: string[], mapping: HeaderMapping) {
@@ -385,6 +395,164 @@ function importAudit(headers: string[], mapping: HeaderMapping) {
     agency: agencyRuntimeProfile,
     selfHostedStack
   };
+}
+
+function summarizeOrders(orders: DraftOrder[]) {
+  const totalReceivable = orders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
+  const totalPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
+  const totalGrossProfit = orders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
+  return {
+    importedOrders: orders.length,
+    serviceOrders: orders.filter((order) => order.isServiceBusiness).length,
+    logisticsOrders: orders.filter((order) => !order.isServiceBusiness).length,
+    totalReceivable,
+    totalPayable,
+    totalGrossProfit,
+    grossProfitRate: totalReceivable > 0 ? totalGrossProfit / totalReceivable : null,
+    riskOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < 0.1 || order.needSupervisorConfirm).length,
+    abnormalHighProfitOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > 0.5).length,
+    pendingSupervisorConfirmCount: orders.filter((order) => order.needSupervisorConfirm).length
+  };
+}
+
+function parseWorkbook(buffer: Buffer, originalName: string) {
+  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+  const fileName = normalizeUploadFileName(originalName);
+  const { sheetName, headers, mapping, rows } = findDetailSheet(workbook);
+  const missing = missingRequiredFields(mapping);
+  if (missing.length) throw new Error(`Excel 表头无法自动对应必填字段：${missing.join("、")}`);
+  if (!rows.length) throw new Error("Excel 工作表没有明细数据。");
+
+  const orders = new Map<string, DraftOrder>();
+  for (const rawRow of rows) {
+    const row = mapRawRow(rawRow, mapping);
+    const orderNo = text(row.orderNo);
+    if (!orderNo) continue;
+
+    const draft = orders.get(orderNo) ?? makeDraft(row);
+    const feeType = text(row.feeType);
+    const direction = text(row.direction);
+    const originalAmount = number(row.localAmount) || number(row.amount);
+    const amount = Math.abs(originalAmount * markedExchangeRate(row).rate);
+    draft.supplierName = draft.supplierName || text(row.supplier) || undefined;
+    draft.customerOrderNo = text(row.customerOrderNo) || draft.customerOrderNo || text(row.customerName) || orderNo;
+    draft.isServiceBusiness = draft.isServiceBusiness || isServiceBusiness(text(row.service), feeType);
+    draft.needSupervisorConfirm = draft.needSupervisorConfirm || draft.isServiceBusiness;
+    applyAmount(draft, direction, feeType, amount);
+    orders.set(orderNo, draft);
+  }
+
+  const finalized = Array.from(orders.values()).map(finalize);
+  const month = finalized[0]?.month ?? monthOf(new Date());
+  const monthOrders = finalized.filter((order) => order.month === month);
+  const summary = summarizeOrders(monthOrders);
+  const audit = importAudit(headers, mapping);
+
+  return {
+    fileName,
+    sheetName,
+    month,
+    rows,
+    headers,
+    mapping,
+    orders: monthOrders,
+    importedRows: rows.length,
+    ...summary,
+    audit
+  };
+}
+
+function batchNo(month: string) {
+  return `IMP-${month.replace("-", "")}-${Date.now()}`;
+}
+
+async function rebuildFinanceSummary(month: string) {
+  const orders = await prisma.financeOrder.findMany({ where: { month } });
+  const totalReceivable = orders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
+  const totalPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
+  const totalGrossProfit = orders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
+  const commissions = await prisma.commissionRecord.findMany({ where: { financeOrder: { month } } });
+
+  await prisma.financeSummary.upsert({
+    where: { month },
+    update: {
+      totalReceivable,
+      totalPayable,
+      totalReceived: orders.reduce((sum, order) => sum + order.receivedAmount, 0),
+      totalPaid: orders.reduce((sum, order) => sum + order.paidAmount, 0),
+      totalGrossProfit,
+      grossProfitRate: totalReceivable > 0 ? totalGrossProfit / totalReceivable : null,
+      totalCommission: commissions.reduce((sum, item) => sum + item.commissionAmount, 0),
+      riskOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < 0.1 || order.needSupervisorConfirm).length,
+      abnormalHighProfitOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > 0.5).length,
+      pendingSupervisorConfirmCount: orders.filter((order) => order.needSupervisorConfirm).length
+    },
+    create: {
+      month,
+      totalReceivable,
+      totalPayable,
+      totalReceived: orders.reduce((sum, order) => sum + order.receivedAmount, 0),
+      totalPaid: orders.reduce((sum, order) => sum + order.paidAmount, 0),
+      totalGrossProfit,
+      grossProfitRate: totalReceivable > 0 ? totalGrossProfit / totalReceivable : null,
+      totalCommission: commissions.reduce((sum, item) => sum + item.commissionAmount, 0),
+      riskOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < 0.1 || order.needSupervisorConfirm).length,
+      abnormalHighProfitOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > 0.5).length,
+      pendingSupervisorConfirmCount: orders.filter((order) => order.needSupervisorConfirm).length
+    }
+  });
+}
+
+async function createDerivedRecords(
+  order: Awaited<ReturnType<typeof prisma.financeOrder.create>>,
+  logisticsProfitBySalesperson: Map<string, number>
+) {
+  if (!order.isServiceBusiness && order.adjustedGrossProfit > 0) {
+    const rate = commissionRate(logisticsProfitBySalesperson.get(order.salespersonName) ?? 0);
+    await prisma.commissionRecord.create({
+      data: {
+        financeOrderId: order.id,
+        salespersonName: order.salespersonName,
+        customerType: order.customerType,
+        businessType: order.businessType,
+        grossProfit: order.adjustedGrossProfit,
+        commissionRate: rate,
+        commissionAmount: order.adjustedGrossProfit * rate,
+        needSupervisorConfirm: order.needSupervisorConfirm,
+        confirmStatus: order.needSupervisorConfirm ? "pending" : "confirmed"
+      }
+    });
+  }
+
+  if (order.needSupervisorConfirm || (order.adjustedGrossProfitRate ?? 1) < 0.1 || (order.adjustedGrossProfitRate ?? 0) > 0.5) {
+    await prisma.riskRecord.create({
+      data: {
+        financeOrderId: order.id,
+        riskLevel: riskLevel(order),
+        riskType: riskType(order),
+        riskReasons: `${order.orderNo}：${order.calculationNote}`,
+        suggestion: "复核原始 Excel、汇率、应收应付和成本归集后再确认。",
+        status: "open"
+      }
+    });
+  }
+
+  if (order.isServiceBusiness) {
+    await prisma.serviceBusinessRecord.create({
+      data: {
+        financeOrderId: order.id,
+        serviceType: order.businessType,
+        originalPrice: order.adjustedReceivable,
+        suggestedPrice: order.adjustedReceivable,
+        suggestedCommissionMin: Math.max(order.adjustedGrossProfit * 0.08, 0),
+        suggestedCommissionMax: Math.max(order.adjustedGrossProfit * 0.12, 0),
+        costAmount: order.adjustedPayable,
+        grossProfit: order.adjustedGrossProfit,
+        confirmStatus: "pending",
+        remark: "Excel 导入服务类业务，单独主管确认；不进入物流利润分析。"
+      }
+    });
+  }
 }
 
 export const excelService = {
@@ -421,51 +589,85 @@ export const excelService = {
     };
   },
 
+  previewWorkbook(buffer: Buffer, originalName: string) {
+    const parsed = parseWorkbook(buffer, originalName);
+    const sampleOrders = parsed.orders.slice(0, 5).map((order) => ({
+      orderNo: order.orderNo,
+      customerOrderNo: order.customerOrderNo,
+      businessType: order.businessType,
+      salespersonName: order.salespersonName,
+      customerServiceName: order.customerServiceName,
+      receivable: order.adjustedReceivable,
+      payable: order.adjustedPayable,
+      grossProfit: order.adjustedGrossProfit,
+      grossProfitRate: order.adjustedGrossProfitRate,
+      needSupervisorConfirm: order.needSupervisorConfirm
+    }));
+
+    return {
+      fileName: parsed.fileName,
+      sheetName: parsed.sheetName,
+      month: parsed.month,
+      importedRows: parsed.importedRows,
+      importedOrders: parsed.importedOrders,
+      serviceOrders: parsed.serviceOrders,
+      logisticsOrders: parsed.logisticsOrders,
+      totalReceivable: parsed.totalReceivable,
+      totalPayable: parsed.totalPayable,
+      totalGrossProfit: parsed.totalGrossProfit,
+      grossProfitRate: parsed.grossProfitRate,
+      riskOrderCount: parsed.riskOrderCount,
+      abnormalHighProfitOrderCount: parsed.abnormalHighProfitOrderCount,
+      pendingSupervisorConfirmCount: parsed.pendingSupervisorConfirmCount,
+      sampleOrders,
+      audit: parsed.audit,
+      writeMode: "确认后将按月份覆盖写入数据库，并生成导入批次。"
+    };
+  },
+
   async importWorkbook(buffer: Buffer, originalName: string) {
-    const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
-    const fileName = normalizeUploadFileName(originalName);
-    const { sheetName, headers, mapping, rows } = findDetailSheet(workbook);
-    const missing = missingRequiredFields(mapping);
-    if (missing.length) {
-      throw new Error(`Excel 表头无法自动对应必填字段：${missing.join("、")}`);
-    }
-    if (!rows.length) {
-      throw new Error("Excel 工作表没有明细数据");
-    }
+    const parsed = parseWorkbook(buffer, originalName);
+    const batchNumber = batchNo(parsed.month);
 
-    const orders = new Map<string, DraftOrder>();
-    for (const rawRow of rows) {
-      const row = mapRawRow(rawRow, mapping);
-      const orderNo = text(row.orderNo);
-      if (!orderNo) continue;
+    const batch = await prisma.importBatch.create({
+      data: {
+        batchNo: batchNumber,
+        month: parsed.month,
+        fileName: parsed.fileName,
+        sheetName: parsed.sheetName,
+        importedRows: parsed.importedRows,
+        importedOrders: parsed.importedOrders,
+        logisticsOrders: parsed.logisticsOrders,
+        serviceOrders: parsed.serviceOrders,
+        totalReceivable: parsed.totalReceivable,
+        totalPayable: parsed.totalPayable,
+        totalGrossProfit: parsed.totalGrossProfit,
+        riskOrderCount: parsed.riskOrderCount,
+        abnormalHighProfitCount: parsed.abnormalHighProfitOrderCount,
+        templateAuditJson: JSON.stringify(parsed.audit),
+        previewJson: JSON.stringify({
+          totalReceivable: parsed.totalReceivable,
+          totalPayable: parsed.totalPayable,
+          totalGrossProfit: parsed.totalGrossProfit,
+          grossProfitRate: parsed.grossProfitRate
+        })
+      }
+    });
 
-      const draft = orders.get(orderNo) ?? makeDraft(row);
-      const feeType = text(row.feeType);
-      const direction = text(row.direction);
-      const originalAmount = number(row.amount) || number(row.localAmount);
-      const amount = Math.abs(originalAmount * markedExchangeRate(row).rate);
-      draft.supplierName = draft.supplierName || text(row.supplier) || undefined;
-      draft.customerOrderNo = text(row.customerOrderNo) || draft.customerOrderNo || text(row.customerName) || orderNo;
-      draft.isServiceBusiness = draft.isServiceBusiness || isServiceBusiness(text(row.service), feeType);
-      draft.needSupervisorConfirm = draft.needSupervisorConfirm || draft.isServiceBusiness;
-      applyAmount(draft, direction, feeType, amount);
-      orders.set(orderNo, draft);
-    }
-
-    const finalized = Array.from(orders.values()).map(finalize);
-    const month = finalized[0]?.month ?? monthOf(new Date());
-    const monthOrders = finalized.filter((order) => order.month === month);
-
-    await prisma.serviceBusinessRecord.deleteMany({ where: { financeOrder: { month } } });
-    await prisma.costAdjustment.deleteMany({ where: { financeOrder: { month } } });
-    await prisma.riskRecord.deleteMany({ where: { financeOrder: { month } } });
-    await prisma.commissionRecord.deleteMany({ where: { financeOrder: { month } } });
-    await prisma.financeSummary.deleteMany({ where: { month } });
-    await prisma.financeOrder.deleteMany({ where: { month } });
+    await prisma.serviceBusinessRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
+    await prisma.costAdjustment.deleteMany({ where: { financeOrder: { month: parsed.month } } });
+    await prisma.riskRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
+    await prisma.commissionRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
+    await prisma.financeSummary.deleteMany({ where: { month: parsed.month } });
+    await prisma.financeOrder.deleteMany({ where: { month: parsed.month } });
+    await prisma.importBatch.updateMany({
+      where: { month: parsed.month, id: { not: batch.id }, status: "active" },
+      data: { status: "superseded" }
+    });
 
     const createdOrders = [];
-    for (const order of monthOrders) {
-      createdOrders.push(await prisma.financeOrder.create({ data: order }));
+    for (const order of parsed.orders) {
+      createdOrders.push(await prisma.financeOrder.create({ data: { ...order, importBatchId: batch.id } }));
     }
 
     const logisticsProfitBySalesperson = new Map<string, number>();
@@ -479,84 +681,46 @@ export const excelService = {
     }
 
     for (const order of createdOrders) {
-      if (!order.isServiceBusiness && order.adjustedGrossProfit > 0) {
-        const rate = commissionRate(logisticsProfitBySalesperson.get(order.salespersonName) ?? 0);
-        await prisma.commissionRecord.create({
-          data: {
-            financeOrderId: order.id,
-            salespersonName: order.salespersonName,
-            customerType: order.customerType,
-            businessType: order.businessType,
-            grossProfit: order.adjustedGrossProfit,
-            commissionRate: rate,
-            commissionAmount: order.adjustedGrossProfit * rate,
-            needSupervisorConfirm: order.needSupervisorConfirm,
-            confirmStatus: order.needSupervisorConfirm ? "pending" : "confirmed"
-          }
-        });
-      }
-
-      if (order.needSupervisorConfirm || (order.adjustedGrossProfitRate ?? 1) < 0.1 || (order.adjustedGrossProfitRate ?? 0) > 0.5) {
-        await prisma.riskRecord.create({
-          data: {
-            financeOrderId: order.id,
-            riskLevel: riskLevel(order),
-            riskType: riskType(order),
-            riskReasons: `${order.orderNo}：${order.calculationNote}`,
-            suggestion: "复核原始 Excel、汇率、应收应付和成本归集后再确认。",
-            status: "open"
-          }
-        });
-      }
-
-      if (order.isServiceBusiness) {
-        await prisma.serviceBusinessRecord.create({
-          data: {
-            financeOrderId: order.id,
-            serviceType: order.businessType,
-            originalPrice: order.adjustedReceivable,
-            suggestedPrice: order.adjustedReceivable,
-            suggestedCommissionMin: Math.max(order.adjustedGrossProfit * 0.08, 0),
-            suggestedCommissionMax: Math.max(order.adjustedGrossProfit * 0.12, 0),
-            costAmount: order.adjustedPayable,
-            grossProfit: order.adjustedGrossProfit,
-            confirmStatus: "pending",
-            remark: "Excel 导入服务类业务，单独主管确认；不进入物流利润分析。"
-          }
-        });
-      }
+      await createDerivedRecords(order, logisticsProfitBySalesperson);
     }
 
-    const totalReceivable = createdOrders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
-    const totalPayable = createdOrders.reduce((sum, order) => sum + order.adjustedPayable, 0);
-    const totalGrossProfit = createdOrders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
-    const commissions = await prisma.commissionRecord.findMany({ where: { financeOrder: { month } } });
-
-    await prisma.financeSummary.create({
-      data: {
-        month,
-        totalReceivable,
-        totalPayable,
-        totalReceived: createdOrders.reduce((sum, order) => sum + order.receivedAmount, 0),
-        totalPaid: createdOrders.reduce((sum, order) => sum + order.paidAmount, 0),
-        totalGrossProfit,
-        grossProfitRate: totalReceivable > 0 ? totalGrossProfit / totalReceivable : null,
-        totalCommission: commissions.reduce((sum, item) => sum + item.commissionAmount, 0),
-        riskOrderCount: createdOrders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < 0.1 || order.needSupervisorConfirm).length,
-        abnormalHighProfitOrderCount: createdOrders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > 0.5).length,
-        pendingSupervisorConfirmCount: createdOrders.filter((order) => order.needSupervisorConfirm).length
-      }
-    });
+    await rebuildFinanceSummary(parsed.month);
 
     return {
-      fileName,
-      sheetName,
-      month,
-      importedRows: rows.length,
+      batchId: batch.id,
+      batchNo: batch.batchNo,
+      fileName: parsed.fileName,
+      sheetName: parsed.sheetName,
+      month: parsed.month,
+      importedRows: parsed.importedRows,
       importedOrders: createdOrders.length,
       serviceOrders: createdOrders.filter((order) => order.isServiceBusiness).length,
       logisticsOrders: createdOrders.filter((order) => !order.isServiceBusiness).length,
-      audit: importAudit(headers, mapping)
+      audit: parsed.audit
     };
+  },
+
+  async listImportBatches(month?: string) {
+    return prisma.importBatch.findMany({
+      where: month ? { month } : undefined,
+      orderBy: { createdAt: "desc" },
+      take: 20
+    });
+  },
+
+  async rollbackImportBatch(id: number) {
+    const batch = await prisma.importBatch.findUnique({ where: { id } });
+    if (!batch) throw new Error("导入批次不存在。");
+    if (batch.status === "reverted") throw new Error("导入批次已回滚。");
+
+    await prisma.serviceBusinessRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
+    await prisma.costAdjustment.deleteMany({ where: { financeOrder: { importBatchId: id } } });
+    await prisma.riskRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
+    await prisma.commissionRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
+    await prisma.financeOrder.deleteMany({ where: { importBatchId: id } });
+    await prisma.importBatch.update({ where: { id }, data: { status: "reverted", revertedAt: new Date() } });
+    await rebuildFinanceSummary(batch.month);
+
+    return { id, month: batch.month, status: "reverted" };
   }
 };

@@ -9,6 +9,8 @@ datasource db {
 
 model FinanceOrder {
   id                          Int                     @id @default(autoincrement())
+  importBatchId               Int?
+  importBatch                 ImportBatch?            @relation(fields: [importBatchId], references: [id])
   orderNo                     String                  @unique
   customerOrderNo             String?
   orderDate                   DateTime
@@ -51,6 +53,34 @@ model FinanceOrder {
   riskRecords                 RiskRecord[]
   costAdjustments             CostAdjustment[]
   serviceBusinessRecords      ServiceBusinessRecord[]
+}
+
+model ImportBatch {
+  id                      Int            @id @default(autoincrement())
+  batchNo                 String         @unique
+  month                   String
+  fileName                String
+  sheetName               String
+  importMode              String         @default("replace_month")
+  status                  String         @default("active")
+  importedRows            Int            @default(0)
+  importedOrders          Int            @default(0)
+  logisticsOrders         Int            @default(0)
+  serviceOrders           Int            @default(0)
+  totalReceivable         Float          @default(0)
+  totalPayable            Float          @default(0)
+  totalGrossProfit        Float          @default(0)
+  riskOrderCount          Int            @default(0)
+  abnormalHighProfitCount Int            @default(0)
+  templateAuditJson       String?
+  previewJson             String?
+  createdBy               String         @default("system")
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  revertedAt              DateTime?
+  financeOrders           FinanceOrder[]
+
+  @@index([month, status])
 }
 
 model FinanceSummary {

@@ -78,6 +78,8 @@ export type DashboardData = {
 };
 
 export type ImportResult = {
+  batchId?: number;
+  batchNo?: string;
   fileName: string;
   sheetName: string;
   month: string;
@@ -86,6 +88,29 @@ export type ImportResult = {
   serviceOrders: number;
   logisticsOrders: number;
   audit?: ImportAudit;
+};
+
+export type ImportPreviewResult = ImportResult & {
+  totalReceivable: number;
+  totalPayable: number;
+  totalGrossProfit: number;
+  grossProfitRate: number | null;
+  riskOrderCount: number;
+  abnormalHighProfitOrderCount: number;
+  pendingSupervisorConfirmCount: number;
+  sampleOrders: Array<{
+    orderNo: string;
+    customerOrderNo?: string | null;
+    businessType: string;
+    salespersonName: string;
+    customerServiceName?: string | null;
+    receivable: number;
+    payable: number;
+    grossProfit: number;
+    grossProfitRate: number | null;
+    needSupervisorConfirm: boolean;
+  }>;
+  writeMode: string;
 };
 
 export type ImportTemplateResult = {
