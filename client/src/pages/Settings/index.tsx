@@ -8,6 +8,7 @@ import {
   rollbackImportBatch,
   updateParameterRule
 } from "../../api/finance.api";
+import { getMonthCloseStatus, lockMonth, unlockMonth, type MonthCloseStatus } from "../../api/workflow.api";
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { AuthContext, ImportBatch, ParameterRule } from "../../types/finance.types";
@@ -39,15 +40,20 @@ export default function Settings() {
   const [currentRole, setCurrentRole] = useState(() => localStorage.getItem(roleStorageKey) || "admin");
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [rules, setRules] = useState<ParameterRule[]>([]);
+  const [monthClose, setMonthClose] = useState<MonthCloseStatus | null>(null);
   const [ruleDrafts, setRuleDrafts] = useState<RuleDraft>({});
   const [loading, setLoading] = useState(false);
   const [rulesLoading, setRulesLoading] = useState(false);
+  const [closeLoading, setCloseLoading] = useState(false);
+  const [closeNote, setCloseNote] = useState("");
   const [savingRuleKey, setSavingRuleKey] = useState<string | null>(null);
   const [rollingBackId, setRollingBackId] = useState<number | null>(null);
 
   const permissions = useMemo(() => new Set(auth?.permissions ?? []), [auth]);
   const canWriteRules = permissions.has("rules:write");
   const canRollback = permissions.has("finance:rollback");
+  const canCloseMonth = permissions.has("finance:close");
+  const isMonthLocked = monthClose?.status === "locked";
 
   const loadAuth = useCallback(async () => {
     const res = await getAuthContext();
@@ -83,6 +89,16 @@ export default function Settings() {
     }
   }, []);
 
+  const loadMonthClose = useCallback(async () => {
+    try {
+      const res = await getMonthCloseStatus(selectedMonth);
+      setMonthClose(res.data);
+      setCloseNote(res.data.closeNote ?? "");
+    } catch {
+      message.error("月度锁账状态加载失败，请确认后端服务可用");
+    }
+  }, [selectedMonth]);
+
   useEffect(() => {
     loadAuth().catch(() => message.error("角色权限加载失败"));
   }, [loadAuth, currentRole]);
@@ -95,6 +111,10 @@ export default function Settings() {
     loadRules();
   }, [loadRules]);
 
+  useEffect(() => {
+    loadMonthClose();
+  }, [loadMonthClose]);
+
   const changeRole = (role: string) => {
     localStorage.setItem(roleStorageKey, role);
     setCurrentRole(role);
@@ -102,6 +122,10 @@ export default function Settings() {
   };
 
   const rollback = async (id: number) => {
+    if (isMonthLocked) {
+      message.warning(`${selectedMonth} 已锁账，不能回滚导入批次`);
+      return;
+    }
     setRollingBackId(id);
     try {
       await rollbackImportBatch(id);
@@ -111,6 +135,24 @@ export default function Settings() {
       message.error("批次回滚失败，请检查角色权限或批次状态");
     } finally {
       setRollingBackId(null);
+    }
+  };
+
+  const changeMonthClose = async (action: "lock" | "unlock") => {
+    setCloseLoading(true);
+    try {
+      if (action === "lock") {
+        await lockMonth(selectedMonth, closeNote || "月度财务复核完成，锁定本月数据");
+        message.success(`${selectedMonth} 已锁账，导入和回滚已禁止`);
+      } else {
+        await unlockMonth(selectedMonth, closeNote || "主管解锁，允许补充调整");
+        message.success(`${selectedMonth} 已解锁`);
+      }
+      await Promise.all([loadMonthClose(), loadBatches()]);
+    } catch {
+      message.error("月度锁账操作失败，请检查角色权限或后端服务");
+    } finally {
+      setCloseLoading(false);
     }
   };
 
@@ -166,7 +208,7 @@ export default function Settings() {
           disabled={row.status !== "active" || !canRollback}
           onConfirm={() => rollback(row.id)}
         >
-          <Button danger size="small" disabled={row.status !== "active" || !canRollback} loading={rollingBackId === row.id}>
+          <Button danger size="small" disabled={row.status !== "active" || !canRollback || isMonthLocked} loading={rollingBackId === row.id}>
             回滚
           </Button>
         </Popconfirm>
@@ -277,6 +319,57 @@ export default function Settings() {
           </Descriptions>
         </Card>
 
+        <Card title={`月度锁账控制（${selectedMonth}）`}>
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Space wrap>
+              <span>当前状态</span>
+              <Tag color={isMonthLocked ? "red" : "green"}>{isMonthLocked ? "已锁账" : "未锁账"}</Tag>
+              {monthClose?.lockedAt && <span>锁账时间：{String(monthClose.lockedAt).replace("T", " ").slice(0, 19)}</span>}
+              {monthClose?.lockedBy && <span>锁账人：{monthClose.lockedBy}</span>}
+            </Space>
+            <Input.TextArea
+              value={closeNote}
+              onChange={(event) => setCloseNote(event.target.value)}
+              placeholder="填写锁账或解锁原因，后端会写入操作日志"
+              autoSize={{ minRows: 2, maxRows: 4 }}
+              disabled={!canCloseMonth}
+            />
+            <Space wrap>
+              <Popconfirm
+                title="确认锁定该月份？"
+                description="锁账后，该月份 Excel 导入和导入批次回滚都会被后端拒绝。"
+                okText="确认锁账"
+                cancelText="取消"
+                disabled={!canCloseMonth || isMonthLocked}
+                onConfirm={() => changeMonthClose("lock")}
+              >
+                <Button type="primary" danger disabled={!canCloseMonth || isMonthLocked} loading={closeLoading}>
+                  锁定本月
+                </Button>
+              </Popconfirm>
+              <Popconfirm
+                title="确认解锁该月份？"
+                description="解锁后可以重新导入或回滚，请确保已记录原因。"
+                okText="确认解锁"
+                cancelText="取消"
+                disabled={!canCloseMonth || !isMonthLocked}
+                onConfirm={() => changeMonthClose("unlock")}
+              >
+                <Button disabled={!canCloseMonth || !isMonthLocked} loading={closeLoading}>
+                  解锁本月
+                </Button>
+              </Popconfirm>
+              <Button onClick={loadMonthClose}>刷新状态</Button>
+            </Space>
+            <Alert
+              type={isMonthLocked ? "warning" : "info"}
+              showIcon
+              message={isMonthLocked ? "本月已锁账" : "本月未锁账"}
+              description={isMonthLocked ? "锁账状态由后端强制执行，导入 Excel 和回滚导入批次都会被拒绝。" : "月度复核、提成确认和签名完成后，建议主管锁账，防止历史数据被覆盖。"}
+            />
+          </Space>
+        </Card>
+
         <Card title="数据库参数规则" extra={<Button onClick={loadRules} loading={rulesLoading}>刷新规则</Button>}>
           <Alert
             type="warning"
@@ -301,7 +394,7 @@ export default function Settings() {
             showIcon
             style={{ marginBottom: 12 }}
             message="Excel 导入已具备可追溯批次"
-            description={canRollback ? "当前角色可以回滚生效批次。回滚会删除该批次订单和派生记录，并重新计算汇总。" : "当前角色只能查看批次，不能回滚。"}
+            description={isMonthLocked ? "当前月份已锁账，不能回滚批次。如需调整，请先由主管解锁。" : canRollback ? "当前角色可以回滚生效批次。回滚会删除该批次订单和派生记录，并重新计算汇总。" : "当前角色只能查看批次，不能回滚。"}
           />
           <Table
             rowKey="id"

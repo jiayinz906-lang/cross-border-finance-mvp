@@ -557,6 +557,13 @@ function batchNo(month: string) {
   return `IMP-${month.replace("-", "")}-${Date.now()}`;
 }
 
+async function assertMonthOpen(month: string, action: string) {
+  const close = await prisma.monthClose.findUnique({ where: { month } });
+  if (close?.status === "locked") {
+    throw new Error(`${month} 已锁账，不能${action}。如需调整，请先由主管解锁并记录原因。`);
+  }
+}
+
 async function rebuildFinanceSummary(month: string) {
   const rules = await loadImportRules();
   const orders = await prisma.financeOrder.findMany({ where: { month } });
@@ -724,6 +731,7 @@ export const excelService = {
 
   async importWorkbook(buffer: Buffer, originalName: string) {
     const parsed = await parseWorkbook(buffer, originalName);
+    await assertMonthOpen(parsed.month, "重新导入 Excel");
     const batchNumber = batchNo(parsed.month);
 
     const batch = await prisma.importBatch.create({
@@ -859,6 +867,7 @@ export const excelService = {
     const batch = await prisma.importBatch.findUnique({ where: { id } });
     if (!batch) throw new Error("导入批次不存在。");
     if (batch.status === "reverted") throw new Error("导入批次已回滚。");
+    await assertMonthOpen(batch.month, "回滚导入批次");
 
     await prisma.serviceBusinessRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
     await prisma.costAdjustment.deleteMany({ where: { financeOrder: { importBatchId: id } } });

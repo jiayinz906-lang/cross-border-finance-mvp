@@ -82,3 +82,21 @@ export async function actionLogsController(req: Request, res: Response) {
     rows: await workflowService.actionLogs(req.query.entityType as string | undefined, req.query.entityId as string | undefined)
   });
 }
+
+export async function monthCloseStatusController(req: Request, res: Response) {
+  res.json(await workflowService.monthCloseStatus(month(req)));
+}
+
+export async function lockMonthController(req: Request, res: Response) {
+  res.json(await workflowService.lockMonth(month(req), {
+    operator: req.body?.operator ?? currentRole(req),
+    note: req.body?.note
+  }));
+}
+
+export async function unlockMonthController(req: Request, res: Response) {
+  res.json(await workflowService.unlockMonth(month(req), {
+    operator: req.body?.operator ?? currentRole(req),
+    note: req.body?.note
+  }));
+}

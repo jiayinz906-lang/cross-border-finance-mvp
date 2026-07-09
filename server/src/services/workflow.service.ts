@@ -507,5 +507,80 @@ startxref
       orderBy: { id: "desc" },
       take: 100
     });
+  },
+
+  async monthCloseStatus(month?: string) {
+    const selectedMonth = monthOrDefault(month);
+    const close = await prisma.monthClose.findUnique({ where: { month: selectedMonth } });
+    return close ?? {
+      id: null,
+      month: selectedMonth,
+      status: "open",
+      lockedBy: null,
+      lockedAt: null,
+      unlockedBy: null,
+      unlockedAt: null,
+      closeNote: null
+    };
+  },
+
+  async lockMonth(month?: string, input: { operator?: string; note?: string } = {}) {
+    const selectedMonth = monthOrDefault(month);
+    const operator = input.operator || "主管";
+    const close = await prisma.monthClose.upsert({
+      where: { month: selectedMonth },
+      update: {
+        status: "locked",
+        lockedBy: operator,
+        lockedAt: new Date(),
+        closeNote: input.note,
+        unlockedBy: null,
+        unlockedAt: null
+      },
+      create: {
+        month: selectedMonth,
+        status: "locked",
+        lockedBy: operator,
+        lockedAt: new Date(),
+        closeNote: input.note
+      }
+    });
+    await logAction({
+      month: selectedMonth,
+      entityType: "month_close",
+      entityId: selectedMonth,
+      action: "lock_month",
+      payload: { operator, note: input.note }
+    });
+    return close;
+  },
+
+  async unlockMonth(month?: string, input: { operator?: string; note?: string } = {}) {
+    const selectedMonth = monthOrDefault(month);
+    const operator = input.operator || "主管";
+    const close = await prisma.monthClose.upsert({
+      where: { month: selectedMonth },
+      update: {
+        status: "open",
+        unlockedBy: operator,
+        unlockedAt: new Date(),
+        closeNote: input.note
+      },
+      create: {
+        month: selectedMonth,
+        status: "open",
+        unlockedBy: operator,
+        unlockedAt: new Date(),
+        closeNote: input.note
+      }
+    });
+    await logAction({
+      month: selectedMonth,
+      entityType: "month_close",
+      entityId: selectedMonth,
+      action: "unlock_month",
+      payload: { operator, note: input.note }
+    });
+    return close;
   }
 };

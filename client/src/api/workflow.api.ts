@@ -19,6 +19,17 @@ export type ConfirmationDocument = {
   payloadJson?: string | null;
 };
 
+export type MonthCloseStatus = {
+  id: number | null;
+  month: string;
+  status: "open" | "locked" | string;
+  lockedBy?: string | null;
+  lockedAt?: string | null;
+  unlockedBy?: string | null;
+  unlockedAt?: string | null;
+  closeNote?: string | null;
+};
+
 export function getDocuments(month = "2026-06", documentType?: string) {
   return request.get("/workflow/documents", { params: { month, documentType } });
 }
@@ -65,4 +76,16 @@ export function confirmServiceRecord(id: number, finalCommission: number) {
 
 export function confirmSalespersonCommission(salespersonName: string, month = "2026-06", manualRate?: number) {
   return request.post(`/workflow/commissions/${encodeURIComponent(salespersonName)}/confirm`, { month, manualRate });
+}
+
+export function getMonthCloseStatus(month = "2026-06") {
+  return request.get("/workflow/month-close", { params: { month } });
+}
+
+export function lockMonth(month = "2026-06", note?: string) {
+  return request.post("/workflow/month-close/lock", { month, note, operator: "主管" });
+}
+
+export function unlockMonth(month = "2026-06", note?: string) {
+  return request.post("/workflow/month-close/unlock", { month, note, operator: "主管" });
 }

@@ -48,6 +48,11 @@ async function verifyImport(checks: Check[]) {
     throw new Error(`Verification Excel not found: ${excelPath}`);
   }
 
+  await workflowService.unlockMonth("2026-06", {
+    operator: "verify-import",
+    note: "Ensure verification month is open before import test"
+  });
+
   const buffer = fs.readFileSync(excelPath);
   const fileName = path.basename(excelPath);
   const preview = await excelService.previewWorkbook(buffer, fileName);
@@ -89,11 +94,17 @@ async function verifyImport(checks: Check[]) {
   assertCheck(checks, "Summary payable matches orders", closeEnough(summary?.totalPayable ?? 0, orderPayable), `${summary?.totalPayable} / ${orderPayable}`);
   assertCheck(checks, "Summary profit matches orders", closeEnough(summary?.totalGrossProfit ?? 0, orderProfit), `${summary?.totalGrossProfit} / ${orderProfit}`);
 
-  return imported.month;
+  return {
+    month: imported.month,
+    buffer,
+    fileName,
+    batchId: imported.batchId!
+  };
 }
 
 async function verifyRbac(checks: Check[]) {
   assertCheck(checks, "Admin can rollback", can("admin", "finance:rollback"));
+  assertCheck(checks, "Supervisor can close month", can("supervisor", "finance:close"));
   assertCheck(checks, "Sales cannot rollback", !can("sales", "finance:rollback"));
   assertCheck(checks, "Finance can import", can("finance", "finance:import"));
   assertCheck(checks, "Executive cannot write rules", !can("executive", "rules:write"));
@@ -127,11 +138,45 @@ async function verifySignature(checks: Check[], month: string) {
   assertCheck(checks, "Supervisor evidence stored", evidence?.supervisor?.role === "supervisor", JSON.stringify(evidence));
 }
 
+async function verifyMonthClose(
+  checks: Check[],
+  input: { month: string; buffer: Buffer; fileName: string; batchId: number }
+) {
+  const locked = await workflowService.lockMonth(input.month, {
+    operator: "verify-import",
+    note: "Lock month for verification"
+  });
+  assertCheck(checks, "Month close locks month", locked.status === "locked", locked.status);
+
+  let importBlocked = false;
+  try {
+    await excelService.importWorkbook(input.buffer, input.fileName);
+  } catch (error) {
+    importBlocked = String((error as Error).message).includes("已锁账");
+  }
+  assertCheck(checks, "Locked month blocks Excel import", importBlocked);
+
+  let rollbackBlocked = false;
+  try {
+    await excelService.rollbackImportBatch(input.batchId);
+  } catch (error) {
+    rollbackBlocked = String((error as Error).message).includes("已锁账");
+  }
+  assertCheck(checks, "Locked month blocks import rollback", rollbackBlocked);
+
+  const unlocked = await workflowService.unlockMonth(input.month, {
+    operator: "verify-import",
+    note: "Unlock month after verification"
+  });
+  assertCheck(checks, "Month close unlocks month", unlocked.status === "open", unlocked.status);
+}
+
 async function main() {
   const checks: Check[] = [];
-  const month = await verifyImport(checks);
+  const imported = await verifyImport(checks);
   await verifyRbac(checks);
-  await verifySignature(checks, month);
+  await verifySignature(checks, imported.month);
+  await verifyMonthClose(checks, imported);
 
   const failed = checks.filter((check) => !check.pass);
   for (const check of checks) {
