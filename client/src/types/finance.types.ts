@@ -48,6 +48,8 @@ export type BusinessSummary = {
   grossProfit: number;
   logisticsProfit: number;
   grossProfitRate: number | null;
+  momGrossProfitChange: number | null;
+  yoyGrossProfitChange: number | null;
 };
 
 export type MonthlyTrend = {

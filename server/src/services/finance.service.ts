@@ -95,6 +95,14 @@ function previousYearMonth(month: string): string {
   return `${year - 1}-${String(monthNumber).padStart(2, "0")}`;
 }
 
+function grossProfitByBusinessType(orders: Array<{ businessType: string; adjustedGrossProfit: number }>) {
+  const map = new Map<string, number>();
+  for (const order of orders) {
+    map.set(order.businessType, (map.get(order.businessType) ?? 0) + order.adjustedGrossProfit);
+  }
+  return map;
+}
+
 export const financeService = {
   async listLedger(month?: string) {
     const selectedMonth = month ?? (await financeRepository.getLatestSummary())?.month;
@@ -343,10 +351,14 @@ export const financeService = {
     const selected = selectedMonth ? summaries.find((item) => item.month === selectedMonth) : summaries.at(-1);
     const previous = selectedMonth ? summaries.find((item) => item.month === previousMonth(selectedMonth)) : undefined;
     const previousYear = selectedMonth ? summaries.find((item) => item.month === previousYearMonth(selectedMonth)) : undefined;
-    const [previousOrderCount, previousYearOrderCount] = await Promise.all([
+    const [previousOrderCount, previousYearOrderCount, previousOrders, previousYearOrders] = await Promise.all([
       selectedMonth ? prisma.financeOrder.count({ where: { month: previousMonth(selectedMonth) } }) : Promise.resolve(0),
-      selectedMonth ? prisma.financeOrder.count({ where: { month: previousYearMonth(selectedMonth) } }) : Promise.resolve(0)
+      selectedMonth ? prisma.financeOrder.count({ where: { month: previousYearMonth(selectedMonth) } }) : Promise.resolve(0),
+      selectedMonth ? financeRepository.listOrders(previousMonth(selectedMonth)) : Promise.resolve([]),
+      selectedMonth ? financeRepository.listOrders(previousYearMonth(selectedMonth)) : Promise.resolve([])
     ]);
+    const previousBusinessProfit = grossProfitByBusinessType(previousOrders);
+    const previousYearBusinessProfit = grossProfitByBusinessType(previousYearOrders);
 
     return {
       summary,
@@ -358,7 +370,9 @@ export const financeService = {
       businessSummary: Array.from(businessMap.values())
         .map((item) => ({
           ...item,
-          grossProfitRate: safeRate(item.grossProfit, item.receivable)
+          grossProfitRate: safeRate(item.grossProfit, item.receivable),
+          momGrossProfitChange: percentChange(item.grossProfit, previousBusinessProfit.get(item.businessType) ?? 0),
+          yoyGrossProfitChange: percentChange(item.grossProfit, previousYearBusinessProfit.get(item.businessType) ?? 0)
         }))
         .sort((a, b) => b.grossProfit - a.grossProfit),
       salespersonSummary: Array.from(salespersonMap.values())

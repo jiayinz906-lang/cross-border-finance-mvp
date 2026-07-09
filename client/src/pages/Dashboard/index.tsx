@@ -160,8 +160,20 @@ const businessColumns: ColumnsType<BusinessSummary> = [
   { title: "本月应收", dataIndex: "receivable", render: toMoney },
   { title: "本月毛利", dataIndex: "grossProfit", render: toMoney },
   { title: "本月毛利率", dataIndex: "grossProfitRate", render: formatPercent },
-  { title: "环比毛利变化", render: (_, row) => <span className={row.grossProfit >= 0 ? "up" : "down"}>↑ {formatPercent(Math.min(Math.abs(row.grossProfitRate ?? 0), 0.3))}</span> },
-  { title: "同比毛利变化", render: (_, row) => <span className="up">↑ {formatPercent(Math.min(Math.abs(row.grossProfitRate ?? 0) + 0.02, 0.35))}</span> }
+  {
+    title: "环比毛利变化",
+    dataIndex: "momGrossProfitChange",
+    render: (value) => typeof value === "number"
+      ? <span className={value >= 0 ? "up" : "down"}>{pct(value)}</span>
+      : "--"
+  },
+  {
+    title: "同比毛利变化",
+    dataIndex: "yoyGrossProfitChange",
+    render: (value) => typeof value === "number"
+      ? <span className={value >= 0 ? "up" : "down"}>{pct(value)}</span>
+      : "--"
+  }
 ];
 
 const rankingColumns: ColumnsType<RankingRow> = [
