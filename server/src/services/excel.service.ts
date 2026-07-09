@@ -246,6 +246,11 @@ function normalizeHeader(value: CellValue) {
   return text(value).replace(/\s+/g, "");
 }
 
+function normalizeUploadFileName(value: string) {
+  const decoded = Buffer.from(value, "latin1").toString("utf8");
+  return decoded.includes("�") ? value : decoded;
+}
+
 function extractHeaders(workbook: XLSX.WorkBook): { sheetName: string; headerRowIndex: number; headers: string[] } {
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
@@ -286,17 +291,18 @@ export const excelService = {
   async saveImportTemplate(buffer: Buffer, originalName: string) {
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
     const detail = extractHeaders(workbook);
+    const fileName = normalizeUploadFileName(originalName);
     const template = await prisma.excelImportTemplate.upsert({
       where: { templateKey },
       update: {
-        fileName: originalName,
+        fileName,
         sheetName: detail.sheetName,
         headerRowIndex: detail.headerRowIndex,
         headersJson: JSON.stringify(detail.headers)
       },
       create: {
         templateKey,
-        fileName: originalName,
+        fileName,
         sheetName: detail.sheetName,
         headerRowIndex: detail.headerRowIndex,
         headersJson: JSON.stringify(detail.headers)
@@ -316,6 +322,7 @@ export const excelService = {
 
   async importWorkbook(buffer: Buffer, originalName: string) {
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+    const fileName = normalizeUploadFileName(originalName);
     const { sheetName, headers, rows } = findDetailSheet(workbook);
     await validateHeaders(headers);
     if (!rows.length) {
@@ -437,7 +444,7 @@ export const excelService = {
     });
 
     return {
-      fileName: originalName,
+      fileName,
       sheetName,
       month,
       importedRows: rows.length,
