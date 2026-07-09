@@ -79,6 +79,17 @@ export type SupplierPayableSummary = {
   ratio: number;
 };
 
+export type CustomerProfitSummary = {
+  customerName: string;
+  orderCount: number;
+  receivable: number;
+  payable: number;
+  grossProfit: number;
+  grossProfitRate: number | null;
+  receivableRatio: number;
+  profitRatio: number;
+};
+
 export type RiskOverview = {
   highRiskCount: number;
   mediumRiskCount: number;
@@ -102,6 +113,7 @@ export type DashboardData = {
   businessSummary: BusinessSummary[];
   salespersonSummary: SalespersonSummary[];
   supplierPayableSummary: SupplierPayableSummary[];
+  customerProfitSummary: CustomerProfitSummary[];
   riskOverview: RiskOverview;
   monthlyTrend: MonthlyTrend[];
   comparison: {

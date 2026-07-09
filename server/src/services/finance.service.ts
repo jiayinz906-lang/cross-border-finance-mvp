@@ -214,6 +214,16 @@ export const financeService = {
       outstanding: number;
       ratio: number;
     }>();
+    const customerMap = new Map<string, {
+      customerName: string;
+      orderCount: number;
+      receivable: number;
+      payable: number;
+      grossProfit: number;
+      grossProfitRate: number | null;
+      receivableRatio: number;
+      profitRatio: number;
+    }>();
     const commissionBySalesperson = new Map<string, number>();
     const signatureByOwner = new Map(confirmationDocuments.map((document) => [document.ownerName, document]));
 
@@ -255,6 +265,24 @@ export const financeService = {
         salesperson.grossProfit += order.adjustedGrossProfit;
         salesperson.highRiskOrderCount += order.needSupervisorConfirm || (order.adjustedGrossProfitRate ?? 1) < 0.1 ? 1 : 0;
         salespersonMap.set(order.salespersonName, salesperson);
+
+        const customerName = order.customerName || order.customerOrderNo || "待主管确认";
+        const customer = customerMap.get(customerName) ?? {
+          customerName,
+          orderCount: 0,
+          receivable: 0,
+          payable: 0,
+          grossProfit: 0,
+          grossProfitRate: null,
+          receivableRatio: 0,
+          profitRatio: 0
+        };
+        customer.orderCount += 1;
+        customer.receivable += order.adjustedReceivable;
+        customer.payable += order.adjustedPayable;
+        customer.grossProfit += order.adjustedGrossProfit;
+        customer.grossProfitRate = safeRate(customer.grossProfit, customer.receivable);
+        customerMap.set(customerName, customer);
       }
 
       const supplierName = order.supplierName || "未指定供应商";
@@ -297,6 +325,15 @@ export const financeService = {
       reviewedRiskCount: risks.filter((risk) => risk.status === "reviewed").length,
       topRiskReason: risks[0]?.riskReasons ?? null
     };
+    const logisticsReceivable = logisticsOrders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
+    const logisticsGrossProfit = logisticsOrders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
+    const customerProfitSummary = Array.from(customerMap.values())
+      .map((item) => ({
+        ...item,
+        receivableRatio: safeRate(item.receivable, logisticsReceivable) ?? 0,
+        profitRatio: safeRate(item.grossProfit, logisticsGrossProfit) ?? 0
+      }))
+      .sort((a, b) => b.grossProfit - a.grossProfit);
 
     const selected = selectedMonth ? summaries.find((item) => item.month === selectedMonth) : summaries.at(-1);
     const previous = selectedMonth ? summaries.find((item) => item.month === previousMonth(selectedMonth)) : undefined;
@@ -324,6 +361,7 @@ export const financeService = {
           ratio: safeRate(item.payable, totalPayable) ?? 0
         }))
         .sort((a, b) => b.payable - a.payable),
+      customerProfitSummary,
       riskOverview,
       monthlyTrend: summaries.map((item) => ({
         month: item.month,

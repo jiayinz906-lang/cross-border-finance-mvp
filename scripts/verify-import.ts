@@ -108,6 +108,7 @@ async function verifyImport(checks: Check[]) {
   const dashboard = await financeService.getDashboard(imported.month);
   assertCheck(checks, "Dashboard salesperson summary generated", dashboard.salespersonSummary.length > 0, String(dashboard.salespersonSummary.length));
   assertCheck(checks, "Dashboard supplier payable summary generated", dashboard.supplierPayableSummary.length > 0, String(dashboard.supplierPayableSummary.length));
+  assertCheck(checks, "Dashboard customer profit summary generated", dashboard.customerProfitSummary.length > 0, String(dashboard.customerProfitSummary.length));
   assertCheck(checks, "Dashboard risk overview generated", dashboard.riskOverview.openRiskCount >= 0 && dashboard.riskOverview.highRiskCount >= 0, JSON.stringify(dashboard.riskOverview));
 
   return {

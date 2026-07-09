@@ -101,9 +101,9 @@ function TrendPanel({ data }: { data: MonthlyTrend[] }) {
   );
 }
 
-function CustomerDonut({ companyProfit, personalProfit }: { companyProfit: number; personalProfit: number }) {
-  const total = Math.max(companyProfit + personalProfit, 1);
-  const companyPercent = companyProfit / total;
+function CustomerDonut({ topProfit, otherProfit }: { topProfit: number; otherProfit: number }) {
+  const total = Math.max(topProfit + otherProfit, 1);
+  const topPercent = topProfit / total;
   const circumference = 2 * Math.PI * 48;
 
   return (
@@ -117,7 +117,7 @@ function CustomerDonut({ companyProfit, personalProfit }: { companyProfit: numbe
           stroke="#4073df"
           strokeWidth="22"
           fill="none"
-          strokeDasharray={`${companyPercent * circumference} ${(1 - companyPercent) * circumference}`}
+          strokeDasharray={`${topPercent * circumference} ${(1 - topPercent) * circumference}`}
           transform="rotate(-90 70 70)"
         />
         <circle
@@ -127,14 +127,14 @@ function CustomerDonut({ companyProfit, personalProfit }: { companyProfit: numbe
           stroke="#45c58d"
           strokeWidth="22"
           fill="none"
-          strokeDasharray={`${(1 - companyPercent) * circumference} ${companyPercent * circumference}`}
-          strokeDashoffset={-companyPercent * circumference}
+          strokeDasharray={`${(1 - topPercent) * circumference} ${topPercent * circumference}`}
+          strokeDashoffset={-topPercent * circumference}
           transform="rotate(-90 70 70)"
         />
       </svg>
       <div className="overview-donut-notes">
-        <div><i className="legend-blue" />公司客户 <b>{formatPercent(companyPercent)}</b><span>{toMoney(companyProfit)}</span></div>
-        <div><i className="legend-green" />个人客户 <b>{formatPercent(1 - companyPercent)}</b><span>{toMoney(personalProfit)}</span></div>
+        <div><i className="legend-blue" />TOP客户 <b>{formatPercent(topPercent)}</b><span>{toMoney(topProfit)}</span></div>
+        <div><i className="legend-green" />其余客户 <b>{formatPercent(1 - topPercent)}</b><span>{toMoney(otherProfit)}</span></div>
       </div>
     </div>
   );
@@ -221,9 +221,11 @@ export default function Dashboard() {
 
   const summary = data?.summary;
   const businessRows = data?.businessSummary ?? [];
-  const serviceRows = businessRows.filter((item) => item.logisticsProfit === 0);
   const rankingRows: RankingRow[] = (data?.salespersonSummary ?? []).slice(0, 5);
   const supplierRows = (data?.supplierPayableSummary ?? []).slice(0, 3);
+  const customerRows = data?.customerProfitSummary ?? [];
+  const topReceivableCustomer = [...customerRows].sort((a, b) => b.receivable - a.receivable)[0];
+  const topProfitCustomer = customerRows[0];
 
   const totalReceivable = summary?.totalReceivable ?? 0;
   const totalPayable = summary?.totalPayable ?? 0;
@@ -233,9 +235,9 @@ export default function Dashboard() {
   const riskCount = summary?.riskOrderCount ?? 0;
   const riskOverview = data?.riskOverview;
   const trend = data?.monthlyTrend ?? [];
-  const companyProfit = serviceRows.reduce((sum, item) => sum + item.grossProfit, 0);
-  const personalProfit = Math.max(totalProfit - companyProfit, 0);
-  const topCustomer = businessRows[0];
+  const logisticsCustomerProfit = customerRows.reduce((sum, item) => sum + item.grossProfit, 0);
+  const topCustomerProfit = topProfitCustomer?.grossProfit ?? 0;
+  const otherCustomerProfit = Math.max(logisticsCustomerProfit - topCustomerProfit, 0);
   const unassignedSupplierPayable = supplierRows.find((item) => item.supplierName === "未指定供应商")?.payable ?? 0;
 
   const kpis: Kpi[] = [
@@ -283,14 +285,16 @@ export default function Dashboard() {
         </Card>
         <Card className="overview-card" title="客户利润概览" extra={<Button type="link" onClick={() => navigate("/customer-profit")}>查看更多</Button>}>
           <div className="customer-summary">
-            <CustomerDonut companyProfit={companyProfit} personalProfit={personalProfit} />
+            <CustomerDonut topProfit={topCustomerProfit} otherProfit={otherCustomerProfit} />
             <div className="customer-side-metrics">
-              <span>TOP 6 客户毛利</span>
-              <b>{toMoney(topCustomer?.grossProfit ?? 0)}</b>
-              <em>环比 <strong className="up">+23.65%</strong></em>
-              <em>同比 <strong className="up">+19.22%</strong></em>
-              <span>TOP 6 客户毛利占比</span>
-              <b>{formatPercent((topCustomer?.grossProfit ?? 0) / Math.max(totalProfit, 1))}</b>
+              <span>最大流水客户</span>
+              <b>{topReceivableCustomer?.customerName ?? "-"}</b>
+              <em>应收 <strong>{toMoney(topReceivableCustomer?.receivable ?? 0)}</strong></em>
+              <em>票数 <strong>{topReceivableCustomer?.orderCount ?? 0}票</strong></em>
+              <span>最高毛利客户</span>
+              <b>{topProfitCustomer?.customerName ?? "-"}</b>
+              <em>毛利 <strong>{toMoney(topProfitCustomer?.grossProfit ?? 0)}</strong></em>
+              <em>毛利占比 <strong>{formatPercent(topProfitCustomer?.profitRatio ?? 0)}</strong></em>
             </div>
           </div>
         </Card>
