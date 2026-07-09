@@ -1,7 +1,7 @@
-import { Button, Card, Modal, Space, Table, Tag, message } from "antd";
+import { Button, Card, InputNumber, Modal, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getCommissions } from "../../api/commissions.api";
+import { getCommissions, updateCommissionRate } from "../../api/commissions.api";
 import { getFinanceDashboard } from "../../api/finance.api";
 import { confirmSalespersonCommission, generateLogisticsDocuments, getDocuments } from "../../api/workflow.api";
 import { useSelectedMonth } from "../../contexts/MonthContext";
@@ -11,6 +11,7 @@ import { formatPercent } from "../../utils/formatPercent";
 
 type CommissionOrder = {
   orderNo: string;
+  customerOrderNo?: string | null;
   adjustedReceivable: number;
   adjustedGrossProfitRate: number | null;
   needSupervisorConfirm: boolean;
@@ -22,6 +23,7 @@ type CommissionRecord = {
   grossProfit: number;
   commissionRate: number;
   commissionAmount: number;
+  manualCommissionAmount?: number | null;
   confirmStatus: string;
   needSupervisorConfirm: boolean;
   financeOrder?: CommissionOrder;
@@ -61,6 +63,10 @@ function rateText(value?: number | null) {
   return typeof value === "number" ? `${(value * 100).toFixed(2)}%` : "-";
 }
 
+function effectiveCommissionAmount(row: CommissionRecord) {
+  return row.manualCommissionAmount ?? row.commissionAmount;
+}
+
 export default function Commission() {
   const { selectedMonth } = useSelectedMonth();
   const [records, setRecords] = useState<CommissionRecord[]>([]);
@@ -83,6 +89,10 @@ export default function Commission() {
       setLoading(false);
     }
   }, [selectedMonth]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleGenerateDocuments = async () => {
     const res = await generateLogisticsDocuments(selectedMonth);
@@ -115,9 +125,12 @@ export default function Commission() {
     message.success(document ? `${row.salespersonName} 确认单已生成` : "确认单已刷新");
   };
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  const handleDetailRateChange = async (row: CommissionRecord, percent?: number | null) => {
+    if (percent === null || percent === undefined || Number.isNaN(percent)) return;
+    await updateCommissionRate(row.id, percent / 100);
+    message.success(`${row.financeOrder?.orderNo ?? row.salespersonName} 提成比例已更新`);
+    await loadData();
+  };
 
   const summary = dashboard?.summary;
 
@@ -127,7 +140,7 @@ export default function Commission() {
       value: toPlainMoney(summary?.totalReceivable),
       accent: "blue",
       tag: "优化后",
-      note: "汇率缺失统一按 6.85 修正"
+      note: "按原始表格汇率口径计算"
     },
     {
       title: "调整后毛利",
@@ -187,7 +200,7 @@ export default function Commission() {
 
       current.orderCount += 1;
       current.grossProfit += item.grossProfit;
-      current.commissionAmount += item.commissionAmount;
+      current.commissionAmount += effectiveCommissionAmount(item);
       current.receivable += receivable;
       current.highRiskCount += isHighRisk ? 1 : 0;
       current.confirmStatus = current.confirmStatus === "pending" || item.confirmStatus !== "confirmed" ? "pending" : "confirmed";
@@ -203,6 +216,8 @@ export default function Commission() {
       .sort((a, b) => b.grossProfit - a.grossProfit);
   }, [records]);
 
+  const selectedRows = records.filter((item) => item.salespersonName === selectedSalesperson);
+
   const columns: ColumnsType<SalespersonCommission> = [
     { title: "销售代表", dataIndex: "salespersonName", fixed: "left", width: 130 },
     {
@@ -211,7 +226,7 @@ export default function Commission() {
       width: 90,
       render: (value: number, row) => (
         <Button type="link" className="commission-ticket-link" onClick={() => setSelectedSalesperson(row.salespersonName)}>
-          {value} 票 ▾
+          {value} 票 ▼
         </Button>
       )
     },
@@ -238,6 +253,36 @@ export default function Commission() {
           <Button size="small" onClick={() => handleGenerateOne(row)}>确认单</Button>
         </Space>
       )
+    }
+  ];
+
+  const detailColumns: ColumnsType<CommissionRecord> = [
+    { title: "单号", dataIndex: ["financeOrder", "orderNo"], width: 130 },
+    { title: "原始订单号", dataIndex: ["financeOrder", "customerOrderNo"], width: 160, render: (value) => value || "-" },
+    { title: "毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
+    {
+      title: "提成比例",
+      dataIndex: "commissionRate",
+      align: "right",
+      width: 150,
+      render: (value: number, row) => (
+        <InputNumber
+          min={0}
+          max={100}
+          precision={2}
+          defaultValue={Number(((value ?? 0) * 100).toFixed(2))}
+          addonAfter="%"
+          onPressEnter={(event) => handleDetailRateChange(row, Number((event.target as HTMLInputElement).value))}
+          onBlur={(event) => handleDetailRateChange(row, Number(event.target.value))}
+        />
+      )
+    },
+    { title: "提成金额", dataIndex: "commissionAmount", align: "right", render: (_, row) => toPlainMoney(effectiveCommissionAmount(row)) },
+    {
+      title: "状态",
+      dataIndex: "confirmStatus",
+      width: 100,
+      render: (status: string) => status === "confirmed" ? <Tag color="green">已确认</Tag> : <Tag color="gold">待确认</Tag>
     }
   ];
 
@@ -302,26 +347,16 @@ export default function Commission() {
         open={Boolean(selectedSalesperson)}
         title={`${selectedSalesperson ?? ""} 物流提成订单明细`}
         footer={<Button type="primary" onClick={() => setSelectedSalesperson(null)}>关闭</Button>}
-        width={860}
+        width={980}
         onCancel={() => setSelectedSalesperson(null)}
       >
         <Table
           rowKey="id"
           size="small"
           pagination={false}
-          dataSource={records.filter((item) => item.salespersonName === selectedSalesperson)}
-          columns={[
-            { title: "单号", dataIndex: ["financeOrder", "orderNo"], width: 140 },
-            { title: "毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
-            { title: "提成比例", dataIndex: "commissionRate", align: "right", render: rateText },
-            { title: "提成金额", dataIndex: "commissionAmount", align: "right", render: toPlainMoney },
-            {
-              title: "状态",
-              dataIndex: "confirmStatus",
-              width: 100,
-              render: (status: string) => status === "confirmed" ? <Tag color="green">已确认</Tag> : <Tag color="gold">待确认</Tag>
-            }
-          ]}
+          dataSource={selectedRows}
+          columns={detailColumns}
+          scroll={{ x: 880 }}
         />
       </Modal>
     </div>

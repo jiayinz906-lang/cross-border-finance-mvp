@@ -6,6 +6,21 @@ export const commissionService = {
     const selectedMonth = month ?? (await financeRepository.getLatestSummary())?.month;
     return commissionRepository.listCommissions(selectedMonth);
   },
+  async updateCommissionRate(id: number, commissionRate: number) {
+    if (!Number.isFinite(commissionRate) || commissionRate < 0 || commissionRate > 1) {
+      throw new Error("commissionRate must be between 0 and 1");
+    }
+
+    const record = await commissionRepository.getCommission(id);
+    if (!record) {
+      throw new Error("commission record not found");
+    }
+
+    const manualCommissionAmount = record.grossProfit * commissionRate;
+    const updated = await commissionRepository.updateCommissionRate(id, commissionRate, manualCommissionAmount);
+    const totalCommission = await commissionRepository.refreshMonthCommissionTotal(updated.financeOrder.month);
+    return { row: updated, totalCommission };
+  },
   todo: [
     "个人客户订单按毛利 15% 计算",
     "公司客户订单按毛利 10% 计算",

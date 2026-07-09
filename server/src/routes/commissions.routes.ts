@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { commissionsController } from "../controllers/commissions.controller.js";
+import { commissionsController, updateCommissionRateController } from "../controllers/commissions.controller.js";
 
 export const commissionsRoutes = Router();
 
 commissionsRoutes.get("/", commissionsController);
+commissionsRoutes.patch("/:id/rate", updateCommissionRateController);
