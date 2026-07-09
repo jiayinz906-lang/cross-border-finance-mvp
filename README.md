@@ -41,6 +41,12 @@ pnpm dev
 默认读取桌面文件 `2026.6月系统运单明细.xlsx`。也可以用 `IMPORT_VERIFY_FILE` 指定其他 Excel。
 
 ```powershell
+pnpm verify:all
+```
+
+如只想单独验证某一段，也可以运行：
+
+```powershell
 pnpm verify:import
 pnpm verify:ui
 ```
@@ -63,6 +69,7 @@ pnpm verify:ui
 ```powershell
 pnpm --filter cross-border-finance-server build
 pnpm --filter cross-border-finance-client build
+pnpm verify:all
 pnpm verify:import
 pnpm verify:ui
 pnpm prisma:deploy
@@ -110,7 +117,8 @@ docker run --rm -p 4000:4000 xjd-finance-ui
 - `client/`：前端应用
 - `server/`：后端 API
 - `prisma/`：数据库模型和种子数据
-- `scripts/verify-import.ts`：一键验收脚本
+- `scripts/verify-all.ts`：构建、导入验收和 UI 冒烟总验收脚本
+- `scripts/verify-import.ts`：Excel 导入和财务工作流验收脚本
 - `agents/finance/`：FP&A Analyst 规则
 - `docs/`：业务、API、部署和计算口径文档
 
