@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { currentRole } from "../middleware/rbac.middleware.js";
 import { workflowService } from "../services/workflow.service.js";
 
 function month(req: Request) {
@@ -23,8 +24,21 @@ export async function sendSignatureLinkController(req: Request, res: Response) {
   res.json(await workflowService.sendSignatureLink(Number(req.params.id)));
 }
 
+function evidence(req: Request, action: string) {
+  return {
+    action,
+    ip: req.ip || req.socket.remoteAddress,
+    userAgent: req.header("user-agent"),
+    role: currentRole(req)
+  };
+}
+
+export async function signByTokenController(req: Request, res: Response) {
+  res.json(await workflowService.signByToken(req.params.token, evidence(req, "employee_sign")));
+}
+
 export async function supervisorConfirmController(req: Request, res: Response) {
-  res.json(await workflowService.supervisorConfirm(Number(req.params.id)));
+  res.json(await workflowService.supervisorConfirm(Number(req.params.id), evidence(req, "supervisor_confirm")));
 }
 
 export async function voidDocumentController(req: Request, res: Response) {

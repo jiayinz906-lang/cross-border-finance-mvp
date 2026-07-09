@@ -205,6 +205,11 @@ model ConfirmationDocument {
   supervisorStatus    String    @default("pending")
   signatureToken      String?   @unique
   signatureUrl        String?
+  signatureTokenExpiresAt DateTime?
+  signerIp            String?
+  signerUserAgent     String?
+  signerRole          String?
+  signatureEvidenceJson String?
   signedAt            DateTime?
   confirmedAt         DateTime?
   voidedAt            DateTime?

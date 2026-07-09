@@ -10,6 +10,7 @@ import {
   listDocumentsController,
   markRiskReviewedController,
   sendSignatureLinkController,
+  signByTokenController,
   supervisorConfirmController,
   voidDocumentController
 } from "../controllers/workflow.controller.js";
@@ -20,6 +21,7 @@ workflowRoutes.get("/documents", listDocumentsController);
 workflowRoutes.post("/documents/logistics/generate", generateLogisticsDocumentsController);
 workflowRoutes.post("/documents/service/generate", generateServiceDocumentsController);
 workflowRoutes.post("/documents/:id/send-signature", sendSignatureLinkController);
+workflowRoutes.post("/signature/:token/sign", signByTokenController);
 workflowRoutes.post("/documents/:id/supervisor-confirm", supervisorConfirmController);
 workflowRoutes.post("/documents/:id/void", voidDocumentController);
 workflowRoutes.post("/exports", createExportJobController);

@@ -1,7 +1,13 @@
-import { prisma } from "../prisma/client.js";
 import * as XLSX from "xlsx";
+import { prisma } from "../prisma/client.js";
 
 type DocumentType = "logistics_commission" | "service_commission";
+type SignatureEvidenceInput = {
+  ip?: string;
+  userAgent?: string;
+  role?: string;
+  action?: string;
+};
 
 function monthOrDefault(month?: string) {
   return month ?? "2026-06";
@@ -34,6 +40,22 @@ function updatePayloadJson(
 
 function token(ownerName: string, documentType: string) {
   return Buffer.from(`${documentType}:${ownerName}:${Date.now()}`).toString("base64url");
+}
+
+function tokenExpiresAt() {
+  const date = new Date();
+  date.setDate(date.getDate() + 7);
+  return date;
+}
+
+function signatureEvidence(input: SignatureEvidenceInput) {
+  return {
+    action: input.action ?? "signature",
+    ip: input.ip ?? "unknown",
+    userAgent: input.userAgent ?? "unknown",
+    role: input.role ?? "unknown",
+    recordedAt: new Date().toISOString()
+  };
 }
 
 async function logAction(input: {
@@ -130,7 +152,7 @@ export const workflowService = {
           status: "待员工签名"
         },
         details: detailRows,
-        statement: "本人已核对以上业务提成明细，包括订单数量、毛利金额、提成比例、调整金额及最终提成金额。本人确认该数据真实无误，并同意提交作为本月提成确认依据。",
+        statement: "本人已核对以上业务提成明细，确认订单数量、毛利金额、提成比例、调整金额及最终提成金额真实无误。",
         signatureTrace: {
           employeeSignature: "待员工电子签名",
           signedAt: null,
@@ -153,6 +175,11 @@ export const workflowService = {
           supervisorStatus: "pending",
           signatureToken: null,
           signatureUrl: null,
+          signatureTokenExpiresAt: null,
+          signerIp: null,
+          signerUserAgent: null,
+          signerRole: null,
+          signatureEvidenceJson: null,
           signedAt: null,
           confirmedAt: null,
           voidedAt: null
@@ -229,6 +256,7 @@ export const workflowService = {
   async sendSignatureLink(id: number) {
     const signatureToken = token(String(id), "signature");
     const signatureUrl = `/signature/${signatureToken}`;
+    const expiresAt = tokenExpiresAt();
     const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
     const document = await prisma.confirmationDocument.update({
       where: { id },
@@ -236,46 +264,91 @@ export const workflowService = {
         sendStatus: "sent",
         signatureToken,
         signatureUrl,
+        signatureTokenExpiresAt: expiresAt,
         payloadJson: updatePayloadJson(current.payloadJson, (payload) => ({
           ...payload,
           signatureTrace: {
             ...(payload.signatureTrace ?? {}),
-            employeeSignature: "签名链接已发送，待员工电子签名"
+            employeeSignature: "签名链接已发送，待员工电子签名",
+            tokenExpiresAt: expiresAt.toISOString()
           }
         }))
       }
     });
-    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "send_signature_link" });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "send_signature_link", payload: { signatureUrl, expiresAt } });
     return document;
   },
 
-  async supervisorConfirm(id: number) {
+  async signByToken(signatureToken: string, evidence: SignatureEvidenceInput = {}) {
+    const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { signatureToken } });
+    if (!current.signatureTokenExpiresAt || current.signatureTokenExpiresAt < new Date()) {
+      throw new Error("签名链接已过期，请重新发送确认单。");
+    }
+    const signedAt = new Date();
+    const proof = signatureEvidence({ ...evidence, action: "employee_sign" });
+    const document = await prisma.confirmationDocument.update({
+      where: { id: current.id },
+      data: {
+        signatureStatus: "signed",
+        sendStatus: "sent",
+        signedAt,
+        signerIp: proof.ip,
+        signerUserAgent: proof.userAgent,
+        signerRole: proof.role,
+        signatureEvidenceJson: JSON.stringify(proof),
+        payloadJson: updatePayloadJson(current.payloadJson, (payload) => ({
+          ...payload,
+          summary: { ...(payload.summary ?? {}), status: "已员工签名，待主管确认" },
+          signatureTrace: {
+            ...(payload.signatureTrace ?? {}),
+            employeeSignature: "已电子签名",
+            signedAt: signedAt.toISOString(),
+            confirmIp: proof.ip,
+            deviceInfo: proof.userAgent,
+            signerRole: proof.role
+          }
+        }))
+      }
+    });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: document.id, action: "employee_sign", payload: proof });
+    return document;
+  },
+
+  async supervisorConfirm(id: number, evidence: SignatureEvidenceInput = {}) {
     const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
     const confirmedAt = new Date();
+    const proof = signatureEvidence({ ...evidence, action: "supervisor_confirm" });
     const document = await prisma.confirmationDocument.update({
       where: { id },
       data: {
         supervisorStatus: "confirmed",
         signatureStatus: "signed",
         sendStatus: "sent",
-        signedAt: confirmedAt,
+        signedAt: current.signedAt ?? confirmedAt,
         confirmedAt,
+        signerIp: current.signerIp ?? proof.ip,
+        signerUserAgent: current.signerUserAgent ?? proof.userAgent,
+        signerRole: current.signerRole ?? proof.role,
+        signatureEvidenceJson: JSON.stringify({
+          employee: current.signatureEvidenceJson ? JSON.parse(current.signatureEvidenceJson) : null,
+          supervisor: proof
+        }),
         payloadJson: updatePayloadJson(current.payloadJson, (payload) => ({
           ...payload,
-          summary: {
-            ...(payload.summary ?? {}),
-            status: "已员工签名/主管确认"
-          },
+          summary: { ...(payload.summary ?? {}), status: "已员工签名/主管确认" },
           signatureTrace: {
             ...(payload.signatureTrace ?? {}),
             employeeSignature: "已电子签名",
-            signedAt: confirmedAt.toISOString(),
-            supervisorConfirm: "主管已确认"
+            signedAt: (current.signedAt ?? confirmedAt).toISOString(),
+            supervisorConfirm: "主管已确认",
+            supervisorIp: proof.ip,
+            supervisorDeviceInfo: proof.userAgent,
+            supervisorRole: proof.role
           }
         }))
       }
     });
-    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "supervisor_confirm" });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "supervisor_confirm", payload: proof });
     return document;
   },
 
@@ -290,10 +363,7 @@ export const workflowService = {
         voidedAt: new Date(),
         payloadJson: updatePayloadJson(current.payloadJson, (payload) => ({
           ...payload,
-          summary: {
-            ...(payload.summary ?? {}),
-            status: "已作废，待重新生成/重签"
-          },
+          summary: { ...(payload.summary ?? {}), status: "已作废，待重新生成/重签" },
           signatureTrace: {
             ...(payload.signatureTrace ?? {}),
             employeeSignature: "已作废，待重新签名",
