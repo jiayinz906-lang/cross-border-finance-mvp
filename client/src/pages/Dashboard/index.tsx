@@ -8,7 +8,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Card, Input, Modal, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getFinanceDashboard, getFinanceMonths } from "../../api/finance.api";
 import { monthlyReportExportUrl } from "../../api/workflow.api";
@@ -35,7 +35,7 @@ type RankingRow = {
   receivable: number;
   grossProfit: number;
   commission: number;
-  signed: boolean;
+  signatureStatus: string;
 };
 
 type MonthOption = {
@@ -50,6 +50,11 @@ function toMoney(value?: number | null) {
 
 function pct(value?: number | null) {
   return typeof value === "number" ? `${value > 0 ? "+" : ""}${formatPercent(value)}` : "--";
+}
+
+function pctPoint(value?: number | null) {
+  if (typeof value !== "number") return "--";
+  return `${value > 0 ? "+" : ""}${(value * 100).toFixed(2)}pct`;
 }
 
 function MetricCard({ item }: { item: Kpi }) {
@@ -101,9 +106,9 @@ function TrendPanel({ data }: { data: MonthlyTrend[] }) {
   );
 }
 
-function CustomerDonut({ companyProfit, personalProfit }: { companyProfit: number; personalProfit: number }) {
-  const total = Math.max(companyProfit + personalProfit, 1);
-  const companyPercent = companyProfit / total;
+function CustomerDonut({ topProfit, otherProfit }: { topProfit: number; otherProfit: number }) {
+  const total = Math.max(topProfit + otherProfit, 1);
+  const topPercent = topProfit / total;
   const circumference = 2 * Math.PI * 48;
 
   return (
@@ -117,7 +122,7 @@ function CustomerDonut({ companyProfit, personalProfit }: { companyProfit: numbe
           stroke="#4073df"
           strokeWidth="22"
           fill="none"
-          strokeDasharray={`${companyPercent * circumference} ${(1 - companyPercent) * circumference}`}
+          strokeDasharray={`${topPercent * circumference} ${(1 - topPercent) * circumference}`}
           transform="rotate(-90 70 70)"
         />
         <circle
@@ -127,25 +132,25 @@ function CustomerDonut({ companyProfit, personalProfit }: { companyProfit: numbe
           stroke="#45c58d"
           strokeWidth="22"
           fill="none"
-          strokeDasharray={`${(1 - companyPercent) * circumference} ${companyPercent * circumference}`}
-          strokeDashoffset={-companyPercent * circumference}
+          strokeDasharray={`${(1 - topPercent) * circumference} ${topPercent * circumference}`}
+          strokeDashoffset={-topPercent * circumference}
           transform="rotate(-90 70 70)"
         />
       </svg>
       <div className="overview-donut-notes">
-        <div><i className="legend-blue" />公司客户 <b>{formatPercent(companyPercent)}</b><span>{toMoney(companyProfit)}</span></div>
-        <div><i className="legend-green" />个人客户 <b>{formatPercent(1 - companyPercent)}</b><span>{toMoney(personalProfit)}</span></div>
+        <div><i className="legend-blue" />TOP客户 <b>{formatPercent(topPercent)}</b><span>{toMoney(topProfit)}</span></div>
+        <div><i className="legend-green" />其余客户 <b>{formatPercent(1 - topPercent)}</b><span>{toMoney(otherProfit)}</span></div>
       </div>
     </div>
   );
 }
 
-function riskItem(label: string, count: number, delta: string) {
+function riskItem(label: string, count: number, note: string) {
   return (
     <div className="risk-mini-item">
       <b>{count}票</b>
       <span>{label}</span>
-      <em>环比 {delta}</em>
+      <em>{note}</em>
     </div>
   );
 }
@@ -155,8 +160,20 @@ const businessColumns: ColumnsType<BusinessSummary> = [
   { title: "本月应收", dataIndex: "receivable", render: toMoney },
   { title: "本月毛利", dataIndex: "grossProfit", render: toMoney },
   { title: "本月毛利率", dataIndex: "grossProfitRate", render: formatPercent },
-  { title: "环比毛利变化", render: (_, row) => <span className={row.grossProfit >= 0 ? "up" : "down"}>↑ {formatPercent(Math.min(Math.abs(row.grossProfitRate ?? 0), 0.3))}</span> },
-  { title: "同比毛利变化", render: (_, row) => <span className="up">↑ {formatPercent(Math.min(Math.abs(row.grossProfitRate ?? 0) + 0.02, 0.35))}</span> }
+  {
+    title: "环比毛利变化",
+    dataIndex: "momGrossProfitChange",
+    render: (value) => typeof value === "number"
+      ? <span className={value >= 0 ? "up" : "down"}>{pct(value)}</span>
+      : "--"
+  },
+  {
+    title: "同比毛利变化",
+    dataIndex: "yoyGrossProfitChange",
+    render: (value) => typeof value === "number"
+      ? <span className={value >= 0 ? "up" : "down"}>{pct(value)}</span>
+      : "--"
+  }
 ];
 
 const rankingColumns: ColumnsType<RankingRow> = [
@@ -166,7 +183,20 @@ const rankingColumns: ColumnsType<RankingRow> = [
   { title: "应收金额", dataIndex: "receivable", render: toMoney },
   { title: "毛利金额", dataIndex: "grossProfit", render: toMoney },
   { title: "提成金额", dataIndex: "commission", render: toMoney },
-  { title: "签名状态", dataIndex: "signed", render: (signed) => <Tag color={signed ? "green" : "gold"}>{signed ? "已签名" : "待签名"}</Tag> }
+  {
+    title: "签名状态",
+    dataIndex: "signatureStatus",
+    render: (status) => {
+      const labels: Record<string, { color: string; text: string }> = {
+        confirmed: { color: "green", text: "主管确认" },
+        signed: { color: "cyan", text: "已签名" },
+        pending: { color: "gold", text: "待签名" },
+        not_generated: { color: "default", text: "未生成" }
+      };
+      const item = labels[String(status)] ?? { color: "default", text: String(status || "-") };
+      return <Tag color={item.color}>{item.text}</Tag>;
+    }
+  }
 ];
 
 export default function Dashboard() {
@@ -208,20 +238,11 @@ export default function Dashboard() {
 
   const summary = data?.summary;
   const businessRows = data?.businessSummary ?? [];
-  const logisticsRows = businessRows.filter((item) => item.logisticsProfit > 0);
-  const serviceRows = businessRows.filter((item) => item.logisticsProfit === 0);
-  const rankingRows = useMemo<RankingRow[]>(() => {
-    const source = logisticsRows.length ? logisticsRows : businessRows;
-    return source.slice(0, 5).map((item, index) => ({
-      rank: index + 1,
-      salespersonName: ["章佳洁", "蒋蕊", "王霄鱼", "杨伊雯", "朱卓然"][index] ?? item.businessType,
-      orderCount: item.orderCount,
-      receivable: item.receivable,
-      grossProfit: item.grossProfit,
-      commission: item.logisticsProfit * 0.15,
-      signed: index % 3 !== 2
-    }));
-  }, [businessRows, logisticsRows]);
+  const rankingRows: RankingRow[] = (data?.salespersonSummary ?? []).slice(0, 5);
+  const supplierRows = (data?.supplierPayableSummary ?? []).slice(0, 3);
+  const customerRows = data?.customerProfitSummary ?? [];
+  const topReceivableCustomer = [...customerRows].sort((a, b) => b.receivable - a.receivable)[0];
+  const topProfitCustomer = customerRows[0];
 
   const totalReceivable = summary?.totalReceivable ?? 0;
   const totalPayable = summary?.totalPayable ?? 0;
@@ -229,20 +250,21 @@ export default function Dashboard() {
   const grossRate = summary?.grossProfitRate ?? 0;
   const logisticsCommission = summary?.totalCommission ?? 0;
   const riskCount = summary?.riskOrderCount ?? 0;
+  const riskOverview = data?.riskOverview;
   const trend = data?.monthlyTrend ?? [];
-  const companyProfit = serviceRows.reduce((sum, item) => sum + item.grossProfit, 0);
-  const personalProfit = Math.max(totalProfit - companyProfit, 0);
-  const topCustomer = businessRows[0];
-  const topSupplierPayable = totalPayable * 0.37;
+  const logisticsCustomerProfit = customerRows.reduce((sum, item) => sum + item.grossProfit, 0);
+  const topCustomerProfit = topProfitCustomer?.grossProfit ?? 0;
+  const otherCustomerProfit = Math.max(logisticsCustomerProfit - topCustomerProfit, 0);
+  const unassignedSupplierPayable = supplierRows.find((item) => item.supplierName === "未指定供应商")?.payable ?? 0;
 
   const kpis: Kpi[] = [
     { title: "总应收", value: toMoney(totalReceivable), color: "#4c7ee8", icon: "¥", mom: pct(data?.comparison?.momReceivable), yoy: pct(data?.comparison?.yoyReceivable) },
-    { title: "总应付", value: toMoney(totalPayable), color: "#37b99d", icon: "□", mom: "+8.21%", yoy: "+15.06%" },
+    { title: "总应付", value: toMoney(totalPayable), color: "#37b99d", icon: "□", mom: pct(data?.comparison?.momPayable), yoy: pct(data?.comparison?.yoyPayable) },
     { title: "调整后毛利", value: toMoney(totalProfit), color: "#f28c2d", icon: "↗", mom: pct(data?.comparison?.momGrossProfit), yoy: pct(data?.comparison?.yoyGrossProfit) },
-    { title: "毛利率", value: formatPercent(grossRate), color: "#8a5ce5", icon: "%", mom: "+3.27pct", yoy: "+2.81pct" },
-    { title: "总票数", value: `${data?.orderCount ?? 0}票`, color: "#3d78ed", icon: "▤", mom: "+13.64%", yoy: "+19.05%" },
-    { title: "物流提成", value: toMoney(logisticsCommission), color: "#4e76ee", icon: "♟", mom: "+9.18%", yoy: "+16.84%" },
-    { title: "高风险票数", value: `${riskCount}票`, color: "#ec454d", icon: "!", mom: "+2票", yoy: "+1票" }
+    { title: "毛利率", value: formatPercent(grossRate), color: "#8a5ce5", icon: "%", mom: pctPoint(data?.comparison?.momGrossProfitRate), yoy: pctPoint(data?.comparison?.yoyGrossProfitRate) },
+    { title: "总票数", value: `${data?.orderCount ?? 0}票`, color: "#3d78ed", icon: "▤", mom: pct(data?.comparison?.momOrderCount), yoy: pct(data?.comparison?.yoyOrderCount) },
+    { title: "物流提成", value: toMoney(logisticsCommission), color: "#4e76ee", icon: "♟", mom: pct(data?.comparison?.momCommission), yoy: pct(data?.comparison?.yoyCommission) },
+    { title: "高风险票数", value: `${riskCount}票`, color: "#ec454d", icon: "!", mom: pct(data?.comparison?.momRiskOrderCount), yoy: pct(data?.comparison?.yoyRiskOrderCount) }
   ];
 
   return (
@@ -280,36 +302,35 @@ export default function Dashboard() {
         </Card>
         <Card className="overview-card" title="客户利润概览" extra={<Button type="link" onClick={() => navigate("/customer-profit")}>查看更多</Button>}>
           <div className="customer-summary">
-            <CustomerDonut companyProfit={companyProfit} personalProfit={personalProfit} />
+            <CustomerDonut topProfit={topCustomerProfit} otherProfit={otherCustomerProfit} />
             <div className="customer-side-metrics">
-              <span>TOP 6 客户毛利</span>
-              <b>{toMoney(topCustomer?.grossProfit ?? 0)}</b>
-              <em>环比 <strong className="up">+23.65%</strong></em>
-              <em>同比 <strong className="up">+19.22%</strong></em>
-              <span>TOP 6 客户毛利占比</span>
-              <b>{formatPercent((topCustomer?.grossProfit ?? 0) / Math.max(totalProfit, 1))}</b>
+              <span>最大流水客户</span>
+              <b>{topReceivableCustomer?.customerName ?? "-"}</b>
+              <em>应收 <strong>{toMoney(topReceivableCustomer?.receivable ?? 0)}</strong></em>
+              <em>票数 <strong>{topReceivableCustomer?.orderCount ?? 0}票</strong></em>
+              <span>最高毛利客户</span>
+              <b>{topProfitCustomer?.customerName ?? "-"}</b>
+              <em>毛利 <strong>{toMoney(topProfitCustomer?.grossProfit ?? 0)}</strong></em>
+              <em>毛利占比 <strong>{formatPercent(topProfitCustomer?.profitRatio ?? 0)}</strong></em>
             </div>
           </div>
         </Card>
         <Card className="overview-card" title="上游应付集中度" extra={<Button type="link" onClick={() => navigate("/payables")}>查看更多</Button>}>
           <Table
-            rowKey="name"
+            rowKey="supplierName"
             pagination={false}
             size="small"
-            dataSource={[
-              { name: "上游供应商A", amount: topSupplierPayable, ratio: "37.24%", change: "+2.31pct" },
-              { name: "上游供应商B", amount: totalPayable * 0.24, ratio: "24.14%", change: "+1.02pct" },
-              { name: "上游供应商C", amount: totalPayable * 0.16, ratio: "15.51%", change: "-0.85pct" }
-            ]}
+            dataSource={supplierRows}
             columns={[
-              { title: "TOP 3 上游供应商", dataIndex: "name" },
-              { title: "应付金额", dataIndex: "amount", render: toMoney },
-              { title: "占比", dataIndex: "ratio" },
-              { title: "环比占比变化", dataIndex: "change", render: (v) => <span className={String(v).startsWith("-") ? "down" : "up"}>{v}</span> }
+              { title: "TOP 3 上游供应商", dataIndex: "supplierName" },
+              { title: "票数", dataIndex: "orderCount" },
+              { title: "应付金额", dataIndex: "payable", render: toMoney },
+              { title: "未付金额", dataIndex: "outstanding", render: toMoney },
+              { title: "占比", dataIndex: "ratio", render: formatPercent }
             ]}
           />
           <div className="supplier-foot">
-            <span>未确认上游暂估金额 <b>{toMoney(totalPayable * 0.06)}</b></span>
+            <span>未指定供应商应付 <b>{toMoney(unassignedSupplierPayable)}</b></span>
             <span>单票平均应付成本 <b>{toMoney(totalPayable / Math.max(data?.orderCount ?? 1, 1))}</b></span>
           </div>
         </Card>
@@ -318,15 +339,18 @@ export default function Dashboard() {
       <section className="overview-risk-grid">
         <Card className="overview-card risk-card" title="风险趋势（本月）" extra={<Button type="link" onClick={() => navigate("/risks")}>查看更多</Button>}>
           <div className="risk-mini-grid">
-            {riskItem("高风险票数", riskCount, "+2")}
-            {riskItem("中风险票数", Math.max(riskCount - 5, 0), "-1")}
-            {riskItem("负毛利订单", Math.max(summary?.abnormalHighProfitOrderCount ?? 0, 1), "+0")}
-            {riskItem("毛利率<5%", Math.max(Math.round(riskCount / 3), 1), "+1")}
-            {riskItem("毛利率>60%", Math.max(summary?.abnormalHighProfitOrderCount ?? 0, 1), "+0")}
-            {riskItem("汇率缺失", 4, "+1")}
-            {riskItem("缺应付", 6, "+2")}
+            {riskItem("高风险票数", riskOverview?.highRiskCount ?? riskCount, "待复核")}
+            {riskItem("中风险票数", riskOverview?.mediumRiskCount ?? 0, "异常高利润")}
+            {riskItem("负毛利订单", riskOverview?.negativeProfitCount ?? 0, "需查成本")}
+            {riskItem("毛利率<5%", riskOverview?.lowProfitUnderFiveCount ?? 0, "重点跟进")}
+            {riskItem("异常高利润", riskOverview?.abnormalHighProfitCount ?? 0, "防漏成本")}
+            {riskItem("汇率缺失", riskOverview?.exchangeRateMissingCount ?? 0, "按原表复核")}
+            {riskItem("缺应付", riskOverview?.costMissingCount ?? 0, "补录成本")}
           </div>
-          <div className="risk-alert"><SafetyOutlined /> 风险提示：本月高风险票数较上月增加，主要集中在白关物流毛利订单和清关/派送缺应付订单。</div>
+          <div className="risk-alert">
+            <SafetyOutlined /> 风险提示：本月待复核 {riskOverview?.openRiskCount ?? riskCount} 票，已复核 {riskOverview?.reviewedRiskCount ?? 0} 票。
+            {riskOverview?.topRiskReason ? ` 首要风险：${riskOverview.topRiskReason}` : " 暂无待复核风险。"}
+          </div>
         </Card>
       </section>
 

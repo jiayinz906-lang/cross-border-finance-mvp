@@ -7,8 +7,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model AppUser {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  displayName  String
+  role         String
+  passwordHash String
+  passwordSalt String
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 model FinanceOrder {
   id                          Int                     @id @default(autoincrement())
+  importBatchId               Int?
+  importBatch                 ImportBatch?            @relation(fields: [importBatchId], references: [id])
   orderNo                     String                  @unique
   customerOrderNo             String?
   orderDate                   DateTime
@@ -51,6 +66,79 @@ model FinanceOrder {
   riskRecords                 RiskRecord[]
   costAdjustments             CostAdjustment[]
   serviceBusinessRecords      ServiceBusinessRecord[]
+  settlementRecords           SettlementRecord[]
+}
+
+model SettlementRecord {
+  id              Int          @id @default(autoincrement())
+  financeOrderId  Int
+  financeOrder    FinanceOrder @relation(fields: [financeOrderId], references: [id])
+  month           String
+  direction       String
+  amount          Float
+  settledAt       DateTime
+  counterparty    String?
+  status          String       @default("active")
+  operator        String       @default("finance")
+  note            String?
+  voidedBy        String?
+  voidedAt        DateTime?
+  voidReason      String?
+  createdAt       DateTime     @default(now())
+
+  @@index([month, direction])
+  @@index([financeOrderId, direction])
+}
+
+model RawLedgerLine {
+  id              Int         @id @default(autoincrement())
+  importBatchId   Int
+  importBatch     ImportBatch @relation(fields: [importBatchId], references: [id])
+  month           String
+  orderNo         String?
+  customerOrderNo String?
+  rowIndex        Int
+  sheetName       String
+  sourceFileName  String
+  rowHash         String
+  rawJson         String
+  canonicalJson   String?
+  parseStatus     String      @default("parsed")
+  parseMessage    String?
+  createdAt       DateTime    @default(now())
+
+  @@index([month, orderNo])
+  @@index([importBatchId, rowIndex])
+  @@unique([importBatchId, rowIndex])
+}
+
+model ImportBatch {
+  id                      Int            @id @default(autoincrement())
+  batchNo                 String         @unique
+  month                   String
+  fileName                String
+  sheetName               String
+  importMode              String         @default("replace_month")
+  status                  String         @default("active")
+  importedRows            Int            @default(0)
+  importedOrders          Int            @default(0)
+  logisticsOrders         Int            @default(0)
+  serviceOrders           Int            @default(0)
+  totalReceivable         Float          @default(0)
+  totalPayable            Float          @default(0)
+  totalGrossProfit        Float          @default(0)
+  riskOrderCount          Int            @default(0)
+  abnormalHighProfitCount Int            @default(0)
+  templateAuditJson       String?
+  previewJson             String?
+  createdBy               String         @default("system")
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  revertedAt              DateTime?
+  financeOrders           FinanceOrder[]
+  rawLedgerLines          RawLedgerLine[]
+
+  @@index([month, status])
 }
 
 model FinanceSummary {
@@ -70,6 +158,19 @@ model FinanceSummary {
   updatedAt                       DateTime @updatedAt
 }
 
+model MonthClose {
+  id              Int       @id @default(autoincrement())
+  month           String    @unique
+  status          String    @default("open")
+  lockedBy        String?
+  lockedAt        DateTime?
+  unlockedBy      String?
+  unlockedAt      DateTime?
+  closeNote       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
 model ExcelImportTemplate {
   id              Int      @id @default(autoincrement())
   templateKey     String   @unique
@@ -79,6 +180,21 @@ model ExcelImportTemplate {
   headersJson     String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model ParameterRule {
+  id          Int      @id @default(autoincrement())
+  ruleKey     String   @unique
+  ruleGroup   String
+  label       String
+  valueJson   String
+  description String?
+  isActive    Boolean  @default(true)
+  updatedBy   String   @default("system")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([ruleGroup, isActive])
 }
 
 model CommissionRecord {
@@ -107,6 +223,10 @@ model RiskRecord {
   riskReasons     String
   suggestion      String
   status          String       @default("open")
+  reviewNote      String?
+  reviewConclusion String?
+  reviewedBy      String?
+  reviewedAt      DateTime?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 }
@@ -160,6 +280,11 @@ model ConfirmationDocument {
   supervisorStatus    String    @default("pending")
   signatureToken      String?   @unique
   signatureUrl        String?
+  signatureTokenExpiresAt DateTime?
+  signerIp            String?
+  signerUserAgent     String?
+  signerRole          String?
+  signatureEvidenceJson String?
   signedAt            DateTime?
   confirmedAt         DateTime?
   voidedAt            DateTime?

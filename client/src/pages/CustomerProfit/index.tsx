@@ -1,4 +1,4 @@
-import { Button, Card, Space, Table, Tag, message } from "antd";
+import { Alert, Button, Card, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCustomerProfitAnalysis } from "../../api/analytics.api";
@@ -231,21 +231,27 @@ export default function CustomerProfit() {
   }, [loadData]);
 
   const summary = dashboard?.summary;
+  const customerRows = analysis?.rows ?? [];
+  const logisticsReceivable = customerRows.reduce((sum, item) => sum + item.receivable, 0);
+  const logisticsPayable = customerRows.reduce((sum, item) => sum + item.payable, 0);
+  const logisticsProfit = customerRows.reduce((sum, item) => sum + item.grossProfit, 0);
+  const logisticsGrossRate = logisticsReceivable > 0 ? logisticsProfit / logisticsReceivable : null;
+  const logisticsOrderCount = customerRows.reduce((sum, item) => sum + item.orderCount, 0);
 
   const metrics: MetricCard[] = useMemo(() => [
     {
       title: "总应收",
-      value: toPlainMoney(summary?.totalReceivable),
+      value: toPlainMoney(logisticsReceivable),
       accent: "blue",
-      tag: "优化后",
-      note: "汇率缺失统一按 6.85 修正"
+      tag: "仅物流",
+      note: "不含注册/证书/店铺等服务类应收"
     },
     {
       title: "调整后毛利",
-      value: toPlainMoney(summary?.totalGrossProfit),
+      value: toPlainMoney(logisticsProfit),
       accent: "green",
-      tag: formatPercent(summary?.grossProfitRate),
-      note: "可用于经营分析口径"
+      tag: formatPercent(logisticsGrossRate),
+      note: "客户利润页仅按物流客户计算"
     },
     {
       title: "物流提成",
@@ -263,21 +269,20 @@ export default function CustomerProfit() {
     },
     {
       title: "总票数",
-      value: `${dashboard?.orderCount ?? 0}`,
+      value: `${logisticsOrderCount}`,
       accent: "blue",
-      tag: "Excel",
-      note: "按运单口径去重"
+      tag: "物流票",
+      note: "服务类订单已排除"
     },
     {
       title: "调整后应付",
-      value: toPlainMoney(summary?.totalPayable),
+      value: toPlainMoney(logisticsPayable),
       accent: "green",
-      tag: "含暂估",
-      note: "清关/派送缺应付补齐"
+      tag: "仅物流",
+      note: "不含注册/证书/店铺等服务类应付"
     }
-  ], [dashboard?.orderCount, summary]);
+  ], [logisticsGrossRate, logisticsOrderCount, logisticsPayable, logisticsProfit, logisticsReceivable, summary]);
 
-  const customerRows = analysis?.rows ?? [];
   const receivableCustomers = analysis?.receivableRank ?? compactCustomerRows(customerRows, "receivable");
   const profitCustomers = analysis?.profitRank ?? compactCustomerRows(customerRows, "grossProfit");
 
@@ -324,6 +329,14 @@ export default function CustomerProfit() {
           </Card>
         ))}
       </section>
+
+      <Alert
+        className="customer-scope-alert"
+        type="info"
+        showIcon
+        message="客户利润分析口径提醒"
+        description="本页应收、应付、毛利、图表和客户明细只统计物流业务；注册、证书、公司注销、店铺租赁等服务类订单已排除，需到“注册确认”页面单独查看。"
+      />
 
       <Card
         className="customer-profit-card"

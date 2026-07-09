@@ -1,12 +1,11 @@
-import { Button, Card, Modal, Select, Space, Table, Tag, message } from "antd";
+import { Alert, Button, Card, Input, Modal, Select, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key } from "react";
-import { getFinanceDashboard } from "../../api/finance.api";
-import { getRisks } from "../../api/risks.api";
-import { markRiskReviewed } from "../../api/workflow.api";
+import { getFinanceDashboard, getRawLedgerLines } from "../../api/finance.api";
+import { getRisks, reviewRisk } from "../../api/risks.api";
 import { useSelectedMonth } from "../../contexts/MonthContext";
-import type { DashboardData, FinanceOrder } from "../../types/finance.types";
+import type { DashboardData, FinanceOrder, RawLedgerLine } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
 
@@ -17,6 +16,10 @@ type RiskRow = {
   riskReasons: string;
   suggestion: string;
   status: string;
+  reviewNote?: string | null;
+  reviewConclusion?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
   financeOrder?: RiskFinanceOrder;
 };
 
@@ -32,17 +35,21 @@ type RiskFinanceOrder = FinanceOrder & {
 };
 
 type RawDataRow = {
-  key: string;
+  id: number;
+  rowIndex: number;
   orderNo: string;
-  businessType: string;
-  direction: "应收" | "应付";
+  customerOrderNo: string;
+  service: string;
+  direction: string;
   feeType: string;
-  originalAmount: number;
-  exchangeRate: number | null;
-  convertedAmount: number;
+  amount: number | null;
+  localAmount: number | null;
+  exchangeRate: string;
   supplierName: string;
   salespersonName: string;
+  customerServiceName: string;
   orderTime: string;
+  parseStatus: string;
 };
 
 type MetricCard = {
@@ -75,32 +82,35 @@ function riskReasonText(row: RiskRow) {
   return row.riskReasons?.replace(`${row.financeOrder?.orderNo}：`, "") || "待复核";
 }
 
-function rawRows(order?: RiskFinanceOrder): RawDataRow[] {
-  if (!order) return [];
-  const exchangeRate = order.exchangeRate ?? null;
-  const orderTime = order.orderDate ? order.orderDate.replace("T", " ").slice(0, 19) : "-";
-  const feeRows = [
-    { direction: "应付" as const, feeType: "运费", amount: order.payableFreight ?? 0 },
-    { direction: "应付" as const, feeType: "操作费", amount: (order.payableClearance ?? 0) + (order.payableDelivery ?? 0) + (order.otherCost ?? 0) },
-    { direction: "应收" as const, feeType: "运费", amount: order.receivableFreight ?? 0 },
-    { direction: "应收" as const, feeType: "操作费", amount: (order.receivableClearance ?? 0) + (order.receivableDelivery ?? 0) + (order.otherReceivable ?? 0) }
-  ];
+function rawText(row: RawLedgerLine, field: string) {
+  const value = row.canonical?.[field] ?? row.raw?.[field];
+  return value === null || value === undefined || value === "" ? "-" : String(value);
+}
 
-  return feeRows
-    .filter((item) => Math.abs(item.amount ?? 0) > 0)
-    .map((item, index) => ({
-      key: `${order.id}-${index}`,
-      orderNo: order.orderNo,
-      businessType: order.businessType,
-      direction: item.direction,
-      feeType: item.feeType,
-      originalAmount: item.amount,
-      exchangeRate,
-      convertedAmount: item.amount,
-      supplierName: item.direction === "应付" ? order.supplierName || "未指定供应商" : "未指定供应商",
-      salespersonName: order.salespersonName,
-      orderTime
-    }));
+function rawNumber(row: RawLedgerLine, field: string) {
+  const value = row.canonical?.[field] ?? row.raw?.[field];
+  const parsed = typeof value === "number" ? value : Number(String(value ?? "").replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function rawRows(lines: RawLedgerLine[]): RawDataRow[] {
+  return lines.map((line) => ({
+    id: line.id,
+    rowIndex: line.rowIndex,
+    orderNo: rawText(line, "orderNo"),
+    customerOrderNo: rawText(line, "customerOrderNo"),
+    service: rawText(line, "service"),
+    direction: rawText(line, "direction"),
+    feeType: rawText(line, "feeType"),
+    amount: rawNumber(line, "amount"),
+    localAmount: rawNumber(line, "localAmount"),
+    exchangeRate: rawText(line, "exchangeRate"),
+    supplierName: rawText(line, "supplier"),
+    salespersonName: rawText(line, "salespersonName"),
+    customerServiceName: rawText(line, "customerServiceName"),
+    orderTime: rawText(line, "orderDate"),
+    parseStatus: line.parseStatus
+  }));
 }
 
 export default function Risks() {
@@ -108,9 +118,16 @@ export default function Risks() {
   const [rows, setRows] = useState<RiskRow[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [selectedRisk, setSelectedRisk] = useState<RiskRow | null>(null);
+  const [rawLines, setRawLines] = useState<RawLedgerLine[]>([]);
+  const [rawLoading, setRawLoading] = useState(false);
   const [filter, setFilter] = useState("all");
   const [expandedKeys, setExpandedKeys] = useState<Key[]>([]);
   const [loading, setLoading] = useState(false);
+  const [reviewingRisk, setReviewingRisk] = useState<RiskRow | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewConclusion, setReviewConclusion] = useState("已复核，按原始台账和成本口径确认");
+  const [reviewedBy, setReviewedBy] = useState("主管");
+  const [reviewSaving, setReviewSaving] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -187,10 +204,52 @@ export default function Risks() {
     return rows;
   }, [filter, rows]);
 
-  const handleMarkReviewed = async (row: RiskRow) => {
-    await markRiskReviewed(row.id);
-    message.success(`${row.financeOrder?.orderNo} 已标记复核`);
-    await loadData();
+  const openReviewModal = (row: RiskRow) => {
+    setReviewingRisk(row);
+    setReviewConclusion(row.reviewConclusion || "已复核，按原始台账和成本口径确认");
+    setReviewNote(row.reviewNote || riskReasonText(row));
+    setReviewedBy(row.reviewedBy || "主管");
+  };
+
+  const submitReview = async () => {
+    if (!reviewingRisk) return;
+    if (!reviewNote.trim()) {
+      message.error("请填写风险复核说明");
+      return;
+    }
+
+    setReviewSaving(true);
+    try {
+      await reviewRisk(reviewingRisk.id, {
+        reviewNote,
+        reviewConclusion,
+        reviewedBy
+      });
+      message.success(`${reviewingRisk.financeOrder?.orderNo} 风险复核已保存`);
+      setReviewingRisk(null);
+      await loadData();
+    } catch {
+      message.error("风险复核保存失败，请检查权限或后端服务");
+    } finally {
+      setReviewSaving(false);
+    }
+  };
+
+  const openRawData = async (row: RiskRow) => {
+    setSelectedRisk(row);
+    setRawLines([]);
+    const orderNo = row.financeOrder?.orderNo;
+    if (!orderNo) return;
+
+    setRawLoading(true);
+    try {
+      const response = await getRawLedgerLines({ month: selectedMonth, orderNo });
+      setRawLines(response.data.rows ?? []);
+    } catch {
+      message.error("原始 Excel 明细加载失败，请确认后端数据库可用。");
+    } finally {
+      setRawLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -235,9 +294,9 @@ export default function Risks() {
       render: (_, row) => (
         <Space size={6}>
           <Button size="small" onClick={() => setExpandedKeys([row.id])}>详情</Button>
-          <Button size="small" onClick={() => setSelectedRisk(row)}>原始数据</Button>
-          <Button size="small" onClick={() => handleMarkReviewed(row)}>
-            标记复核
+          <Button size="small" onClick={() => openRawData(row)}>原始数据</Button>
+          <Button size="small" onClick={() => openReviewModal(row)}>
+            复核
           </Button>
         </Space>
       )
@@ -245,15 +304,19 @@ export default function Risks() {
   ];
 
   const rawColumns: ColumnsType<RawDataRow> = [
-    { title: "运单号", dataIndex: "orderNo", width: 120 },
-    { title: "业务类型", dataIndex: "businessType", width: 120 },
+    { title: "Excel行", dataIndex: "rowIndex", width: 80, fixed: "left" },
+    { title: "运单号", dataIndex: "orderNo", width: 130, fixed: "left" },
+    { title: "原始订单号", dataIndex: "customerOrderNo", width: 150 },
+    { title: "业务类型", dataIndex: "service", width: 120 },
     { title: "收付", dataIndex: "direction", width: 70 },
     { title: "费用类型", dataIndex: "feeType", width: 100 },
-    { title: "原始金额", dataIndex: "originalAmount", align: "right", render: toPlainMoney },
-    { title: "使用汇率", dataIndex: "exchangeRate", width: 90, render: (value) => value ?? "-" },
-    { title: "折算金额", dataIndex: "convertedAmount", align: "right", render: toPlainMoney },
+    { title: "原始金额", dataIndex: "amount", align: "right", render: toPlainMoney },
+    { title: "本币费用", dataIndex: "localAmount", align: "right", render: toPlainMoney },
+    { title: "汇率/标注", dataIndex: "exchangeRate", width: 100 },
     { title: "供应商", dataIndex: "supplierName", width: 130 },
     { title: "销售代表", dataIndex: "salespersonName", width: 100 },
+    { title: "客服代表", dataIndex: "customerServiceName", width: 100 },
+    { title: "解析状态", dataIndex: "parseStatus", width: 100, render: (value) => <Tag color={value === "parsed" ? "green" : "gold"}>{value}</Tag> },
     { title: "下单时间", dataIndex: "orderTime", width: 170 }
   ];
 
@@ -331,7 +394,9 @@ export default function Risks() {
                     <strong>处理动作：</strong>
                     {row.riskType === "low_profit" ? "高风险业务：复核收入、应付成本和费用归集" : "异常高利润：需复核应付成本是否漏录"}
                   </p>
-                  <p><strong>复查说明：</strong>暂无补充说明</p>
+                  <p><strong>复核结论：</strong>{row.reviewConclusion || "待主管填写"}</p>
+                  <p><strong>复核说明：</strong>{row.reviewNote || "暂无补充说明"}</p>
+                  {row.reviewedAt && <p><strong>复核人/时间：</strong>{row.reviewedBy || "-"} / {String(row.reviewedAt).replace("T", " ").slice(0, 19)}</p>}
                 </div>
               );
             }
@@ -349,14 +414,50 @@ export default function Risks() {
         <div className="risk-modal-subtitle">
           {selectedRisk?.financeOrder?.orderNo} · {selectedRisk?.financeOrder?.businessType} · {riskReasonText(selectedRisk ?? {} as RiskRow)}
         </div>
-        <Table
-          rowKey="key"
-          className="risk-raw-table"
-          columns={rawColumns}
-          dataSource={rawRows(selectedRisk?.financeOrder)}
-          pagination={false}
-          scroll={{ x: 1120 }}
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="以下数据来自数据库保存的 Excel 原始明细行"
+          description="用于复核应收、应付、汇率、供应商、销售代表和下单时间。聚合订单金额必须能追溯到这些原始行。"
         />
+        <Table
+          rowKey="id"
+          className="risk-raw-table"
+          loading={rawLoading}
+          columns={rawColumns}
+          dataSource={rawRows(rawLines)}
+          pagination={false}
+          locale={{ emptyText: rawLoading ? "加载中" : "未找到该运单的原始 Excel 行" }}
+          scroll={{ x: 1450 }}
+        />
+      </Modal>
+
+      <Modal
+        open={Boolean(reviewingRisk)}
+        title={`风险复核：${reviewingRisk?.financeOrder?.orderNo ?? ""}`}
+        okText="保存复核"
+        cancelText="取消"
+        confirmLoading={reviewSaving}
+        onOk={submitReview}
+        onCancel={() => setReviewingRisk(null)}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Alert
+            type="warning"
+            showIcon
+            message={reviewingRisk ? riskReasonText(reviewingRisk) : "风险复核"}
+            description="请记录复核依据、处理结论和责任人；保存后会写入风险记录和操作审计日志。"
+          />
+          <Input value={reviewedBy} onChange={(event) => setReviewedBy(event.target.value)} addonBefore="复核人" />
+          <Input value={reviewConclusion} onChange={(event) => setReviewConclusion(event.target.value)} addonBefore="处理结论" />
+          <Input.TextArea
+            value={reviewNote}
+            onChange={(event) => setReviewNote(event.target.value)}
+            rows={5}
+            placeholder="填写复核说明，例如：已核对原始 Excel 应收应付、供应商成本和汇率标注，确认可关闭风险；或说明需补录的成本/回款问题。"
+          />
+        </Space>
       </Modal>
     </div>
   );

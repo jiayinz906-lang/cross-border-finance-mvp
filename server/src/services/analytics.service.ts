@@ -115,7 +115,7 @@ function operatorRows(operatorName: string, orders: FinanceOrder[]) {
 
 export const analyticsService = {
   async customerProfit(month = "2026-06") {
-    const orders = await prisma.financeOrder.findMany({ where: { month } });
+    const orders = await prisma.financeOrder.findMany({ where: { month, isServiceBusiness: false } });
     const map = new Map<string, CustomerRow>();
     for (const order of orders) {
       const customerName = order.customerName || order.customerOrderNo || "待主管确认";

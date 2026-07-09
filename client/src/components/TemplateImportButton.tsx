@@ -17,7 +17,8 @@ export function TemplateImportButton({ onImported }: Props) {
       try {
         const response = await importFinanceTemplate(file as File);
         const result = response.data as ImportTemplateResult;
-        message.success(`模板表头已保存：${result.headerCount} 列，不导入业务数据`);
+        const templateStatus = result.audit?.template.matchExact ? "固定模板完全匹配" : "已保存并启用自动映射";
+        message.success(`模板表头已保存：${result.headerCount} 列，不导入业务数据，${templateStatus}`);
         onImported?.(result);
         onSuccess?.(result);
       } catch (error) {

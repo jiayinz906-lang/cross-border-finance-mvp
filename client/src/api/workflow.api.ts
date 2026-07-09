@@ -19,6 +19,28 @@ export type ConfirmationDocument = {
   payloadJson?: string | null;
 };
 
+export type MonthCloseStatus = {
+  id: number | null;
+  month: string;
+  status: "open" | "locked" | string;
+  lockedBy?: string | null;
+  lockedAt?: string | null;
+  unlockedBy?: string | null;
+  unlockedAt?: string | null;
+  closeNote?: string | null;
+};
+
+export type ActionLogRow = {
+  id: number;
+  month?: string | null;
+  entityType: string;
+  entityId: string;
+  action: string;
+  operator: string;
+  payloadJson?: string | null;
+  createdAt: string;
+};
+
 export function getDocuments(month = "2026-06", documentType?: string) {
   return request.get("/workflow/documents", { params: { month, documentType } });
 }
@@ -51,8 +73,17 @@ export function exportDownloadUrl(id: number) {
   return `${request.defaults.baseURL}/workflow/exports/${id}/download`;
 }
 
+export function confirmationDocumentDownloadUrl(id: number) {
+  return `${request.defaults.baseURL}/workflow/documents/${id}/download`;
+}
+
 export function monthlyReportExportUrl(month = "2026-06") {
   return `${request.defaults.baseURL}/reports/monthly/export?month=${encodeURIComponent(month)}`;
+}
+
+export function systemBackupExportUrl(month?: string) {
+  const query = month ? `?month=${encodeURIComponent(month)}` : "";
+  return `${request.defaults.baseURL}/workflow/backup/export${query}`;
 }
 
 export function markRiskReviewed(id: number) {
@@ -65,4 +96,20 @@ export function confirmServiceRecord(id: number, finalCommission: number) {
 
 export function confirmSalespersonCommission(salespersonName: string, month = "2026-06", manualRate?: number) {
   return request.post(`/workflow/commissions/${encodeURIComponent(salespersonName)}/confirm`, { month, manualRate });
+}
+
+export function getMonthCloseStatus(month = "2026-06") {
+  return request.get("/workflow/month-close", { params: { month } });
+}
+
+export function lockMonth(month = "2026-06", note?: string) {
+  return request.post("/workflow/month-close/lock", { month, note, operator: "主管" });
+}
+
+export function unlockMonth(month = "2026-06", note?: string) {
+  return request.post("/workflow/month-close/unlock", { month, note, operator: "主管" });
+}
+
+export function getActionLogs(filters: { month?: string; entityType?: string; entityId?: string } = {}) {
+  return request.get("/workflow/actions", { params: filters });
 }

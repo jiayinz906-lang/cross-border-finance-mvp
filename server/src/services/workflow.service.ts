@@ -1,7 +1,13 @@
-import { prisma } from "../prisma/client.js";
 import * as XLSX from "xlsx";
+import { prisma } from "../prisma/client.js";
 
 type DocumentType = "logistics_commission" | "service_commission";
+type SignatureEvidenceInput = {
+  ip?: string;
+  userAgent?: string;
+  role?: string;
+  action?: string;
+};
 
 function monthOrDefault(month?: string) {
   return month ?? "2026-06";
@@ -34,6 +40,40 @@ function updatePayloadJson(
 
 function token(ownerName: string, documentType: string) {
   return Buffer.from(`${documentType}:${ownerName}:${Date.now()}`).toString("base64url");
+}
+
+function tokenExpiresAt() {
+  const date = new Date();
+  date.setDate(date.getDate() + 7);
+  return date;
+}
+
+function signatureEvidence(input: SignatureEvidenceInput) {
+  return {
+    action: input.action ?? "signature",
+    ip: input.ip ?? "unknown",
+    userAgent: input.userAgent ?? "unknown",
+    role: input.role ?? "unknown",
+    recordedAt: new Date().toISOString()
+  };
+}
+
+function safeJson<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function money(value: unknown) {
+  const number = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0;
+}
+
+function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], sheetName: string) {
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows.length ? rows : [{ 说明: "无数据" }]), sheetName.slice(0, 31));
 }
 
 async function logAction(input: {
@@ -130,7 +170,7 @@ export const workflowService = {
           status: "待员工签名"
         },
         details: detailRows,
-        statement: "本人已核对以上业务提成明细，包括订单数量、毛利金额、提成比例、调整金额及最终提成金额。本人确认该数据真实无误，并同意提交作为本月提成确认依据。",
+        statement: "本人已核对以上业务提成明细，确认订单数量、毛利金额、提成比例、调整金额及最终提成金额真实无误。",
         signatureTrace: {
           employeeSignature: "待员工电子签名",
           signedAt: null,
@@ -153,6 +193,11 @@ export const workflowService = {
           supervisorStatus: "pending",
           signatureToken: null,
           signatureUrl: null,
+          signatureTokenExpiresAt: null,
+          signerIp: null,
+          signerUserAgent: null,
+          signerRole: null,
+          signatureEvidenceJson: null,
           signedAt: null,
           confirmedAt: null,
           voidedAt: null
@@ -229,6 +274,7 @@ export const workflowService = {
   async sendSignatureLink(id: number) {
     const signatureToken = token(String(id), "signature");
     const signatureUrl = `/signature/${signatureToken}`;
+    const expiresAt = tokenExpiresAt();
     const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
     const document = await prisma.confirmationDocument.update({
       where: { id },
@@ -236,46 +282,91 @@ export const workflowService = {
         sendStatus: "sent",
         signatureToken,
         signatureUrl,
+        signatureTokenExpiresAt: expiresAt,
         payloadJson: updatePayloadJson(current.payloadJson, (payload) => ({
           ...payload,
           signatureTrace: {
             ...(payload.signatureTrace ?? {}),
-            employeeSignature: "签名链接已发送，待员工电子签名"
+            employeeSignature: "签名链接已发送，待员工电子签名",
+            tokenExpiresAt: expiresAt.toISOString()
           }
         }))
       }
     });
-    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "send_signature_link" });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "send_signature_link", payload: { signatureUrl, expiresAt } });
     return document;
   },
 
-  async supervisorConfirm(id: number) {
+  async signByToken(signatureToken: string, evidence: SignatureEvidenceInput = {}) {
+    const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { signatureToken } });
+    if (!current.signatureTokenExpiresAt || current.signatureTokenExpiresAt < new Date()) {
+      throw new Error("签名链接已过期，请重新发送确认单。");
+    }
+    const signedAt = new Date();
+    const proof = signatureEvidence({ ...evidence, action: "employee_sign" });
+    const document = await prisma.confirmationDocument.update({
+      where: { id: current.id },
+      data: {
+        signatureStatus: "signed",
+        sendStatus: "sent",
+        signedAt,
+        signerIp: proof.ip,
+        signerUserAgent: proof.userAgent,
+        signerRole: proof.role,
+        signatureEvidenceJson: JSON.stringify(proof),
+        payloadJson: updatePayloadJson(current.payloadJson, (payload) => ({
+          ...payload,
+          summary: { ...(payload.summary ?? {}), status: "已员工签名，待主管确认" },
+          signatureTrace: {
+            ...(payload.signatureTrace ?? {}),
+            employeeSignature: "已电子签名",
+            signedAt: signedAt.toISOString(),
+            confirmIp: proof.ip,
+            deviceInfo: proof.userAgent,
+            signerRole: proof.role
+          }
+        }))
+      }
+    });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: document.id, action: "employee_sign", payload: proof });
+    return document;
+  },
+
+  async supervisorConfirm(id: number, evidence: SignatureEvidenceInput = {}) {
     const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
     const confirmedAt = new Date();
+    const proof = signatureEvidence({ ...evidence, action: "supervisor_confirm" });
     const document = await prisma.confirmationDocument.update({
       where: { id },
       data: {
         supervisorStatus: "confirmed",
         signatureStatus: "signed",
         sendStatus: "sent",
-        signedAt: confirmedAt,
+        signedAt: current.signedAt ?? confirmedAt,
         confirmedAt,
+        signerIp: current.signerIp ?? proof.ip,
+        signerUserAgent: current.signerUserAgent ?? proof.userAgent,
+        signerRole: current.signerRole ?? proof.role,
+        signatureEvidenceJson: JSON.stringify({
+          employee: current.signatureEvidenceJson ? JSON.parse(current.signatureEvidenceJson) : null,
+          supervisor: proof
+        }),
         payloadJson: updatePayloadJson(current.payloadJson, (payload) => ({
           ...payload,
-          summary: {
-            ...(payload.summary ?? {}),
-            status: "已员工签名/主管确认"
-          },
+          summary: { ...(payload.summary ?? {}), status: "已员工签名/主管确认" },
           signatureTrace: {
             ...(payload.signatureTrace ?? {}),
             employeeSignature: "已电子签名",
-            signedAt: confirmedAt.toISOString(),
-            supervisorConfirm: "主管已确认"
+            signedAt: (current.signedAt ?? confirmedAt).toISOString(),
+            supervisorConfirm: "主管已确认",
+            supervisorIp: proof.ip,
+            supervisorDeviceInfo: proof.userAgent,
+            supervisorRole: proof.role
           }
         }))
       }
     });
-    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "supervisor_confirm" });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "supervisor_confirm", payload: proof });
     return document;
   },
 
@@ -290,10 +381,7 @@ export const workflowService = {
         voidedAt: new Date(),
         payloadJson: updatePayloadJson(current.payloadJson, (payload) => ({
           ...payload,
-          summary: {
-            ...(payload.summary ?? {}),
-            status: "已作废，待重新生成/重签"
-          },
+          summary: { ...(payload.summary ?? {}), status: "已作废，待重新生成/重签" },
           signatureTrace: {
             ...(payload.signatureTrace ?? {}),
             employeeSignature: "已作废，待重新签名",
@@ -371,6 +459,240 @@ startxref
     };
   },
 
+  async downloadConfirmationDocument(id: number) {
+    const document = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
+    const payload = safeJson<Record<string, any>>(document.payloadJson, {});
+    const summary = payload.summary ?? {};
+    const details = Array.isArray(payload.details) ? payload.details : [];
+    const trace = payload.signatureTrace ?? {};
+    const workbook = XLSX.utils.book_new();
+
+    appendSheet(workbook, [
+      { 项目: "确认单标题", 内容: payload.title ?? "员工个人提成签名确认单" },
+      { 项目: "确认单编号", 内容: payload.documentCode ?? `DOC-${document.id}` },
+      { 项目: "月份", 内容: payload.monthLabel ?? document.month },
+      { 项目: "员工/销售代表", 内容: document.ownerName },
+      { 项目: "业务类型", 内容: summary.businessType ?? document.businessType ?? "-" },
+      { 项目: "订单数量", 内容: document.orderCount },
+      { 项目: "应收金额", 内容: money(summary.receivable) },
+      { 项目: "应付金额", 内容: money(summary.payable) },
+      { 项目: "确认毛利", 内容: money(document.grossProfit) },
+      { 项目: "提成比例", 内容: typeof summary.commissionRate === "number" ? `${(summary.commissionRate * 100).toFixed(2)}%` : "-" },
+      { 项目: "最终确认提成", 内容: money(document.commissionAmount) },
+      { 项目: "单据状态", 内容: document.documentStatus },
+      { 项目: "发送状态", 内容: document.sendStatus },
+      { 项目: "员工签名状态", 内容: document.signatureStatus },
+      { 项目: "主管确认状态", 内容: document.supervisorStatus },
+      { 项目: "员工签名时间", 内容: document.signedAt?.toISOString() ?? "-" },
+      { 项目: "主管确认时间", 内容: document.confirmedAt?.toISOString() ?? "-" }
+    ], "确认单摘要");
+
+    appendSheet(workbook, details.map((item: any) => ({
+      运单号: item.orderNo,
+      原始订单号: item.originalOrderNo,
+      客户: item.customerName,
+      业务类型: item.businessType,
+      应收: money(item.receivable),
+      应付: money(item.payable),
+      毛利: money(item.grossProfit),
+      毛利率: typeof item.grossProfitRate === "number" ? `${(item.grossProfitRate * 100).toFixed(2)}%` : "-",
+      提成比例: typeof item.commissionRate === "number" ? `${(item.commissionRate * 100).toFixed(2)}%` : "-",
+      提成金额: money(item.commissionAmount),
+      来源: item.source ?? "原始台账导入记录"
+    })), "订单明细");
+
+    appendSheet(workbook, [
+      { 项目: "确认声明", 内容: payload.statement ?? "本人已核对以上业务提成明细，确认真实无误。" },
+      { 项目: "员工签名", 内容: document.signatureStatus === "signed" ? "已电子签名" : trace.employeeSignature ?? "待员工签名" },
+      { 项目: "签名 IP", 内容: document.signerIp ?? trace.confirmIp ?? "-" },
+      { 项目: "签名设备", 内容: document.signerUserAgent ?? trace.deviceInfo ?? "-" },
+      { 项目: "签名角色", 内容: document.signerRole ?? "-" },
+      { 项目: "签名证据", 内容: document.signatureEvidenceJson ?? "-" },
+      { 项目: "主管确认", 内容: document.supervisorStatus === "confirmed" ? "主管已确认" : trace.supervisorConfirm ?? "待主管确认" }
+    ], "签名与证据");
+
+    await logAction({
+      month: document.month,
+      entityType: "confirmation_document",
+      entityId: document.id,
+      action: "download_confirmation_xlsx",
+      payload: { ownerName: document.ownerName, documentType: document.documentType }
+    });
+
+    return {
+      fileName: `${document.month}-${document.ownerName}-confirmation.xlsx`,
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer
+    };
+  },
+
+  async exportSystemBackup(month?: string) {
+    const selectedMonth = month || undefined;
+    const workbook = XLSX.utils.book_new();
+    const [
+      summaries,
+      monthCloses,
+      importBatches,
+      templates,
+      rules,
+      documents,
+      actionLogs,
+      exportJobs
+    ] = await Promise.all([
+      prisma.financeSummary.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: { month: "desc" }
+      }),
+      prisma.monthClose.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: { month: "desc" }
+      }),
+      prisma.importBatch.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: { id: "desc" }
+      }),
+      prisma.excelImportTemplate.findMany({ orderBy: { id: "asc" } }),
+      prisma.parameterRule.findMany({ orderBy: [{ ruleGroup: "asc" }, { id: "asc" }] }),
+      prisma.confirmationDocument.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: [{ month: "desc" }, { id: "asc" }]
+      }),
+      prisma.actionLog.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: { id: "desc" },
+        take: 1000
+      }),
+      prisma.exportJob.findMany({
+        where: selectedMonth ? { month: selectedMonth } : undefined,
+        orderBy: { id: "desc" },
+        take: 500
+      })
+    ]);
+
+    appendSheet(workbook, [
+      { 项目: "备份范围", 内容: selectedMonth ?? "全部月份" },
+      { 项目: "生成时间", 内容: new Date().toISOString() },
+      { 项目: "月度汇总记录数", 内容: summaries.length },
+      { 项目: "导入批次数", 内容: importBatches.length },
+      { 项目: "模板记录数", 内容: templates.length },
+      { 项目: "参数规则数", 内容: rules.length },
+      { 项目: "确认单数", 内容: documents.length },
+      { 项目: "操作日志数", 内容: actionLogs.length },
+      { 项目: "说明", 内容: "该文件用于财务审计和关键配置备份，不替代生产数据库全量备份。" }
+    ], "备份说明");
+
+    appendSheet(workbook, summaries.map((item) => ({
+      月份: item.month,
+      总应收: money(item.totalReceivable),
+      总应付: money(item.totalPayable),
+      已回款: money(item.totalReceived),
+      已付款: money(item.totalPaid),
+      总毛利: money(item.totalGrossProfit),
+      毛利率: typeof item.grossProfitRate === "number" ? `${(item.grossProfitRate * 100).toFixed(2)}%` : "-",
+      总提成: money(item.totalCommission),
+      风险票数: item.riskOrderCount,
+      异常高利润: item.abnormalHighProfitOrderCount,
+      待主管确认: item.pendingSupervisorConfirmCount,
+      更新时间: item.updatedAt.toISOString()
+    })), "月度汇总");
+
+    appendSheet(workbook, importBatches.map((item) => ({
+      批次号: item.batchNo,
+      月份: item.month,
+      文件名: item.fileName,
+      工作表: item.sheetName,
+      导入模式: item.importMode,
+      状态: item.status,
+      明细行: item.importedRows,
+      订单数: item.importedOrders,
+      物流订单: item.logisticsOrders,
+      服务订单: item.serviceOrders,
+      应收: money(item.totalReceivable),
+      应付: money(item.totalPayable),
+      毛利: money(item.totalGrossProfit),
+      风险票: item.riskOrderCount,
+      异常高利润: item.abnormalHighProfitCount,
+      创建时间: item.createdAt.toISOString(),
+      回滚时间: item.revertedAt?.toISOString() ?? "-"
+    })), "导入批次");
+
+    appendSheet(workbook, templates.map((item) => ({
+      模板Key: item.templateKey,
+      文件名: item.fileName,
+      工作表: item.sheetName,
+      表头行: item.headerRowIndex,
+      表头JSON: item.headersJson,
+      创建时间: item.createdAt.toISOString(),
+      更新时间: item.updatedAt.toISOString()
+    })), "表头模板");
+
+    appendSheet(workbook, rules.map((item) => ({
+      规则Key: item.ruleKey,
+      分组: item.ruleGroup,
+      名称: item.label,
+      规则JSON: item.valueJson,
+      说明: item.description,
+      是否启用: item.isActive ? "是" : "否",
+      更新人: item.updatedBy,
+      更新时间: item.updatedAt.toISOString()
+    })), "参数规则");
+
+    appendSheet(workbook, monthCloses.map((item) => ({
+      月份: item.month,
+      状态: item.status,
+      锁账人: item.lockedBy,
+      锁账时间: item.lockedAt?.toISOString() ?? "-",
+      解锁人: item.unlockedBy,
+      解锁时间: item.unlockedAt?.toISOString() ?? "-",
+      说明: item.closeNote,
+      更新时间: item.updatedAt.toISOString()
+    })), "锁账状态");
+
+    appendSheet(workbook, documents.map((item) => ({
+      月份: item.month,
+      类型: item.documentType,
+      归属人: item.ownerName,
+      业务类型: item.businessType,
+      订单数: item.orderCount,
+      毛利: money(item.grossProfit),
+      提成: money(item.commissionAmount),
+      单据状态: item.documentStatus,
+      发送状态: item.sendStatus,
+      签名状态: item.signatureStatus,
+      主管状态: item.supervisorStatus,
+      签名时间: item.signedAt?.toISOString() ?? "-",
+      主管确认时间: item.confirmedAt?.toISOString() ?? "-",
+      签名证据: item.signatureEvidenceJson ?? "-"
+    })), "确认单");
+
+    appendSheet(workbook, actionLogs.map((item) => ({
+      ID: item.id,
+      月份: item.month,
+      对象类型: item.entityType,
+      对象ID: item.entityId,
+      动作: item.action,
+      操作人: item.operator,
+      内容: item.payloadJson,
+      时间: item.createdAt.toISOString()
+    })), "操作日志");
+
+    appendSheet(workbook, exportJobs.map((item) => ({
+      月份: item.month,
+      类型: item.exportType,
+      格式: item.fileFormat,
+      状态: item.status,
+      文件名: item.fileName,
+      创建时间: item.createdAt.toISOString(),
+      更新时间: item.updatedAt.toISOString()
+    })), "导出记录");
+
+    return {
+      fileName: `${selectedMonth ?? "all"}-system-backup.xlsx`,
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer
+    };
+  },
+
   async markRiskReviewed(id: number) {
     const risk = await prisma.riskRecord.update({
       where: { id },
@@ -428,14 +750,90 @@ startxref
     return { salespersonName, rows: updates };
   },
 
-  async actionLogs(entityType?: string, entityId?: string) {
+  async actionLogs(input: { month?: string; entityType?: string; entityId?: string } = {}) {
     return prisma.actionLog.findMany({
       where: {
-        ...(entityType ? { entityType } : {}),
-        ...(entityId ? { entityId } : {})
+        ...(input.month ? { month: input.month } : {}),
+        ...(input.entityType ? { entityType: input.entityType } : {}),
+        ...(input.entityId ? { entityId: input.entityId } : {})
       },
       orderBy: { id: "desc" },
       take: 100
     });
+  },
+
+  async monthCloseStatus(month?: string) {
+    const selectedMonth = monthOrDefault(month);
+    const close = await prisma.monthClose.findUnique({ where: { month: selectedMonth } });
+    return close ?? {
+      id: null,
+      month: selectedMonth,
+      status: "open",
+      lockedBy: null,
+      lockedAt: null,
+      unlockedBy: null,
+      unlockedAt: null,
+      closeNote: null
+    };
+  },
+
+  async lockMonth(month?: string, input: { operator?: string; note?: string } = {}) {
+    const selectedMonth = monthOrDefault(month);
+    const operator = input.operator || "主管";
+    const close = await prisma.monthClose.upsert({
+      where: { month: selectedMonth },
+      update: {
+        status: "locked",
+        lockedBy: operator,
+        lockedAt: new Date(),
+        closeNote: input.note,
+        unlockedBy: null,
+        unlockedAt: null
+      },
+      create: {
+        month: selectedMonth,
+        status: "locked",
+        lockedBy: operator,
+        lockedAt: new Date(),
+        closeNote: input.note
+      }
+    });
+    await logAction({
+      month: selectedMonth,
+      entityType: "month_close",
+      entityId: selectedMonth,
+      action: "lock_month",
+      payload: { operator, note: input.note }
+    });
+    return close;
+  },
+
+  async unlockMonth(month?: string, input: { operator?: string; note?: string } = {}) {
+    const selectedMonth = monthOrDefault(month);
+    const operator = input.operator || "主管";
+    const close = await prisma.monthClose.upsert({
+      where: { month: selectedMonth },
+      update: {
+        status: "open",
+        unlockedBy: operator,
+        unlockedAt: new Date(),
+        closeNote: input.note
+      },
+      create: {
+        month: selectedMonth,
+        status: "open",
+        unlockedBy: operator,
+        unlockedAt: new Date(),
+        closeNote: input.note
+      }
+    });
+    await logAction({
+      month: selectedMonth,
+      entityType: "month_close",
+      entityId: selectedMonth,
+      action: "unlock_month",
+      payload: { operator, note: input.note }
+    });
+    return close;
   }
 };
