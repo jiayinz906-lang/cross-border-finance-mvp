@@ -8,7 +8,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Card, Input, Modal, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getFinanceDashboard, getFinanceMonths } from "../../api/finance.api";
 import { monthlyReportExportUrl } from "../../api/workflow.api";
@@ -35,7 +35,7 @@ type RankingRow = {
   receivable: number;
   grossProfit: number;
   commission: number;
-  signed: boolean;
+  signatureStatus: string;
 };
 
 type MonthOption = {
@@ -166,7 +166,20 @@ const rankingColumns: ColumnsType<RankingRow> = [
   { title: "应收金额", dataIndex: "receivable", render: toMoney },
   { title: "毛利金额", dataIndex: "grossProfit", render: toMoney },
   { title: "提成金额", dataIndex: "commission", render: toMoney },
-  { title: "签名状态", dataIndex: "signed", render: (signed) => <Tag color={signed ? "green" : "gold"}>{signed ? "已签名" : "待签名"}</Tag> }
+  {
+    title: "签名状态",
+    dataIndex: "signatureStatus",
+    render: (status) => {
+      const labels: Record<string, { color: string; text: string }> = {
+        confirmed: { color: "green", text: "主管确认" },
+        signed: { color: "cyan", text: "已签名" },
+        pending: { color: "gold", text: "待签名" },
+        not_generated: { color: "default", text: "未生成" }
+      };
+      const item = labels[String(status)] ?? { color: "default", text: String(status || "-") };
+      return <Tag color={item.color}>{item.text}</Tag>;
+    }
+  }
 ];
 
 export default function Dashboard() {
@@ -208,20 +221,9 @@ export default function Dashboard() {
 
   const summary = data?.summary;
   const businessRows = data?.businessSummary ?? [];
-  const logisticsRows = businessRows.filter((item) => item.logisticsProfit > 0);
   const serviceRows = businessRows.filter((item) => item.logisticsProfit === 0);
-  const rankingRows = useMemo<RankingRow[]>(() => {
-    const source = logisticsRows.length ? logisticsRows : businessRows;
-    return source.slice(0, 5).map((item, index) => ({
-      rank: index + 1,
-      salespersonName: ["章佳洁", "蒋蕊", "王霄鱼", "杨伊雯", "朱卓然"][index] ?? item.businessType,
-      orderCount: item.orderCount,
-      receivable: item.receivable,
-      grossProfit: item.grossProfit,
-      commission: item.logisticsProfit * 0.15,
-      signed: index % 3 !== 2
-    }));
-  }, [businessRows, logisticsRows]);
+  const rankingRows: RankingRow[] = (data?.salespersonSummary ?? []).slice(0, 5);
+  const supplierRows = (data?.supplierPayableSummary ?? []).slice(0, 3);
 
   const totalReceivable = summary?.totalReceivable ?? 0;
   const totalPayable = summary?.totalPayable ?? 0;
@@ -233,7 +235,7 @@ export default function Dashboard() {
   const companyProfit = serviceRows.reduce((sum, item) => sum + item.grossProfit, 0);
   const personalProfit = Math.max(totalProfit - companyProfit, 0);
   const topCustomer = businessRows[0];
-  const topSupplierPayable = totalPayable * 0.37;
+  const unassignedSupplierPayable = supplierRows.find((item) => item.supplierName === "未指定供应商")?.payable ?? 0;
 
   const kpis: Kpi[] = [
     { title: "总应收", value: toMoney(totalReceivable), color: "#4c7ee8", icon: "¥", mom: pct(data?.comparison?.momReceivable), yoy: pct(data?.comparison?.yoyReceivable) },
@@ -293,23 +295,20 @@ export default function Dashboard() {
         </Card>
         <Card className="overview-card" title="上游应付集中度" extra={<Button type="link" onClick={() => navigate("/payables")}>查看更多</Button>}>
           <Table
-            rowKey="name"
+            rowKey="supplierName"
             pagination={false}
             size="small"
-            dataSource={[
-              { name: "上游供应商A", amount: topSupplierPayable, ratio: "37.24%", change: "+2.31pct" },
-              { name: "上游供应商B", amount: totalPayable * 0.24, ratio: "24.14%", change: "+1.02pct" },
-              { name: "上游供应商C", amount: totalPayable * 0.16, ratio: "15.51%", change: "-0.85pct" }
-            ]}
+            dataSource={supplierRows}
             columns={[
-              { title: "TOP 3 上游供应商", dataIndex: "name" },
-              { title: "应付金额", dataIndex: "amount", render: toMoney },
-              { title: "占比", dataIndex: "ratio" },
-              { title: "环比占比变化", dataIndex: "change", render: (v) => <span className={String(v).startsWith("-") ? "down" : "up"}>{v}</span> }
+              { title: "TOP 3 上游供应商", dataIndex: "supplierName" },
+              { title: "票数", dataIndex: "orderCount" },
+              { title: "应付金额", dataIndex: "payable", render: toMoney },
+              { title: "未付金额", dataIndex: "outstanding", render: toMoney },
+              { title: "占比", dataIndex: "ratio", render: formatPercent }
             ]}
           />
           <div className="supplier-foot">
-            <span>未确认上游暂估金额 <b>{toMoney(totalPayable * 0.06)}</b></span>
+            <span>未指定供应商应付 <b>{toMoney(unassignedSupplierPayable)}</b></span>
             <span>单票平均应付成本 <b>{toMoney(totalPayable / Math.max(data?.orderCount ?? 1, 1))}</b></span>
           </div>
         </Card>

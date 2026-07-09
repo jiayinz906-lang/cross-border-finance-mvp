@@ -168,13 +168,23 @@ export const financeService = {
   async getDashboard(month?: string) {
     const summary = await financeRepository.getLatestSummary(month);
     const selectedMonth = month ?? summary?.month;
-    const [orders, summaries] = await Promise.all([
+    const [orders, summaries, commissions, confirmationDocuments] = await Promise.all([
       financeRepository.listOrders(selectedMonth),
-      financeRepository.listSummaries()
+      financeRepository.listSummaries(),
+      prisma.commissionRecord.findMany({
+        where: selectedMonth ? { financeOrder: { month: selectedMonth } } : undefined
+      }),
+      prisma.confirmationDocument.findMany({
+        where: {
+          ...(selectedMonth ? { month: selectedMonth } : {}),
+          documentType: "logistics_commission"
+        }
+      })
     ]);
 
     const logisticsOrders = orders.filter((order) => !order.isServiceBusiness);
     const serviceOrders = orders.filter((order) => order.isServiceBusiness);
+    const totalPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
     const businessMap = new Map<string, {
       businessType: string;
       orderCount: number;
@@ -183,6 +193,32 @@ export const financeService = {
       grossProfit: number;
       logisticsProfit: number;
     }>();
+    const salespersonMap = new Map<string, {
+      salespersonName: string;
+      orderCount: number;
+      receivable: number;
+      grossProfit: number;
+      commission: number;
+      highRiskOrderCount: number;
+      signatureStatus: string;
+    }>();
+    const supplierMap = new Map<string, {
+      supplierName: string;
+      orderCount: number;
+      payable: number;
+      paid: number;
+      outstanding: number;
+      ratio: number;
+    }>();
+    const commissionBySalesperson = new Map<string, number>();
+    const signatureByOwner = new Map(confirmationDocuments.map((document) => [document.ownerName, document]));
+
+    for (const commission of commissions) {
+      commissionBySalesperson.set(
+        commission.salespersonName,
+        (commissionBySalesperson.get(commission.salespersonName) ?? 0) + (commission.manualCommissionAmount ?? commission.commissionAmount)
+      );
+    }
 
     for (const order of orders) {
       const item = businessMap.get(order.businessType) ?? {
@@ -199,6 +235,50 @@ export const financeService = {
       item.grossProfit += order.adjustedGrossProfit;
       if (!order.isServiceBusiness) item.logisticsProfit += order.adjustedGrossProfit;
       businessMap.set(order.businessType, item);
+
+      if (!order.isServiceBusiness) {
+        const salesperson = salespersonMap.get(order.salespersonName) ?? {
+          salespersonName: order.salespersonName,
+          orderCount: 0,
+          receivable: 0,
+          grossProfit: 0,
+          commission: 0,
+          highRiskOrderCount: 0,
+          signatureStatus: "not_generated"
+        };
+        salesperson.orderCount += 1;
+        salesperson.receivable += order.adjustedReceivable;
+        salesperson.grossProfit += order.adjustedGrossProfit;
+        salesperson.highRiskOrderCount += order.needSupervisorConfirm || (order.adjustedGrossProfitRate ?? 1) < 0.1 ? 1 : 0;
+        salespersonMap.set(order.salespersonName, salesperson);
+      }
+
+      const supplierName = order.supplierName || "未指定供应商";
+      const supplier = supplierMap.get(supplierName) ?? {
+        supplierName,
+        orderCount: 0,
+        payable: 0,
+        paid: 0,
+        outstanding: 0,
+        ratio: 0
+      };
+      supplier.orderCount += 1;
+      supplier.payable += order.adjustedPayable;
+      supplier.paid += order.paidAmount;
+      supplier.outstanding += Math.max(0, order.adjustedPayable - order.paidAmount);
+      supplierMap.set(supplierName, supplier);
+    }
+
+    for (const salesperson of salespersonMap.values()) {
+      const document = signatureByOwner.get(salesperson.salespersonName);
+      salesperson.commission = commissionBySalesperson.get(salesperson.salespersonName) ?? 0;
+      salesperson.signatureStatus = document?.supervisorStatus === "confirmed"
+        ? "confirmed"
+        : document?.signatureStatus === "signed"
+          ? "signed"
+          : document
+            ? "pending"
+            : "not_generated";
     }
 
     const selected = selectedMonth ? summaries.find((item) => item.month === selectedMonth) : summaries.at(-1);
@@ -218,6 +298,15 @@ export const financeService = {
           grossProfitRate: safeRate(item.grossProfit, item.receivable)
         }))
         .sort((a, b) => b.grossProfit - a.grossProfit),
+      salespersonSummary: Array.from(salespersonMap.values())
+        .sort((a, b) => b.grossProfit - a.grossProfit)
+        .map((item, index) => ({ ...item, rank: index + 1 })),
+      supplierPayableSummary: Array.from(supplierMap.values())
+        .map((item) => ({
+          ...item,
+          ratio: safeRate(item.payable, totalPayable) ?? 0
+        }))
+        .sort((a, b) => b.payable - a.payable),
       monthlyTrend: summaries.map((item) => ({
         month: item.month,
         receivable: item.totalReceivable,

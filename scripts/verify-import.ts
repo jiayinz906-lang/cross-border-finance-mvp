@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { can } from "../server/src/config/rbac.js";
 import { prisma } from "../server/src/prisma/client.js";
 import { authService, parseAuthToken } from "../server/src/services/auth.service.js";
+import { financeService } from "../server/src/services/finance.service.js";
 import { payableService } from "../server/src/services/payable.service.js";
 import { receivableService } from "../server/src/services/receivable.service.js";
 import { settlementService } from "../server/src/services/settlement.service.js";
@@ -103,6 +104,10 @@ async function verifyImport(checks: Check[]) {
   assertCheck(checks, "Summary receivable matches orders", closeEnough(summary?.totalReceivable ?? 0, orderReceivable), `${summary?.totalReceivable} / ${orderReceivable}`);
   assertCheck(checks, "Summary payable matches orders", closeEnough(summary?.totalPayable ?? 0, orderPayable), `${summary?.totalPayable} / ${orderPayable}`);
   assertCheck(checks, "Summary profit matches orders", closeEnough(summary?.totalGrossProfit ?? 0, orderProfit), `${summary?.totalGrossProfit} / ${orderProfit}`);
+
+  const dashboard = await financeService.getDashboard(imported.month);
+  assertCheck(checks, "Dashboard salesperson summary generated", dashboard.salespersonSummary.length > 0, String(dashboard.salespersonSummary.length));
+  assertCheck(checks, "Dashboard supplier payable summary generated", dashboard.supplierPayableSummary.length > 0, String(dashboard.supplierPayableSummary.length));
 
   return {
     month: imported.month,

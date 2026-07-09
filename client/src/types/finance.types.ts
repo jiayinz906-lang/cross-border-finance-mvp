@@ -59,6 +59,26 @@ export type MonthlyTrend = {
   commission: number;
 };
 
+export type SalespersonSummary = {
+  rank: number;
+  salespersonName: string;
+  orderCount: number;
+  receivable: number;
+  grossProfit: number;
+  commission: number;
+  highRiskOrderCount: number;
+  signatureStatus: "confirmed" | "signed" | "pending" | "not_generated" | string;
+};
+
+export type SupplierPayableSummary = {
+  supplierName: string;
+  orderCount: number;
+  payable: number;
+  paid: number;
+  outstanding: number;
+  ratio: number;
+};
+
 export type DashboardData = {
   summary: FinanceSummary | null;
   orderCount: number;
@@ -67,6 +87,8 @@ export type DashboardData = {
   logisticsProfit: number;
   serviceProfit: number;
   businessSummary: BusinessSummary[];
+  salespersonSummary: SalespersonSummary[];
+  supplierPayableSummary: SupplierPayableSummary[];
   monthlyTrend: MonthlyTrend[];
   comparison: {
     month: string | null;
