@@ -1,4 +1,4 @@
-import { Button, Card, Descriptions, Modal, Progress, Space, Table, Tag, message } from "antd";
+import { Button, Card, Descriptions, Modal, Progress, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getFinanceDashboard } from "../../api/finance.api";
@@ -25,6 +25,51 @@ type MetricCard = {
   note: string;
 };
 
+type ConfirmationPayloadDetail = {
+  orderNo: string;
+  originalOrderNo?: string | null;
+  customerName?: string | null;
+  businessType: string;
+  receivable: number;
+  payable: number;
+  grossProfit: number;
+  grossProfitRate: number | null;
+  commissionRate: number;
+  commissionAmount: number;
+  source?: string;
+};
+
+type ConfirmationPayload = {
+  title: string;
+  fileType: string;
+  documentCode: string;
+  monthLabel: string;
+  generatedAt: string;
+  summary: {
+    ownerName: string;
+    businessType: string;
+    orderCount: number;
+    receivable: number;
+    payable: number;
+    grossProfit: number;
+    commissionRate: number;
+    accruedCommission: number;
+    supervisorAdjustmentAmount: number;
+    finalCommission: number;
+    abnormalNote: string;
+    status: string;
+  };
+  details: ConfirmationPayloadDetail[];
+  statement: string;
+  signatureTrace: {
+    employeeSignature: string;
+    signedAt: string | null;
+    confirmIp: string;
+    deviceInfo: string;
+    supervisorConfirm: string;
+  };
+};
+
 function toPlainMoney(value?: number | null) {
   return formatMoney(value).replace("CN¥", "¥").replace(/\s/g, "");
 }
@@ -33,12 +78,27 @@ function signTime(row: ConfirmationDocument) {
   return row.signedAt ? row.signedAt.replace("T", " ").slice(0, 19) : "-";
 }
 
+function parsePayload(row?: ConfirmationDocument | null): ConfirmationPayload | null {
+  if (!row?.payloadJson) return null;
+  try {
+    return JSON.parse(row.payloadJson) as ConfirmationPayload;
+  } catch {
+    return null;
+  }
+}
+
+function dateTimeText(value?: string | null) {
+  return value ? value.replace("T", " ").slice(0, 19) : "____ 年 ____ 月 ____ 日 ____:____";
+}
+
 export default function SignatureConfirm() {
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<ConfirmationDocument | null>(null);
   const { selectedMonth } = useSelectedMonth();
+
+  const selectedPayload = parsePayload(selectedDocument);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -98,9 +158,9 @@ export default function SignatureConfirm() {
 
   const summary = dashboard?.summary;
   const metrics: MetricCard[] = useMemo(() => [
-    { title: "总应收", value: toPlainMoney(summary?.totalReceivable), accent: "blue", tag: "优化后", note: "汇率缺失统一按 6.85 修正" },
-    { title: "调整后毛利", value: toPlainMoney(summary?.totalGrossProfit), accent: "green", tag: formatPercent(summary?.grossProfitRate), note: "可用于经营分析口径" },
-    { title: "物流提成", value: toPlainMoney(summary?.totalCommission), accent: "orange", tag: "15%", note: "统一按物流毛利计提" },
+    { title: "总应收", value: toPlainMoney(summary?.totalReceivable), accent: "blue", tag: "原始台账", note: "按导入后的原始台账记录汇总" },
+    { title: "调整后毛利", value: toPlainMoney(summary?.totalGrossProfit), accent: "green", tag: formatPercent(summary?.grossProfitRate), note: "用于经营分析口径" },
+    { title: "物流提成", value: toPlainMoney(summary?.totalCommission), accent: "orange", tag: "阶梯", note: "按销售代表月毛利计提" },
     { title: "高风险票", value: `${summary?.riskOrderCount ?? 0}票`, accent: "red", tag: "需复核", note: "汇率、负毛利、缺应付" },
     { title: "总票数", value: `${dashboard?.orderCount ?? 0}`, accent: "blue", tag: "Excel", note: "按运单口径去重" },
     { title: "调整后应付", value: toPlainMoney(summary?.totalPayable), accent: "green", tag: "含暂估", note: "清关/派送缺应付补齐" }
@@ -115,14 +175,14 @@ export default function SignatureConfirm() {
 
   const columns: ColumnsType<ConfirmationDocument> = [
     { title: "业务员", dataIndex: "ownerName", fixed: "left", width: 110 },
-    { title: "业务类型", dataIndex: "businessType", width: 110, render: (value) => value || "logistics" },
+    { title: "业务类型", dataIndex: "businessType", width: 110, render: () => "物流业务" },
     { title: "订单数量", dataIndex: "orderCount", width: 100 },
     { title: "最终提成金额", dataIndex: "commissionAmount", align: "right", width: 140, render: toPlainMoney },
     { title: "个人确认单状态", dataIndex: "documentStatus", width: 130, render: (value) => <Tag color={value === "voided" ? "red" : "blue"}>{value === "voided" ? "已作废" : "已生成"}</Tag> },
     { title: "发送状态", dataIndex: "sendStatus", width: 110, render: (value) => value === "sent" ? <Tag color="green">已发送</Tag> : <Tag color="gold">未发送</Tag> },
     { title: "员工签名状态", dataIndex: "signatureStatus", width: 120, render: (value) => value === "signed" ? <Tag color="green">已签名</Tag> : <Tag color="gold">待签名</Tag> },
     { title: "签名时间", width: 190, render: (_, row) => signTime(row) },
-    { title: "主管确认状态", dataIndex: "supervisorStatus", width: 130, render: (value) => value === "confirmed" ? <Tag color="green">主管已确认</Tag> : <Tag color="gold">待签名</Tag> },
+    { title: "主管确认状态", dataIndex: "supervisorStatus", width: 130, render: (value) => value === "confirmed" ? <Tag color="green">主管已确认</Tag> : <Tag color="gold">待确认</Tag> },
     {
       title: "操作",
       key: "actions",
@@ -140,6 +200,18 @@ export default function SignatureConfirm() {
         </Space>
       )
     }
+  ];
+
+  const detailColumns: ColumnsType<ConfirmationPayloadDetail> = [
+    { title: "运单号", dataIndex: "orderNo", fixed: "left", width: 130 },
+    { title: "原始订单号", dataIndex: "originalOrderNo", width: 140, render: (value) => value || "-" },
+    { title: "业务类型", dataIndex: "businessType", width: 140 },
+    { title: "应收", dataIndex: "receivable", align: "right", render: toPlainMoney },
+    { title: "应付", dataIndex: "payable", align: "right", render: toPlainMoney },
+    { title: "毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
+    { title: "毛利率", dataIndex: "grossProfitRate", align: "right", render: formatPercent },
+    { title: "提成比例", dataIndex: "commissionRate", align: "right", render: formatPercent },
+    { title: "提成金额", dataIndex: "commissionAmount", align: "right", render: toPlainMoney }
   ];
 
   return (
@@ -174,23 +246,72 @@ export default function SignatureConfirm() {
 
       <Modal
         open={Boolean(selectedDocument)}
-        title={`${selectedDocument?.ownerName ?? ""} 个人提成确认单`}
+        title={`${selectedPayload?.summary.ownerName ?? selectedDocument?.ownerName ?? ""} 个人提成签名确认单`}
         footer={<Button type="primary" onClick={() => setSelectedDocument(null)}>关闭</Button>}
         onCancel={() => setSelectedDocument(null)}
-        width={720}
+        width={1180}
       >
-        <Descriptions bordered column={1} size="small">
-          <Descriptions.Item label="业务类型">{selectedDocument?.businessType || "logistics"}</Descriptions.Item>
-          <Descriptions.Item label="订单数量">{selectedDocument?.orderCount ?? 0}</Descriptions.Item>
-          <Descriptions.Item label="最终提成金额">{toPlainMoney(selectedDocument?.commissionAmount)}</Descriptions.Item>
-          <Descriptions.Item label="确认单状态">{selectedDocument?.documentStatus}</Descriptions.Item>
-          <Descriptions.Item label="发送状态">{selectedDocument?.sendStatus}</Descriptions.Item>
-          <Descriptions.Item label="员工签名状态">{selectedDocument?.signatureStatus}</Descriptions.Item>
-          <Descriptions.Item label="主管确认状态">{selectedDocument?.supervisorStatus}</Descriptions.Item>
-          <Descriptions.Item label="签名链接">
-            {selectedDocument?.signatureUrl ? `${location.origin}${selectedDocument.signatureUrl}` : "待发送后生成"}
-          </Descriptions.Item>
-        </Descriptions>
+        {selectedPayload ? (
+          <Space direction="vertical" size={16} style={{ width: "100%" }}>
+            <Typography.Title level={4} style={{ margin: 0 }}>{selectedPayload.title}</Typography.Title>
+            <Typography.Text type="secondary">
+              文件类型：{selectedPayload.fileType}　月份：{selectedPayload.monthLabel}
+              <br />
+              确认单编号：{selectedPayload.documentCode}　生成时间：{dateTimeText(selectedPayload.generatedAt)}
+            </Typography.Text>
+
+            <Typography.Title level={5}>一、员工与提成汇总</Typography.Title>
+            <Descriptions bordered column={4} size="small">
+              <Descriptions.Item label="员工姓名">{selectedPayload.summary.ownerName}</Descriptions.Item>
+              <Descriptions.Item label="业务类型">{selectedPayload.summary.businessType}</Descriptions.Item>
+              <Descriptions.Item label="订单数量">{selectedPayload.summary.orderCount}</Descriptions.Item>
+              <Descriptions.Item label="状态">{selectedDocument?.signatureStatus === "signed" ? "已员工签名" : selectedPayload.summary.status}</Descriptions.Item>
+              <Descriptions.Item label="应收金额">{toPlainMoney(selectedPayload.summary.receivable)}</Descriptions.Item>
+              <Descriptions.Item label="调整后应付">{toPlainMoney(selectedPayload.summary.payable)}</Descriptions.Item>
+              <Descriptions.Item label="调整后毛利">{toPlainMoney(selectedPayload.summary.grossProfit)}</Descriptions.Item>
+              <Descriptions.Item label="提成比例">{formatPercent(selectedPayload.summary.commissionRate)}</Descriptions.Item>
+              <Descriptions.Item label="应计提成">{toPlainMoney(selectedPayload.summary.accruedCommission)}</Descriptions.Item>
+              <Descriptions.Item label="主管调整金额">{toPlainMoney(selectedPayload.summary.supervisorAdjustmentAmount)}</Descriptions.Item>
+              <Descriptions.Item label="最终确认提成">{toPlainMoney(selectedPayload.summary.finalCommission)}</Descriptions.Item>
+              <Descriptions.Item label="异常说明">{selectedPayload.summary.abnormalNote}</Descriptions.Item>
+            </Descriptions>
+
+            <Typography.Title level={5}>二、订单明细</Typography.Title>
+            <Table
+              rowKey={(row) => `${row.orderNo}-${row.originalOrderNo ?? ""}`}
+              size="small"
+              pagination={false}
+              dataSource={selectedPayload.details}
+              columns={detailColumns}
+              scroll={{ x: 1100 }}
+            />
+
+            <Typography.Title level={5}>三、员工确认声明</Typography.Title>
+            <Typography.Paragraph>{selectedPayload.statement}</Typography.Paragraph>
+
+            <Typography.Title level={5}>四、签名留痕</Typography.Title>
+            <Descriptions bordered column={1} size="small">
+              <Descriptions.Item label="员工签名">{selectedDocument?.signatureStatus === "signed" ? "已电子签名" : selectedPayload.signatureTrace.employeeSignature}</Descriptions.Item>
+              <Descriptions.Item label="签名时间">{dateTimeText(selectedDocument?.signedAt ?? selectedPayload.signatureTrace.signedAt)}</Descriptions.Item>
+              <Descriptions.Item label="确认 IP">{selectedPayload.signatureTrace.confirmIp}</Descriptions.Item>
+              <Descriptions.Item label="设备信息">{selectedPayload.signatureTrace.deviceInfo}</Descriptions.Item>
+              <Descriptions.Item label="主管最终确认">{selectedDocument?.supervisorStatus === "confirmed" ? "主管已确认" : selectedPayload.signatureTrace.supervisorConfirm}</Descriptions.Item>
+              <Descriptions.Item label="签名链接">
+                {selectedDocument?.signatureUrl ? `${location.origin}${selectedDocument.signatureUrl}` : "待发送后生成"}
+              </Descriptions.Item>
+            </Descriptions>
+          </Space>
+        ) : (
+          <Descriptions bordered column={1} size="small">
+            <Descriptions.Item label="业务类型">{selectedDocument?.businessType || "logistics"}</Descriptions.Item>
+            <Descriptions.Item label="订单数量">{selectedDocument?.orderCount ?? 0}</Descriptions.Item>
+            <Descriptions.Item label="最终提成金额">{toPlainMoney(selectedDocument?.commissionAmount)}</Descriptions.Item>
+            <Descriptions.Item label="确认单状态">{selectedDocument?.documentStatus}</Descriptions.Item>
+            <Descriptions.Item label="发送状态">{selectedDocument?.sendStatus}</Descriptions.Item>
+            <Descriptions.Item label="员工签名状态">{selectedDocument?.signatureStatus}</Descriptions.Item>
+            <Descriptions.Item label="主管确认状态">{selectedDocument?.supervisorStatus}</Descriptions.Item>
+          </Descriptions>
+        )}
       </Modal>
     </div>
   );
