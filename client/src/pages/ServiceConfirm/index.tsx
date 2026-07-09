@@ -17,6 +17,7 @@ type ServiceRecord = {
   grossProfit: number | null;
   suggestedCommissionMin: number | null;
   suggestedCommissionMax: number | null;
+  supervisorFinalCommission?: number | null;
   confirmStatus: string;
   financeOrder?: {
     orderNo: string;
@@ -38,17 +39,33 @@ function toPlainMoney(value?: number | null) {
   return formatMoney(value).replace("CN¥", "¥").replace(/\s/g, "");
 }
 
+function isCompanyRegister(row: ServiceRecord) {
+  return row.serviceType.includes("公司");
+}
+
+function isEac(row: ServiceRecord) {
+  return row.serviceType.includes("EAC");
+}
+
+function isTrademark(row: ServiceRecord) {
+  return row.serviceType.includes("商标");
+}
+
+function isRent(row: ServiceRecord) {
+  return row.serviceType.includes("店铺") || row.serviceType.includes("租赁") || row.serviceType.includes("OZ");
+}
+
 function commissionRange(row: ServiceRecord) {
-  if (row.serviceType.includes("公司")) {
+  if (isCompanyRegister(row)) {
     return (row.originalPrice ?? 0) > 25000 ? "2000~3500元" : "1500~2000元";
   }
-  if (row.serviceType.includes("EAC")) {
+  if (isEac(row)) {
     return (row.originalPrice ?? 0) <= 3500 ? "100~200元" : "200~400元";
   }
-  if (row.serviceType.includes("商标")) {
+  if (isTrademark(row)) {
     return (row.grossProfit ?? 0) > 2000 ? "25%" : "20%";
   }
-  if (row.serviceType.includes("店铺")) {
+  if (isRent(row)) {
     return (row.originalPrice ?? 0) >= 3000 ? "700元" : "500元";
   }
   return `${formatMoney(row.suggestedCommissionMin)} - ${formatMoney(row.suggestedCommissionMax)}`;
@@ -68,17 +85,17 @@ function defaultCommission(row: ServiceRecord) {
 }
 
 function serviceCondition(row: ServiceRecord) {
-  if (row.serviceType.includes("公司")) {
+  if (isCompanyRegister(row)) {
     return `公司注册/注销：成交单价 ${(row.originalPrice ?? 0) > 25000 ? ">2.5万" : "<2.5万"}`;
   }
-  if (row.serviceType.includes("EAC")) {
+  if (isEac(row)) {
     return `EAC证书-DOC：成交单价 ${(row.originalPrice ?? 0) <= 3500 ? "<3.5K" : ">3.5K"}`;
   }
-  if (row.serviceType.includes("商标")) {
+  if (isTrademark(row)) {
     return `商标注册：成交利润 ${(row.grossProfit ?? 0) > 2000 ? ">2000" : "<2000"}`;
   }
-  if (row.serviceType.includes("店铺")) {
-    return `店铺租赁：单价${(row.originalPrice ?? 0) >= 30000 ? 3000 : 2500}/月`;
+  if (isRent(row)) {
+    return `店铺租赁：单价 ${(row.originalPrice ?? 0) >= 3000 ? "3000" : "2500"}/月`;
   }
   return "待主管确认";
 }
@@ -87,6 +104,7 @@ export default function ServiceConfirm() {
   const [rows, setRows] = useState<ServiceRecord[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [commissionEdits, setCommissionEdits] = useState<Record<number, { rule: string; amount: string }>>({});
   const { selectedMonth } = useSelectedMonth();
 
   const loadData = useCallback(async () => {
@@ -109,6 +127,38 @@ export default function ServiceConfirm() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    setCommissionEdits((current) => {
+      const next = { ...current };
+      for (const row of rows) {
+        if (!next[row.id]) {
+          next[row.id] = {
+            rule: commissionRange(row),
+            amount: String(row.supervisorFinalCommission ?? defaultCommission(row))
+          };
+        }
+      }
+      return next;
+    });
+  }, [rows]);
+
+  const updateCommissionEdit = (id: number, field: "rule" | "amount", value: string) => {
+    setCommissionEdits((current) => ({
+      ...current,
+      [id]: {
+        rule: current[id]?.rule ?? "",
+        amount: current[id]?.amount ?? "",
+        [field]: value
+      }
+    }));
+  };
+
+  const commissionRuleValue = (row: ServiceRecord) => commissionEdits[row.id]?.rule ?? commissionRange(row);
+
+  const commissionAmountValue = (row: ServiceRecord) => (
+    commissionEdits[row.id]?.amount ?? String(row.supervisorFinalCommission ?? defaultCommission(row))
+  );
+
   const handleGenerateServiceDocuments = async () => {
     const res = await generateServiceDocuments(selectedMonth);
     message.success(`已生成 ${res.data.rows?.length ?? 0} 份注册业务确认单`);
@@ -116,13 +166,13 @@ export default function ServiceConfirm() {
 
   const handleViewSignatureStatus = async () => {
     const res = await getDocuments(selectedMonth, "service_commission");
-    const rows = res.data.rows ?? [];
-    const signed = rows.filter((row: { signatureStatus: string }) => row.signatureStatus === "signed").length;
-    message.info(`注册业务确认单 ${rows.length} 份，已签名 ${signed} 份`);
+    const documentRows = res.data.rows ?? [];
+    const signed = documentRows.filter((row: { signatureStatus: string }) => row.signatureStatus === "signed").length;
+    message.info(`注册业务确认单 ${documentRows.length} 份，已签名 ${signed} 份`);
   };
 
   const handleSaveConfirm = async (row: ServiceRecord) => {
-    await confirmServiceRecord(row.id, Number(defaultCommission(row)) || 0);
+    await confirmServiceRecord(row.id, Number(commissionAmountValue(row)) || 0);
     message.success(`${row.financeOrder?.orderNo ?? row.serviceType} 已保存确认`);
     await loadData();
   };
@@ -137,7 +187,7 @@ export default function ServiceConfirm() {
       value: toPlainMoney(summary?.totalReceivable),
       accent: "blue",
       tag: "优化后",
-      note: "汇率缺失统一按 6.85 修正"
+      note: "按原始表格汇率口径计算"
     },
     {
       title: "调整后毛利",
@@ -182,8 +232,24 @@ export default function ServiceConfirm() {
     { title: "成交单价", dataIndex: "originalPrice", align: "right", render: toPlainMoney },
     { title: "成交利润", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
     { title: "限定条件", render: (_, row) => serviceCondition(row) },
-    { title: "提成比例", render: (_, row) => <Input value={commissionRange(row)} /> },
-    { title: "确认提成", render: (_, row) => <Input value={defaultCommission(row)} /> },
+    {
+      title: "提成比例",
+      render: (_, row) => (
+        <Input
+          value={commissionRuleValue(row)}
+          onChange={(event) => updateCommissionEdit(row.id, "rule", event.target.value)}
+        />
+      )
+    },
+    {
+      title: "确认提成",
+      render: (_, row) => (
+        <Input
+          value={commissionAmountValue(row)}
+          onChange={(event) => updateCommissionEdit(row.id, "amount", event.target.value)}
+        />
+      )
+    },
     {
       title: "状态",
       dataIndex: "confirmStatus",
@@ -197,11 +263,11 @@ export default function ServiceConfirm() {
       <header className="profit-hero">
         <div>
           <h1>2026年6月跨境电商经营与提成测试台</h1>
-          <p>基于 6月数据 Excel 汇总，统一汇率、倒推成本、物流提成和风险复核口径。</p>
+          <p>基于 Excel 汇总，统一汇率、倒推成本、物流提成和风险复核口径。</p>
         </div>
         <Space size={12} wrap>
-          <div className="profit-source">数据源：<b>6月数据 Excel</b></div>
-          <Button type="primary" className="profit-month-btn">2026年6月</Button>
+          <div className="profit-source">数据源：<b>{selectedMonth} 数据库</b></div>
+          <Button type="primary" className="profit-month-btn">{selectedMonth}</Button>
           <Button className="profit-print-btn" onClick={() => window.print()}>打印 / 导出 PDF</Button>
           <Button onClick={loadData}>刷新</Button>
         </Space>
