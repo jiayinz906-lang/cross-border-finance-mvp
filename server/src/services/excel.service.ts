@@ -951,6 +951,7 @@ export const excelService = {
           totalPayable: parsed.totalPayable,
           totalGrossProfit: parsed.totalGrossProfit,
           grossProfitRate: parsed.grossProfitRate,
+          qualityReport: parsed.qualityReport,
           activeRules: parsed.rules
         })
       }

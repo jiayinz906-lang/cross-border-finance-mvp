@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Descriptions, Input, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Descriptions, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -43,6 +43,15 @@ function prettyJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
+function parseJson<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function Settings() {
   const { selectedMonth } = useSelectedMonth();
   const [auth, setAuth] = useState<AuthContext | null>(null);
@@ -63,6 +72,7 @@ export default function Settings() {
   const [closeNote, setCloseNote] = useState("");
   const [savingRuleKey, setSavingRuleKey] = useState<string | null>(null);
   const [rollingBackId, setRollingBackId] = useState<number | null>(null);
+  const [selectedBatch, setSelectedBatch] = useState<ImportBatch | null>(null);
 
   const permissions = useMemo(() => new Set(auth?.permissions ?? []), [auth]);
   const canWriteRules = permissions.has("rules:write");
@@ -253,22 +263,37 @@ export default function Settings() {
     { title: "毛利", dataIndex: "totalGrossProfit", width: 130, align: "right", render: money },
     { title: "风险票", dataIndex: "riskOrderCount", width: 82, align: "right" },
     {
+      title: "预检",
+      width: 140,
+      render: (_, row) => {
+        const preview = parseJson<{ qualityReport?: { blockingCount?: number; warningCount?: number; infoCount?: number } }>(row.previewJson, {});
+        const quality = preview.qualityReport;
+        if (!quality) return <Tag>未记录</Tag>;
+        if (quality.blockingCount) return <Tag color="red">阻断 {quality.blockingCount}</Tag>;
+        if (quality.warningCount) return <Tag color="gold">复核 {quality.warningCount}</Tag>;
+        return <Tag color="green">通过</Tag>;
+      }
+    },
+    {
       title: "操作",
-      width: 110,
+      width: 170,
       fixed: "right",
       render: (_, row) => (
-        <Popconfirm
-          title="确认回滚该导入批次？"
-          description="回滚会删除该批次写入的订单、提成、风险和服务确认记录，并重新计算月度汇总。"
-          okText="确认回滚"
-          cancelText="取消"
-          disabled={row.status !== "active" || !canRollback}
-          onConfirm={() => rollback(row.id)}
-        >
-          <Button danger size="small" disabled={row.status !== "active" || !canRollback || isMonthLocked} loading={rollingBackId === row.id}>
-            回滚
-          </Button>
-        </Popconfirm>
+        <Space size={6}>
+          <Button size="small" onClick={() => setSelectedBatch(row)}>详情</Button>
+          <Popconfirm
+            title="确认回滚该导入批次？"
+            description="回滚会删除该批次写入的订单、提成、风险和服务确认记录，并重新计算月度汇总。"
+            okText="确认回滚"
+            cancelText="取消"
+            disabled={row.status !== "active" || !canRollback}
+            onConfirm={() => rollback(row.id)}
+          >
+            <Button danger size="small" disabled={row.status !== "active" || !canRollback || isMonthLocked} loading={rollingBackId === row.id}>
+              回滚
+            </Button>
+          </Popconfirm>
+        </Space>
       )
     }
   ];
@@ -514,6 +539,95 @@ export default function Settings() {
           />
         </Card>
       </Space>
+
+      <Modal
+        open={Boolean(selectedBatch)}
+        title={`导入批次详情：${selectedBatch?.batchNo ?? ""}`}
+        width={980}
+        footer={<Button type="primary" onClick={() => setSelectedBatch(null)}>关闭</Button>}
+        onCancel={() => setSelectedBatch(null)}
+      >
+        {selectedBatch && (() => {
+          const audit = parseJson<{
+            fieldMapping?: Array<{ field: string; sourceHeader: string }>;
+            missingRequiredFields?: string[];
+            template?: { matchExact?: boolean; missingTemplateHeaders?: string[]; extraHeaders?: string[] };
+          }>(selectedBatch.templateAuditJson, {});
+          const preview = parseJson<{
+            grossProfitRate?: number | null;
+            qualityReport?: {
+              blockingCount?: number;
+              warningCount?: number;
+              infoCount?: number;
+              issues?: Array<{ key: string; level: string; title: string; count: number; orderNos: string[]; message: string }>;
+            };
+          }>(selectedBatch.previewJson, {});
+          const quality = preview.qualityReport;
+
+          return (
+            <Space direction="vertical" size={14} style={{ width: "100%" }}>
+              <Descriptions size="small" bordered column={3}>
+                <Descriptions.Item label="月份">{selectedBatch.month}</Descriptions.Item>
+                <Descriptions.Item label="文件">{selectedBatch.fileName}</Descriptions.Item>
+                <Descriptions.Item label="工作表">{selectedBatch.sheetName}</Descriptions.Item>
+                <Descriptions.Item label="状态">{statusTag(selectedBatch.status)}</Descriptions.Item>
+                <Descriptions.Item label="明细行">{selectedBatch.importedRows}</Descriptions.Item>
+                <Descriptions.Item label="票数">{selectedBatch.importedOrders}</Descriptions.Item>
+                <Descriptions.Item label="总应收">{money(selectedBatch.totalReceivable)}</Descriptions.Item>
+                <Descriptions.Item label="总应付">{money(selectedBatch.totalPayable)}</Descriptions.Item>
+                <Descriptions.Item label="毛利">{money(selectedBatch.totalGrossProfit)}</Descriptions.Item>
+              </Descriptions>
+
+              <Alert
+                type={audit.template?.matchExact ? "success" : "warning"}
+                showIcon
+                message={audit.template?.matchExact ? "该批次导入表头与后台模板完全匹配" : "该批次导入表头与后台模板存在差异"}
+                description={`缺失表头：${audit.template?.missingTemplateHeaders?.join("、") || "无"}；额外表头：${audit.template?.extraHeaders?.join("、") || "无"}`}
+              />
+
+              <Table
+                rowKey={(row) => `${row.field}-${row.sourceHeader}`}
+                size="small"
+                pagination={false}
+                title={() => "字段映射"}
+                dataSource={audit.fieldMapping ?? []}
+                columns={[
+                  { title: "系统字段", dataIndex: "field", width: 220 },
+                  { title: "Excel 表头", dataIndex: "sourceHeader" }
+                ]}
+                scroll={{ y: 220 }}
+              />
+
+              <Alert
+                type={(quality?.blockingCount ?? 0) > 0 ? "error" : (quality?.warningCount ?? 0) > 0 ? "warning" : "success"}
+                showIcon
+                message={`质量预检：阻断 ${quality?.blockingCount ?? 0} 项，复核 ${quality?.warningCount ?? 0} 项，提示 ${quality?.infoCount ?? 0} 项`}
+                description={quality ? "质量预检来自导入时保存的批次快照。" : "历史批次未保存质量预检快照，建议后续重新导入后查看。"}
+              />
+
+              <Table
+                rowKey="key"
+                size="small"
+                pagination={false}
+                title={() => "质量预检明细"}
+                dataSource={quality?.issues ?? []}
+                columns={[
+                  {
+                    title: "级别",
+                    dataIndex: "level",
+                    width: 90,
+                    render: (value: string) => value === "error" ? <Tag color="red">阻断</Tag> : value === "warning" ? <Tag color="gold">复核</Tag> : <Tag color="blue">提示</Tag>
+                  },
+                  { title: "校验项", dataIndex: "title", width: 170 },
+                  { title: "数量", dataIndex: "count", width: 80, align: "right" },
+                  { title: "涉及订单", dataIndex: "orderNos", render: (values: string[]) => values?.length ? values.join("、") : "-" },
+                  { title: "建议", dataIndex: "message" }
+                ]}
+              />
+            </Space>
+          );
+        })()}
+      </Modal>
     </>
   );
 }

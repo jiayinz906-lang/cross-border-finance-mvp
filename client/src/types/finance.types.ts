@@ -191,6 +191,8 @@ export type ImportBatch = {
   totalGrossProfit: number;
   riskOrderCount: number;
   abnormalHighProfitCount: number;
+  templateAuditJson?: string | null;
+  previewJson?: string | null;
   createdAt: string;
   revertedAt?: string | null;
 };
