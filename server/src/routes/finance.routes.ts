@@ -9,8 +9,10 @@ import {
   importTemplateController,
   listLedgerController,
   monthsController,
+  parameterRulesController,
   rollbackImportBatchController,
-  summaryController
+  summaryController,
+  updateParameterRuleController
 } from "../controllers/finance.controller.js";
 
 export const financeRoutes = Router();
@@ -20,6 +22,8 @@ financeRoutes.get("/ledger", listLedgerController);
 financeRoutes.get("/summary", summaryController);
 financeRoutes.get("/dashboard", dashboardController);
 financeRoutes.get("/months", monthsController);
+financeRoutes.get("/parameter-rules", parameterRulesController);
+financeRoutes.put("/parameter-rules/:ruleKey", updateParameterRuleController);
 financeRoutes.get("/import-batches", importBatchesController);
 financeRoutes.post("/import-preview", upload.single("file"), importPreviewController);
 financeRoutes.post("/import", upload.single("file"), importExcelController);

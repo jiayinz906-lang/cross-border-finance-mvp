@@ -1,6 +1,74 @@
 import { agencyRuntimeProfile } from "../config/agent.registry.js";
 import { selfHostedStack } from "../config/selfhosted-stack.js";
+import { prisma } from "../prisma/client.js";
 import { financeRepository } from "../repositories/finance.repository.js";
+
+const defaultParameterRules = [
+  {
+    ruleKey: "exchange_rate_policy",
+    ruleGroup: "currency",
+    label: "汇率计算规则",
+    value: { cnyRate: 1, usdRate: 6.85, useExternalApi: false },
+    description: "严格执行原始表格标注汇率：1 为人民币；美金/美元/USD/汇率未出按 6.85；其余按表格标注。"
+  },
+  {
+    ruleKey: "risk_profit_rate_threshold",
+    ruleGroup: "risk",
+    label: "毛利率风险阈值",
+    value: { highRiskBelow: 0.1, abnormalHighAbove: 0.5 },
+    description: "毛利率低于 10% 标记高风险；高于 50% 标记异常高利润并复核成本漏录。"
+  },
+  {
+    ruleKey: "logistics_commission_tiers",
+    ruleGroup: "commission",
+    label: "物流提成档位",
+    value: [
+      { min: 15000, max: 50000, rate: 0.15 },
+      { min: 50000, max: 100000, rate: 0.2 },
+      { min: 100000, max: 150000, rate: 0.25 },
+      { min: 150000, max: null, rate: 0.3 }
+    ],
+    description: "物流销售代表按自然月毛利区间计算提成比例。"
+  },
+  {
+    ruleKey: "company_customer_commission_rate",
+    ruleGroup: "commission",
+    label: "公司客户提成比例",
+    value: { rate: 0.1 },
+    description: "主管调整为公司客户订单后，提成比例按 10%。"
+  },
+  {
+    ruleKey: "service_business_scope",
+    ruleGroup: "service",
+    label: "注册/服务类业务范围",
+    value: ["注册", "注销", "EAC", "COC", "DOC", "证书", "商标", "店铺", "租赁", "财税"],
+    description: "服务类业务单独进入主管确认，不进入物流提成口径。"
+  }
+];
+
+function parseRuleValue(valueJson: string) {
+  try {
+    return JSON.parse(valueJson);
+  } catch {
+    return valueJson;
+  }
+}
+
+async function ensureDefaultParameterRules() {
+  for (const rule of defaultParameterRules) {
+    await prisma.parameterRule.upsert({
+      where: { ruleKey: rule.ruleKey },
+      update: {},
+      create: {
+        ruleKey: rule.ruleKey,
+        ruleGroup: rule.ruleGroup,
+        label: rule.label,
+        valueJson: JSON.stringify(rule.value),
+        description: rule.description
+      }
+    });
+  }
+}
 
 function safeRate(numerator: number, denominator: number): number | null {
   return denominator === 0 ? null : numerator / denominator;
@@ -41,6 +109,59 @@ export const financeService = {
         totalReceivable: item.totalReceivable,
         totalGrossProfit: item.totalGrossProfit
       }))
+    };
+  },
+
+  async listParameterRules() {
+    await ensureDefaultParameterRules();
+    const rows = await prisma.parameterRule.findMany({
+      where: { isActive: true },
+      orderBy: [{ ruleGroup: "asc" }, { id: "asc" }]
+    });
+
+    return {
+      rows: rows.map((rule) => ({
+        id: rule.id,
+        ruleKey: rule.ruleKey,
+        ruleGroup: rule.ruleGroup,
+        label: rule.label,
+        value: parseRuleValue(rule.valueJson),
+        valueJson: rule.valueJson,
+        description: rule.description,
+        updatedBy: rule.updatedBy,
+        updatedAt: rule.updatedAt
+      }))
+    };
+  },
+
+  async updateParameterRule(ruleKey: string, payload: { valueJson?: string; description?: string; updatedBy?: string }) {
+    await ensureDefaultParameterRules();
+    const valueJson = payload.valueJson ?? "";
+    try {
+      JSON.parse(valueJson);
+    } catch {
+      throw new Error("规则值必须是合法 JSON。");
+    }
+
+    const rule = await prisma.parameterRule.update({
+      where: { ruleKey },
+      data: {
+        valueJson,
+        description: payload.description,
+        updatedBy: payload.updatedBy || "finance-admin"
+      }
+    });
+
+    return {
+      id: rule.id,
+      ruleKey: rule.ruleKey,
+      ruleGroup: rule.ruleGroup,
+      label: rule.label,
+      value: parseRuleValue(rule.valueJson),
+      valueJson: rule.valueJson,
+      description: rule.description,
+      updatedBy: rule.updatedBy,
+      updatedAt: rule.updatedAt
     };
   },
 

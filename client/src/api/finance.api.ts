@@ -56,6 +56,14 @@ export function rollbackImportBatch(id: number) {
   return request.post(`/finance/import-batches/${id}/rollback`);
 }
 
+export function getParameterRules() {
+  return request.get("/finance/parameter-rules");
+}
+
+export function updateParameterRule(ruleKey: string, data: { valueJson: string; description?: string; updatedBy?: string }) {
+  return request.put(`/finance/parameter-rules/${ruleKey}`, data);
+}
+
 export function getAgentRules() {
   return request.get("/agent/rules");
 }

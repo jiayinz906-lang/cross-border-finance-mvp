@@ -18,6 +18,14 @@ export async function monthsController(_req: Request, res: Response) {
   res.json(await financeService.listMonths());
 }
 
+export async function parameterRulesController(_req: Request, res: Response) {
+  res.json(await financeService.listParameterRules());
+}
+
+export async function updateParameterRuleController(req: Request, res: Response) {
+  res.json(await financeService.updateParameterRule(req.params.ruleKey, req.body ?? {}));
+}
+
 export async function importPreviewController(req: Request, res: Response) {
   if (!req.file?.buffer) {
     res.status(400).json({ message: "请上传 Excel 文件" });

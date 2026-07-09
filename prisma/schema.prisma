@@ -111,6 +111,21 @@ model ExcelImportTemplate {
   updatedAt       DateTime @updatedAt
 }
 
+model ParameterRule {
+  id          Int      @id @default(autoincrement())
+  ruleKey     String   @unique
+  ruleGroup   String
+  label       String
+  valueJson   String
+  description String?
+  isActive    Boolean  @default(true)
+  updatedBy   String   @default("system")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([ruleGroup, isActive])
+}
+
 model CommissionRecord {
   id                      Int          @id @default(autoincrement())
   financeOrderId          Int

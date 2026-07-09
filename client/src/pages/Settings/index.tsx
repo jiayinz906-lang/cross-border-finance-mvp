@@ -1,13 +1,15 @@
-import { Alert, Button, Card, Descriptions, Popconfirm, Space, Table, Tag, message } from "antd";
+import { Alert, Button, Card, Descriptions, Input, Popconfirm, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useState } from "react";
-import { getImportBatches, rollbackImportBatch } from "../../api/finance.api";
+import { getImportBatches, getParameterRules, rollbackImportBatch, updateParameterRule } from "../../api/finance.api";
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
-import type { ImportBatch } from "../../types/finance.types";
+import type { ImportBatch, ParameterRule } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
+
+type RuleDraft = Record<string, { valueJson: string; description: string }>;
 
 function statusTag(status: string) {
   if (status === "active") return <Tag color="green">当前生效</Tag>;
@@ -20,10 +22,18 @@ function money(value?: number | null) {
   return formatMoney(value).replace("CN¥", "¥");
 }
 
+function prettyJson(value: unknown) {
+  return JSON.stringify(value, null, 2);
+}
+
 export default function Settings() {
   const { selectedMonth } = useSelectedMonth();
   const [batches, setBatches] = useState<ImportBatch[]>([]);
+  const [rules, setRules] = useState<ParameterRule[]>([]);
+  const [ruleDrafts, setRuleDrafts] = useState<RuleDraft>({});
   const [loading, setLoading] = useState(false);
+  const [rulesLoading, setRulesLoading] = useState(false);
+  const [savingRuleKey, setSavingRuleKey] = useState<string | null>(null);
   const [rollingBackId, setRollingBackId] = useState<number | null>(null);
 
   const loadBatches = useCallback(async () => {
@@ -38,9 +48,30 @@ export default function Settings() {
     }
   }, [selectedMonth]);
 
+  const loadRules = useCallback(async () => {
+    setRulesLoading(true);
+    try {
+      const res = await getParameterRules();
+      const rows = res.data.rows ?? [];
+      setRules(rows);
+      setRuleDrafts(Object.fromEntries(rows.map((rule: ParameterRule) => [
+        rule.ruleKey,
+        { valueJson: prettyJson(rule.value), description: rule.description ?? "" }
+      ])));
+    } catch {
+      message.error("参数规则加载失败，请确认后端服务可用");
+    } finally {
+      setRulesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadBatches();
   }, [loadBatches]);
+
+  useEffect(() => {
+    loadRules();
+  }, [loadRules]);
 
   const rollback = async (id: number) => {
     setRollingBackId(id);
@@ -55,7 +86,33 @@ export default function Settings() {
     }
   };
 
-  const columns: ColumnsType<ImportBatch> = [
+  const saveRule = async (rule: ParameterRule) => {
+    const draft = ruleDrafts[rule.ruleKey];
+    if (!draft) return;
+    try {
+      JSON.parse(draft.valueJson);
+    } catch {
+      message.error("规则值必须是合法 JSON");
+      return;
+    }
+
+    setSavingRuleKey(rule.ruleKey);
+    try {
+      await updateParameterRule(rule.ruleKey, {
+        valueJson: draft.valueJson,
+        description: draft.description,
+        updatedBy: "finance-admin"
+      });
+      message.success("参数规则已保存");
+      await loadRules();
+    } catch {
+      message.error("参数规则保存失败，请检查后端服务或 JSON 格式");
+    } finally {
+      setSavingRuleKey(null);
+    }
+  };
+
+  const batchColumns: ColumnsType<ImportBatch> = [
     { title: "批次号", dataIndex: "batchNo", width: 190 },
     { title: "月份", dataIndex: "month", width: 92 },
     { title: "文件", dataIndex: "fileName", ellipsis: true },
@@ -89,11 +146,70 @@ export default function Settings() {
     }
   ];
 
+  const ruleColumns: ColumnsType<ParameterRule> = [
+    { title: "分组", dataIndex: "ruleGroup", width: 100, render: (value) => <Tag>{value}</Tag> },
+    {
+      title: "规则",
+      dataIndex: "label",
+      width: 180,
+      render: (_, row) => (
+        <Space direction="vertical" size={2}>
+          <b>{row.label}</b>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{row.ruleKey}</Typography.Text>
+        </Space>
+      )
+    },
+    {
+      title: "规则值 JSON",
+      dataIndex: "valueJson",
+      render: (_, row) => (
+        <Input.TextArea
+          value={ruleDrafts[row.ruleKey]?.valueJson ?? row.valueJson}
+          autoSize={{ minRows: 3, maxRows: 8 }}
+          onChange={(event) => setRuleDrafts((prev) => ({
+            ...prev,
+            [row.ruleKey]: {
+              valueJson: event.target.value,
+              description: prev[row.ruleKey]?.description ?? row.description ?? ""
+            }
+          }))}
+        />
+      )
+    },
+    {
+      title: "说明",
+      dataIndex: "description",
+      width: 280,
+      render: (_, row) => (
+        <Input.TextArea
+          value={ruleDrafts[row.ruleKey]?.description ?? row.description ?? ""}
+          autoSize={{ minRows: 3, maxRows: 8 }}
+          onChange={(event) => setRuleDrafts((prev) => ({
+            ...prev,
+            [row.ruleKey]: {
+              valueJson: prev[row.ruleKey]?.valueJson ?? row.valueJson,
+              description: event.target.value
+            }
+          }))}
+        />
+      )
+    },
+    {
+      title: "操作",
+      width: 100,
+      render: (_, row) => (
+        <Button type="primary" size="small" loading={savingRuleKey === row.ruleKey} onClick={() => saveRule(row)}>
+          保存
+        </Button>
+      )
+    }
+  ];
+
   return (
     <>
       <PageHeader
         title="参数规则"
-        description="系统严格按照原始表格标注汇率计算：1 为人民币，美金/美元/USD 按 6.85，其余标注数据按表格标注执行。"
+        description="系统严格按照后台参数规则和原始表格标注执行汇率、风险、提成和服务类确认口径。"
       />
 
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
@@ -104,8 +220,28 @@ export default function Settings() {
             <Descriptions.Item label="本地后端端口">4000</Descriptions.Item>
             <Descriptions.Item label="本地数据库">prisma/dev.db</Descriptions.Item>
             <Descriptions.Item label="线上后端接口">https://cross-border-finance-server.onrender.com/api</Descriptions.Item>
-            <Descriptions.Item label="汇率规则">原表标注汇率；美金/美元/USD/汇率未出 = 6.85</Descriptions.Item>
           </Descriptions>
+        </Card>
+
+        <Card
+          title="数据库参数规则"
+          extra={<Button onClick={loadRules} loading={rulesLoading}>刷新规则</Button>}
+        >
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="规则值以 JSON 保存"
+            description="修改规则后保存到后端数据库，后续导入和计算将逐步改为读取这里的统一口径。保存前会校验 JSON 格式。"
+          />
+          <Table
+            rowKey="ruleKey"
+            size="small"
+            loading={rulesLoading}
+            columns={ruleColumns}
+            dataSource={rules}
+            pagination={false}
+          />
         </Card>
 
         <Card
@@ -123,7 +259,7 @@ export default function Settings() {
             rowKey="id"
             size="small"
             loading={loading}
-            columns={columns}
+            columns={batchColumns}
             dataSource={batches}
             pagination={{ pageSize: 6 }}
             scroll={{ x: 1500 }}

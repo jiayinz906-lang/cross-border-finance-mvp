@@ -134,6 +134,18 @@ export type ImportBatch = {
   revertedAt?: string | null;
 };
 
+export type ParameterRule = {
+  id: number;
+  ruleKey: string;
+  ruleGroup: string;
+  label: string;
+  value: unknown;
+  valueJson: string;
+  description?: string | null;
+  updatedBy: string;
+  updatedAt: string;
+};
+
 export type ImportTemplateResult = {
   templateKey: string;
   fileName: string;
