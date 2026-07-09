@@ -1,6 +1,6 @@
-import { Button, Card, Col, DatePicker, Input, InputNumber, Modal, Popconfirm, Row, Space, Statistic, Table, Tag, message } from "antd";
+import { Alert, Button, Card, Col, DatePicker, Input, InputNumber, Modal, Popconfirm, Row, Segmented, Space, Statistic, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getPayables, getPaymentRecords, recordPayment, voidPayment } from "../../api/payables.api";
 import { OrderNoPopup } from "../../components/OrderNoPopup";
 import { PageHeader } from "../../components/PageHeader";
@@ -29,6 +29,8 @@ export default function Payables() {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentDate, setPaymentDate] = useState<string | undefined>();
   const [paymentNote, setPaymentNote] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [quickFilter, setQuickFilter] = useState<"all" | "outstanding" | "overdue" | "aging90">("all");
   const [savingPayment, setSavingPayment] = useState(false);
   const { selectedMonth } = useSelectedMonth();
 
@@ -47,6 +49,25 @@ export default function Payables() {
   }, [selectedMonth]);
 
   const rows = data?.rows ?? [];
+  const filteredRows = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+    return rows.filter((row) => {
+      const matchedKeyword = !keyword || [
+        row.orderNo,
+        row.customerOrderNo,
+        row.supplierName,
+        row.businessType,
+        row.salespersonName
+      ].some((value) => String(value ?? "").toLowerCase().includes(keyword));
+      const matchedFilter =
+        quickFilter === "all" ||
+        (quickFilter === "outstanding" && row.outstandingPayable > 0) ||
+        (quickFilter === "overdue" && row.overdue) ||
+        (quickFilter === "aging90" && row.agingBucket === "90+");
+      return matchedKeyword && matchedFilter;
+    });
+  }, [quickFilter, rows, searchText]);
+  const topOverdueSupplier = data?.supplierAging.find((item) => item.overdueOutstanding > 0);
   const supplierColumns: ColumnsType<SupplierPayableAging> = [
     { title: "供应商", dataIndex: "supplierName" },
     { title: "票数", dataIndex: "orderCount", width: 80, align: "right" },
@@ -147,6 +168,16 @@ export default function Payables() {
     <>
       <PageHeader title="上游应付" description="按订单编号追踪供应商应付、付款状态和未付款金额。" />
 
+      <Alert
+        type={data?.totals.overdueOutstanding ? "warning" : "success"}
+        showIcon
+        style={{ marginBottom: 16 }}
+        message={data?.totals.overdueOutstanding ? "存在逾期未付款，需要安排付款计划" : "当前未发现逾期未付款"}
+        description={data?.totals.overdueOutstanding
+          ? `逾期未付款 ${formatMoney(data.totals.overdueOutstanding)}，涉及 ${data.totals.overdueOrderCount} 票。重点供应商：${topOverdueSupplier?.supplierName ?? "未指定供应商"}，逾期金额 ${formatMoney(topOverdueSupplier?.overdueOutstanding ?? 0)}。`
+          : "所有未付款订单均在 30 天账龄内，可按供应商结算周期正常安排。"}
+      />
+
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} md={6}><Card><Statistic title="总应付" value={data?.totals.totalPayable ?? 0} precision={2} prefix="¥" /></Card></Col>
         <Col xs={24} md={6}><Card><Statistic title="已付款" value={data?.totals.totalPaid ?? 0} precision={2} prefix="¥" /></Card></Col>
@@ -175,10 +206,32 @@ export default function Payables() {
         />
       </Card>
 
-      <Card title={`应付订单明细（账龄截止：${data?.asOfDate ? String(data.asOfDate).slice(0, 10) : "-" }）`}>
+      <Card
+        title={`应付订单明细（账龄截止：${data?.asOfDate ? String(data.asOfDate).slice(0, 10) : "-" }）`}
+        extra={<Tag color="blue">当前筛选 {filteredRows.length} / {rows.length} 票</Tag>}
+      >
+        <Space wrap style={{ marginBottom: 12 }}>
+          <Segmented
+            value={quickFilter}
+            onChange={(value) => setQuickFilter(value as typeof quickFilter)}
+            options={[
+              { label: "全部", value: "all" },
+              { label: "未付款", value: "outstanding" },
+              { label: "逾期", value: "overdue" },
+              { label: "90天以上", value: "aging90" }
+            ]}
+          />
+          <Input.Search
+            allowClear
+            style={{ width: 320 }}
+            placeholder="搜索订单号、原始订单号、供应商、业务员"
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+          />
+        </Space>
         <Table
           rowKey="id"
-          dataSource={rows}
+          dataSource={filteredRows}
           columns={detailColumns}
           scroll={{ x: 1480 }}
         />
