@@ -20,6 +20,7 @@
     "verify:import": "tsx scripts/verify-import.ts",
     "verify:ui": "tsx scripts/verify-ui-smoke.ts",
     "doctor": "tsx scripts/doctor.ts",
+    "backup:system": "tsx scripts/export-system-backup.ts",
     "prisma:generate": "prisma generate",
     "prisma:deploy": "prisma generate && prisma db push",
     "prisma:migrate": "prisma migrate dev --name init",

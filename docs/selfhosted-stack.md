@@ -42,6 +42,18 @@
 - 服务部署：Docker、Render、Railway、Fly.io 或云服务器。
 - 前端部署：Vercel、GitHub Pages、Render Static Site 或 Nginx。
 
+## 备份命令
+
+网页端可以在“参数规则”页面导出系统备份 Excel。服务器或本地命令行也可以执行：
+
+```powershell
+pnpm backup:system
+```
+
+默认导出 `2026-06` 到 `outputs/backups/`。可通过 `BACKUP_MONTH` 和 `BACKUP_OUTPUT_DIR` 指定月份和目录。
+
+系统备份 Excel 用于审计、配置留档和交接，不替代 PostgreSQL 或 SQLite 数据库级全量备份。
+
 ## 验收入口
 
 日常体检：

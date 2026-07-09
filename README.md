@@ -141,11 +141,30 @@ pnpm dev
 pnpm --filter cross-border-finance-server build
 pnpm --filter cross-border-finance-client build
 pnpm doctor
+pnpm backup:system
 pnpm verify:all
 pnpm verify:import
 pnpm verify:ui
 pnpm prisma:deploy
 ```
+
+## 系统备份
+
+网页端可以在“参数规则”页面导出本月或全量系统备份 Excel。命令行也可以直接导出：
+
+```powershell
+pnpm backup:system
+```
+
+默认导出 `2026-06` 到 `outputs/backups/`。可用环境变量指定：
+
+```powershell
+$env:BACKUP_MONTH='2026-06'
+$env:BACKUP_OUTPUT_DIR='D:/Users/DELL/Desktop'
+pnpm backup:system
+```
+
+系统备份 Excel 包含月度汇总、导入批次、表头模板、参数规则、锁账状态、确认单、操作日志和导出记录；它用于审计和关键配置归档，不替代生产数据库全量备份。
 
 ## Render 部署
 
