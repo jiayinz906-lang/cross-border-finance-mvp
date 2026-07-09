@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import http from "node:http";
+import https from "node:https";
+import path from "node:path";
 
 type Step = {
   name: string;
@@ -9,7 +12,9 @@ type Step = {
 
 const isWindows = process.platform === "win32";
 const pnpm = isWindows ? "pnpm.cmd" : "pnpm";
-const defaultDatabaseUrl = "file:D:/Users/DELL/Documents/财务系统/cross-border-finance-mvp/prisma/dev.db";
+const defaultDatabaseUrl = `file:${path.resolve(process.cwd(), "prisma/dev.db").replace(/\\/g, "/")}`;
+const clientUrl = process.env.UI_SMOKE_CLIENT_URL || "http://localhost:5173/";
+const apiUrl = process.env.UI_SMOKE_API_URL || "http://localhost:4000/api";
 
 const steps: Step[] = [
   {
@@ -58,8 +63,44 @@ function runStep(step: Step) {
   });
 }
 
+function requestOk(url: string) {
+  return new Promise<boolean>((resolve) => {
+    const client = url.startsWith("https:") ? https : http;
+    const req = client.get(url, { timeout: 5000, headers: { "x-finance-role": "admin" } }, (res) => {
+      res.resume();
+      res.on("end", () => resolve((res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 400));
+    });
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.on("error", () => resolve(false));
+  });
+}
+
+async function ensureRunningServices() {
+  console.log("\n==> Check running frontend and API services");
+  const [frontendOk, apiOk] = await Promise.all([
+    requestOk(clientUrl),
+    requestOk(`${apiUrl}/health/ready?month=2026-06`)
+  ]);
+
+  if (frontendOk && apiOk) {
+    console.log(`PASS Frontend: ${clientUrl}`);
+    console.log(`PASS API ready: ${apiUrl}/health/ready?month=2026-06`);
+    return;
+  }
+
+  if (!frontendOk) console.error(`FAIL Frontend is not reachable: ${clientUrl}`);
+  if (!apiOk) console.error(`FAIL API readiness check failed: ${apiUrl}/health/ready?month=2026-06`);
+  throw new Error("Please start local services with `pnpm dev` in another terminal, then run `pnpm verify:all` again.");
+}
+
 async function main() {
   for (const step of steps) {
+    if (step.name === "Verify running frontend and API") {
+      await ensureRunningServices();
+    }
     await runStep(step);
   }
   console.log("\nAll verification checks passed.");

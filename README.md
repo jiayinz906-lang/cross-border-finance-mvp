@@ -39,6 +39,7 @@ pnpm dev
 ## 验收测试
 
 默认读取桌面文件 `2026.6月系统运单明细.xlsx`。也可以用 `IMPORT_VERIFY_FILE` 指定其他 Excel。
+执行完整验收前，请保持 `pnpm dev` 启动的前后端服务正在运行。
 
 ```powershell
 pnpm verify:all
