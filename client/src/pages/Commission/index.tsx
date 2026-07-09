@@ -3,7 +3,15 @@ import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCommissions, updateCommissionRate } from "../../api/commissions.api";
 import { getFinanceDashboard } from "../../api/finance.api";
-import { confirmSalespersonCommission, generateLogisticsDocuments, getDocuments } from "../../api/workflow.api";
+import {
+  type ConfirmationDocument,
+  confirmSalespersonCommission,
+  generateLogisticsDocuments,
+  getDocuments,
+  sendSignatureLink,
+  supervisorConfirmDocument,
+  voidDocument
+} from "../../api/workflow.api";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
@@ -67,12 +75,23 @@ function effectiveCommissionAmount(row: CommissionRecord) {
   return row.manualCommissionAmount ?? row.commissionAmount;
 }
 
+function statusTag(value: string, confirmedText = "已确认", pendingText = "待确认") {
+  if (value === "confirmed" || value === "signed" || value === "sent") {
+    return <Tag color="green">{confirmedText}</Tag>;
+  }
+  if (value === "voided") return <Tag color="red">已作废</Tag>;
+  return <Tag color="gold">{pendingText}</Tag>;
+}
+
 export default function Commission() {
   const { selectedMonth } = useSelectedMonth();
   const [records, setRecords] = useState<CommissionRecord[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
   const [loading, setLoading] = useState(false);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
   const [selectedSalesperson, setSelectedSalesperson] = useState<string | null>(null);
+  const [documentsOpen, setDocumentsOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -90,20 +109,39 @@ export default function Commission() {
     }
   }, [selectedMonth]);
 
+  const loadDocuments = useCallback(async () => {
+    setDocumentsLoading(true);
+    try {
+      const res = await getDocuments(selectedMonth, "logistics_commission");
+      setDocuments(res.data.rows ?? []);
+      return res.data.rows ?? [];
+    } finally {
+      setDocumentsLoading(false);
+    }
+  }, [selectedMonth]);
+
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   const handleGenerateDocuments = async () => {
-    const res = await generateLogisticsDocuments(selectedMonth);
-    message.success(`已生成 ${res.data.rows?.length ?? 0} 份个人确认单`);
+    setDocumentsLoading(true);
+    try {
+      const res = await generateLogisticsDocuments(selectedMonth);
+      const rows = res.data.rows ?? [];
+      setDocuments(rows);
+      setDocumentsOpen(true);
+      message.success(`已生成并保存 ${rows.length} 份个人确认单`);
+    } finally {
+      setDocumentsLoading(false);
+    }
   };
 
   const handleViewSignatureStatus = async () => {
-    const res = await getDocuments(selectedMonth, "logistics_commission");
-    const rows = res.data.rows ?? [];
-    const signed = rows.filter((row: { signatureStatus: string }) => row.signatureStatus === "signed").length;
-    message.info(`物流确认单 ${rows.length} 份，已签名 ${signed} 份`);
+    const rows = await loadDocuments();
+    const signed = rows.filter((row: ConfirmationDocument) => row.signatureStatus === "signed").length;
+    setDocumentsOpen(true);
+    message.info(`数据库确认单 ${rows.length} 份，已签名 ${signed} 份`);
   };
 
   const handleConfirmSalesperson = async (row: SalespersonCommission) => {
@@ -121,8 +159,10 @@ export default function Commission() {
 
   const handleGenerateOne = async (row: SalespersonCommission) => {
     const res = await generateLogisticsDocuments(selectedMonth);
-    const document = (res.data.rows ?? []).find((item: { ownerName: string }) => item.ownerName === row.salespersonName);
-    message.success(document ? `${row.salespersonName} 确认单已生成` : "确认单已刷新");
+    const document = (res.data.rows ?? []).find((item: ConfirmationDocument) => item.ownerName === row.salespersonName);
+    setDocuments(res.data.rows ?? []);
+    setDocumentsOpen(true);
+    message.success(document ? `${row.salespersonName} 确认单已保存到数据库` : "确认单已刷新");
   };
 
   const handleDetailRateChange = async (row: CommissionRecord, percent?: number | null) => {
@@ -130,6 +170,26 @@ export default function Commission() {
     await updateCommissionRate(row.id, percent / 100);
     message.success(`${row.financeOrder?.orderNo ?? row.salespersonName} 提成比例已更新`);
     await loadData();
+  };
+
+  const handleSendDocument = async (row: ConfirmationDocument) => {
+    const res = await sendSignatureLink(row.id);
+    const url = `${location.origin}${res.data.signatureUrl ?? ""}`;
+    await navigator.clipboard?.writeText(url);
+    message.success(`${row.ownerName} 签名链接已生成并复制`);
+    await loadDocuments();
+  };
+
+  const handleSupervisorConfirm = async (row: ConfirmationDocument) => {
+    await supervisorConfirmDocument(row.id);
+    message.success(`${row.ownerName} 已主管确认`);
+    await loadDocuments();
+  };
+
+  const handleVoidDocument = async (row: ConfirmationDocument) => {
+    await voidDocument(row.id);
+    message.success(`${row.ownerName} 已作废，可重新生成确认单`);
+    await loadDocuments();
   };
 
   const summary = dashboard?.summary;
@@ -286,6 +346,31 @@ export default function Commission() {
     }
   ];
 
+  const documentColumns: ColumnsType<ConfirmationDocument> = [
+    { title: "销售代表", dataIndex: "ownerName", fixed: "left", width: 120 },
+    { title: "月份", dataIndex: "month", width: 100 },
+    { title: "订单数", dataIndex: "orderCount", width: 90 },
+    { title: "确认毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
+    { title: "确认提成", dataIndex: "commissionAmount", align: "right", render: toPlainMoney },
+    { title: "单据状态", dataIndex: "documentStatus", width: 100, render: (value) => statusTag(value, "已生成") },
+    { title: "发送状态", dataIndex: "sendStatus", width: 100, render: (value) => statusTag(value, "已发送", "未发送") },
+    { title: "签名状态", dataIndex: "signatureStatus", width: 100, render: (value) => statusTag(value, "已签名", "待签名") },
+    { title: "主管确认", dataIndex: "supervisorStatus", width: 110, render: (value) => statusTag(value, "已确认", "待确认") },
+    {
+      title: "操作",
+      key: "actions",
+      fixed: "right",
+      width: 250,
+      render: (_, row) => (
+        <Space size={6}>
+          <Button size="small" onClick={() => handleSendDocument(row)}>发送链接</Button>
+          <Button size="small" onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
+          <Button size="small" danger onClick={() => handleVoidDocument(row)}>作废</Button>
+        </Space>
+      )
+    }
+  ];
+
   return (
     <div className="commission-board">
       <section className="profit-metric-grid">
@@ -357,6 +442,24 @@ export default function Commission() {
           dataSource={selectedRows}
           columns={detailColumns}
           scroll={{ x: 880 }}
+        />
+      </Modal>
+
+      <Modal
+        open={documentsOpen}
+        title={`${selectedMonth} 个人确认单数据库记录`}
+        footer={<Button type="primary" onClick={() => setDocumentsOpen(false)}>关闭</Button>}
+        width={1180}
+        onCancel={() => setDocumentsOpen(false)}
+      >
+        <Table
+          rowKey="id"
+          size="small"
+          loading={documentsLoading}
+          pagination={false}
+          dataSource={documents}
+          columns={documentColumns}
+          scroll={{ x: 1120 }}
         />
       </Modal>
     </div>

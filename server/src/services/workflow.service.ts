@@ -65,8 +65,10 @@ export const workflowService = {
           commissionAmount,
           payloadJson: JSON.stringify(items.map((item) => ({
             orderNo: item.financeOrder.orderNo,
+            customerOrderNo: item.financeOrder.customerOrderNo,
             businessType: item.businessType,
             grossProfit: item.grossProfit,
+            commissionRate: item.commissionRate,
             commissionAmount: item.manualCommissionAmount ?? item.commissionAmount
           }))),
           documentStatus: "generated"
@@ -81,8 +83,10 @@ export const workflowService = {
           commissionAmount,
           payloadJson: JSON.stringify(items.map((item) => ({
             orderNo: item.financeOrder.orderNo,
+            customerOrderNo: item.financeOrder.customerOrderNo,
             businessType: item.businessType,
             grossProfit: item.grossProfit,
+            commissionRate: item.commissionRate,
             commissionAmount: item.manualCommissionAmount ?? item.commissionAmount
           })))
         }
