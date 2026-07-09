@@ -113,6 +113,27 @@ export type ImportPreviewResult = ImportResult & {
   writeMode: string;
 };
 
+export type ImportBatch = {
+  id: number;
+  batchNo: string;
+  month: string;
+  fileName: string;
+  sheetName: string;
+  importMode: string;
+  status: "active" | "superseded" | "reverted" | string;
+  importedRows: number;
+  importedOrders: number;
+  logisticsOrders: number;
+  serviceOrders: number;
+  totalReceivable: number;
+  totalPayable: number;
+  totalGrossProfit: number;
+  riskOrderCount: number;
+  abnormalHighProfitCount: number;
+  createdAt: string;
+  revertedAt?: string | null;
+};
+
 export type ImportTemplateResult = {
   templateKey: string;
   fileName: string;
