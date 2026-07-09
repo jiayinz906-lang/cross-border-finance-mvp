@@ -46,6 +46,7 @@ type DraftOrder = {
 const serviceBusinessKeywords = ["注册", "证书", "店铺", "商标", "注销", "EAC"];
 const fallbackExchangeRate = 6.85;
 const requiredDetailHeaders = ["运单号", "收付类型", "费用类型"];
+const templateKey = "system_waybill_detail";
 
 function text(value: CellValue): string {
   return value === null || value === undefined ? "" : String(value).trim();
@@ -241,25 +242,82 @@ function riskType(order: {
   return "finance_review";
 }
 
-function findDetailSheet(workbook: XLSX.WorkBook): { sheetName: string; rows: RawRow[] } {
+function normalizeHeader(value: CellValue) {
+  return text(value).replace(/\s+/g, "");
+}
+
+function extractHeaders(workbook: XLSX.WorkBook): { sheetName: string; headerRowIndex: number; headers: string[] } {
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<RawRow>(sheet, { defval: null, raw: true });
-    if (!rows.length) continue;
+    const rows = XLSX.utils.sheet_to_json<CellValue[]>(sheet, { header: 1, defval: null, raw: true });
 
-    const headers = new Set(Object.keys(rows[0] ?? {}));
-    if (requiredDetailHeaders.every((header) => headers.has(header))) {
-      return { sheetName, rows };
+    for (const [index, row] of rows.entries()) {
+      const headers = row.map((cell) => text(cell)).filter(Boolean);
+      const normalized = new Set(headers.map(normalizeHeader));
+      if (requiredDetailHeaders.every((header) => normalized.has(header))) {
+        return { sheetName, headerRowIndex: index + 1, headers };
+      }
     }
   }
 
   throw new Error("Excel 文件没有找到系统运单明细工作表，请确认包含：运单号、收付类型、费用类型");
 }
 
+function findDetailSheet(workbook: XLSX.WorkBook): { sheetName: string; headerRowIndex: number; headers: string[]; rows: RawRow[] } {
+  const detail = extractHeaders(workbook);
+  const sheet = workbook.Sheets[detail.sheetName];
+  const rows = XLSX.utils.sheet_to_json<RawRow>(sheet, { defval: null, raw: true, range: detail.headerRowIndex - 1 });
+  return { ...detail, rows };
+}
+
+async function validateHeaders(headers: string[]) {
+  const template = await prisma.excelImportTemplate.findUnique({ where: { templateKey } });
+  if (!template) return;
+
+  const expected = JSON.parse(template.headersJson) as string[];
+  const current = headers.map(normalizeHeader);
+  const saved = expected.map(normalizeHeader);
+  if (JSON.stringify(current) !== JSON.stringify(saved)) {
+    throw new Error(`Excel 表头与数据库模板不一致，请按模板导入。当前表头：${headers.join("、")}`);
+  }
+}
+
 export const excelService = {
+  async saveImportTemplate(buffer: Buffer, originalName: string) {
+    const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+    const detail = extractHeaders(workbook);
+    const template = await prisma.excelImportTemplate.upsert({
+      where: { templateKey },
+      update: {
+        fileName: originalName,
+        sheetName: detail.sheetName,
+        headerRowIndex: detail.headerRowIndex,
+        headersJson: JSON.stringify(detail.headers)
+      },
+      create: {
+        templateKey,
+        fileName: originalName,
+        sheetName: detail.sheetName,
+        headerRowIndex: detail.headerRowIndex,
+        headersJson: JSON.stringify(detail.headers)
+      }
+    });
+    return {
+      templateKey: template.templateKey,
+      fileName: template.fileName,
+      sheetName: template.sheetName,
+      headerRowIndex: template.headerRowIndex,
+      headerCount: detail.headers.length,
+      headers: detail.headers,
+      importedRows: 0,
+      importedOrders: 0
+    };
+  },
+
   async importWorkbook(buffer: Buffer, originalName: string) {
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
-    const { sheetName, rows } = findDetailSheet(workbook);
+    const { sheetName, headers, rows } = findDetailSheet(workbook);
+    await validateHeaders(headers);
     if (!rows.length) {
       throw new Error("Excel 工作表没有明细数据");
     }

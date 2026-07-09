@@ -86,3 +86,14 @@ export type ImportResult = {
   serviceOrders: number;
   logisticsOrders: number;
 };
+
+export type ImportTemplateResult = {
+  templateKey: string;
+  fileName: string;
+  sheetName: string;
+  headerRowIndex: number;
+  headerCount: number;
+  headers: string[];
+  importedRows: 0;
+  importedOrders: 0;
+};

@@ -13,6 +13,7 @@ import { useNavigate } from "react-router-dom";
 import { getFinanceDashboard, getFinanceMonths } from "../../api/finance.api";
 import { monthlyReportExportUrl } from "../../api/workflow.api";
 import { ImportButton } from "../../components/ImportButton";
+import { TemplateImportButton } from "../../components/TemplateImportButton";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { BusinessSummary, DashboardData, MonthlyTrend } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
@@ -255,6 +256,7 @@ export default function Dashboard() {
         <div className="overview-actions">
           <div className="overview-select"><FileExcelOutlined /> 数据源：<b>{summary?.month ? `${summary.month} 数据库` : "Excel 数据"}</b></div>
           <Button className="overview-select" onClick={openMonthModal}>月份：<b>{selectedMonth}</b><CalendarOutlined /></Button>
+          <TemplateImportButton />
           <ImportButton onImported={handleImported} />
           <Button type="primary" icon={<DownloadOutlined />} onClick={() => window.open(monthlyReportExportUrl(selectedMonth), "_blank")}>导出月报</Button>
         </div>

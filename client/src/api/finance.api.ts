@@ -32,6 +32,14 @@ export function importFinanceExcel(file: File) {
   });
 }
 
+export function importFinanceTemplate(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request.post("/finance/import-template", formData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
+}
+
 export function getAgentRules() {
   return request.get("/agent/rules");
 }

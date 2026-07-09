@@ -6,6 +6,7 @@ import { FinanceTable } from "../../components/FinanceTable";
 import { ImportButton } from "../../components/ImportButton";
 import { MonthSelector } from "../../components/MonthSelector";
 import { PageHeader } from "../../components/PageHeader";
+import { TemplateImportButton } from "../../components/TemplateImportButton";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { FinanceOrder } from "../../types/finance.types";
 
@@ -28,6 +29,7 @@ export default function FinanceLedger() {
         description="Excel 上传后由后端按订单编号聚合应收、应付、毛利和复核状态。"
         extra={(
           <Space wrap>
+            <TemplateImportButton />
             <ImportButton onImported={(result) => setSelectedMonth(result.month)} />
             <Button onClick={load}>刷新</Button>
           </Space>

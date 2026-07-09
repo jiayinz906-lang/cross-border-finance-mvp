@@ -2,6 +2,31 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 const month = "2026-06";
+const systemWaybillHeaders = [
+  "运单号",
+  "客户订单号",
+  "用户",
+  "服务",
+  "收费重(KG)",
+  "供应商收费重(KG)",
+  "供应商",
+  "供应商服务",
+  "收付类型",
+  "费用类型",
+  "金额",
+  "单价",
+  "本币费用",
+  "销售代表",
+  "备注",
+  "备注",
+  "折合人民币",
+  "客服代表",
+  "下单时间",
+  "内部备注",
+  "实重",
+  "件数",
+  "主品名"
+];
 
 type SeedOrder = {
   orderNo: string;
@@ -87,6 +112,23 @@ function splitPayable(order: SeedOrder) {
 }
 
 async function main() {
+  await prisma.excelImportTemplate.upsert({
+    where: { templateKey: "system_waybill_detail" },
+    update: {
+      fileName: "2026.6月系统运单明细.xlsx",
+      sheetName: "7.6系统数据",
+      headerRowIndex: 1,
+      headersJson: JSON.stringify(systemWaybillHeaders)
+    },
+    create: {
+      templateKey: "system_waybill_detail",
+      fileName: "2026.6月系统运单明细.xlsx",
+      sheetName: "7.6系统数据",
+      headerRowIndex: 1,
+      headersJson: JSON.stringify(systemWaybillHeaders)
+    }
+  });
+
   await prisma.actionLog.deleteMany({ where: { month } });
   await prisma.exportJob.deleteMany({ where: { month } });
   await prisma.confirmationDocument.deleteMany({ where: { month } });
