@@ -85,6 +85,7 @@ export type ImportResult = {
   importedOrders: number;
   serviceOrders: number;
   logisticsOrders: number;
+  audit?: ImportAudit;
 };
 
 export type ImportTemplateResult = {
@@ -96,4 +97,23 @@ export type ImportTemplateResult = {
   headers: string[];
   importedRows: 0;
   importedOrders: 0;
+  audit?: ImportAudit;
+};
+
+export type ImportAudit = {
+  parserMode: string;
+  fieldMapping: Array<{ field: string; sourceHeader: string }>;
+  missingRequiredFields: string[];
+  template: {
+    matchExact: boolean;
+    missingTemplateHeaders: string[];
+    extraHeaders: string[];
+  };
+  agency?: {
+    source: string;
+    financeAgents: Array<{ name: string; sourcePath: string; role: string }>;
+    testingAgents: Array<{ name: string; sourcePath: string; role: string }>;
+    importRules: string[];
+  };
+  selfHostedStack?: unknown;
 };

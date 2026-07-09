@@ -1,3 +1,5 @@
+import { agencyRuntimeProfile } from "../config/agent.registry.js";
+import { selfHostedStack } from "../config/selfhosted-stack.js";
 import { financeRepository } from "../repositories/finance.repository.js";
 
 function safeRate(numerator: number, denominator: number): number | null {
@@ -74,9 +76,7 @@ export const financeService = {
       item.receivable += order.adjustedReceivable;
       item.payable += order.adjustedPayable;
       item.grossProfit += order.adjustedGrossProfit;
-      if (!order.isServiceBusiness) {
-        item.logisticsProfit += order.adjustedGrossProfit;
-      }
+      if (!order.isServiceBusiness) item.logisticsProfit += order.adjustedGrossProfit;
       businessMap.set(order.businessType, item);
     }
 
@@ -117,15 +117,19 @@ export const financeService = {
 
   getAgentRules() {
     return {
-      agentName: "FP&A Analyst Agent：跨境物流月度财务分析",
-      path: "agents/finance/finance-fpa-analyst.md",
+      agentName: "FP&A Analyst + Financial Analyst + Testing Agents",
+      path: "external_refs/agency-agents-main",
       status: "configured",
+      agency: agencyRuntimeProfile,
+      selfHostedStack,
       coreRules: [
         "前端只上传 Excel，所有解析、聚合、风险识别和提成计算都在后端完成。",
-        "订单以运单号聚合，所有前端明细表保留订单编号。",
-        "利润分析仅统计物流业务，不包含注册、证书、店铺租赁等服务类业务。",
+        "订单以运单号聚合，所有前端明细表保留订单编号和原始订单号。",
+        "Excel 导入自动映射表头，返回字段映射、模板差异和 agent 审计信息。",
+        "利润分析区分总口径、物流业务口径、注册/证书/店铺服务类口径。",
         "利润率低于 10% 标记高风险，高于 50% 标记异常高利润。",
-        "注册、EAC 证书、公司注销、店铺租赁等服务类业务单独进入主管确认。"
+        "注册、EAC 证书、公司注销、店铺租赁等服务类业务单独进入主管确认。",
+        "后端 API、数据库落库和页面访问必须通过 testing agents 的证据式验证。"
       ]
     };
   }

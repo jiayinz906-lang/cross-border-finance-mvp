@@ -17,7 +17,8 @@ export function ImportButton({ onImported }: Props) {
       try {
         const response = await importFinanceExcel(file as File);
         const result = response.data as ImportResult;
-        message.success(`导入完成：${result.importedOrders} 个订单，${result.importedRows} 行明细`);
+        const mapped = result.audit?.fieldMapping.length ?? 0;
+        message.success(`导入完成：${result.importedOrders} 个订单，${result.importedRows} 行明细，自动映射 ${mapped} 个字段`);
         onImported?.(result);
         onSuccess?.(result);
       } catch (error) {

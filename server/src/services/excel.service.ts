@@ -1,8 +1,33 @@
 import * as XLSX from "xlsx";
+import { agencyRuntimeProfile } from "../config/agent.registry.js";
+import { selfHostedStack } from "../config/selfhosted-stack.js";
 import { prisma } from "../prisma/client.js";
 
 type CellValue = string | number | boolean | Date | null | undefined;
 type RawRow = Record<string, CellValue>;
+
+type CanonicalField =
+  | "orderNo"
+  | "customerOrderNo"
+  | "customerName"
+  | "service"
+  | "supplier"
+  | "direction"
+  | "feeType"
+  | "amount"
+  | "localAmount"
+  | "salespersonName"
+  | "remark"
+  | "exchangeRate"
+  | "customerServiceName"
+  | "orderDate"
+  | "internalRemark"
+  | "actualWeight"
+  | "pieces"
+  | "mainProductName";
+
+type HeaderMapping = Partial<Record<CanonicalField, string>>;
+type CanonicalRow = Partial<Record<CanonicalField, CellValue>>;
 
 type DraftOrder = {
   orderNo: string;
@@ -43,51 +68,134 @@ type DraftOrder = {
   remark?: string;
 };
 
-const serviceBusinessKeywords = ["注册", "证书", "店铺", "商标", "注销", "EAC"];
+const serviceBusinessKeywords = ["注册", "证书", "店铺", "商标", "注销", "EAC", "COC", "DOC", "租赁"];
 const fallbackExchangeRate = 6.85;
-const requiredDetailHeaders = ["运单号", "收付类型", "费用类型"];
 const templateKey = "system_waybill_detail";
+
+const requiredCanonicalFields: CanonicalField[] = ["orderNo", "direction", "feeType"];
+const templateHeaders = [
+  "运单号",
+  "客户订单号",
+  "用户",
+  "服务",
+  "收费重(KG)",
+  "供应商收费重(KG)",
+  "供应商",
+  "供应商服务",
+  "收付类型",
+  "费用类型",
+  "金额",
+  "单价",
+  "本币费用",
+  "销售代表",
+  "备注",
+  "客服代表",
+  "下单时间",
+  "内部备注",
+  "实重",
+  "件数",
+  "主品名"
+];
+
+const fieldAliases: Record<CanonicalField, string[]> = {
+  orderNo: ["运单号", "单号", "订单号", "物流单号", "系统单号", "运单编号"],
+  customerOrderNo: ["客户订单号", "原始订单号", "客户单号", "平台订单号", "客户编号"],
+  customerName: ["用户", "客户", "客户名称", "公司", "客户公司"],
+  service: ["服务", "业务类型", "业务类别", "项目", "产品服务"],
+  supplier: ["供应商", "上游供应商", "服务商", "渠道商"],
+  direction: ["收付类型", "收/付类型", "应收应付", "收支类型", "类型"],
+  feeType: ["费用类型", "费用项目", "费用名称", "费用类别"],
+  amount: ["金额", "原始金额", "外币金额", "费用金额"],
+  localAmount: ["本币费用", "人民币金额", "折算金额", "折合人民币", "RMB金额"],
+  salespersonName: ["销售代表", "业务员", "销售", "业务代表", "负责人"],
+  remark: ["备注", "备注_1", "说明"],
+  exchangeRate: ["汇率", "折合人民币", "币种汇率"],
+  customerServiceName: ["客服代表", "客服", "操作员", "客服人员", "客户代表", "跟单客服", "销售助理"],
+  orderDate: ["下单时间", "订单时间", "日期", "下单日期", "创建时间"],
+  internalRemark: ["内部备注", "内部说明", "财务备注"],
+  actualWeight: ["实重", "实际重量", "重量"],
+  pieces: ["件数", "数量", "包裹数"],
+  mainProductName: ["主品名", "品名", "商品名称"]
+};
 
 function text(value: CellValue): string {
   return value === null || value === undefined ? "" : String(value).trim();
 }
 
-function firstText(row: RawRow, keys: string[]): string {
-  for (const key of keys) {
-    const value = text(row[key]);
-    if (value) return value;
-  }
-  return "";
-}
-
 function number(value: CellValue): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
+  if (typeof value === "number" && Number.isFinite(value)) return value;
   const parsed = Number(text(value).replace(/,/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function nullableNumber(value: CellValue): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
+  if (typeof value === "number" && Number.isFinite(value)) return value;
   const parsed = Number(text(value).replace(/,/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function exchangeRateMarker(row: RawRow): string {
-  return text(row["汇率"]) || text(row["备注"]) || text(row["备注_1"]);
+function normalizeHeader(value: CellValue) {
+  return text(value).replace(/\s+/g, "").toLowerCase();
 }
 
-function markedExchangeRate(row: RawRow): { rate: number; status: string; source: string } {
+function normalizeUploadFileName(value: string) {
+  const decoded = Buffer.from(value, "latin1").toString("utf8");
+  return decoded.includes("�") ? value : decoded;
+}
+
+function buildHeaderMapping(headers: string[]): HeaderMapping {
+  const normalizedSource = new Map<string, string>();
+  for (const header of headers) {
+    normalizedSource.set(normalizeHeader(header), header);
+  }
+
+  const mapping: HeaderMapping = {};
+  for (const [field, aliases] of Object.entries(fieldAliases) as [CanonicalField, string[]][]) {
+    for (const alias of aliases) {
+      const source = normalizedSource.get(normalizeHeader(alias));
+      if (source) {
+        mapping[field] = source;
+        break;
+      }
+    }
+  }
+  return mapping;
+}
+
+function missingRequiredFields(mapping: HeaderMapping) {
+  return requiredCanonicalFields.filter((field) => !mapping[field]);
+}
+
+function mapRawRow(row: RawRow, mapping: HeaderMapping): CanonicalRow {
+  const mapped: CanonicalRow = {};
+  for (const [field, sourceHeader] of Object.entries(mapping) as [CanonicalField, string][]) {
+    mapped[field] = row[sourceHeader];
+  }
+  return mapped;
+}
+
+function templateDiagnostics(headers: string[]) {
+  const current = headers.map(normalizeHeader);
+  const expected = templateHeaders.map(normalizeHeader);
+  return {
+    matchExact: JSON.stringify(current) === JSON.stringify(expected),
+    missingTemplateHeaders: templateHeaders.filter((header) => !current.includes(normalizeHeader(header))),
+    extraHeaders: headers.filter((header) => !expected.includes(normalizeHeader(header)))
+  };
+}
+
+function exchangeRateMarker(row: CanonicalRow): string {
+  return text(row.exchangeRate) || text(row.remark) || text(row.internalRemark);
+}
+
+function markedExchangeRate(row: CanonicalRow): { rate: number; status: string; source: string } {
   const marker = exchangeRateMarker(row);
-  const parsed = nullableNumber(marker);
+  const parsed = nullableNumber(row.exchangeRate) ?? nullableNumber(marker);
   if (parsed !== null) {
     return {
       rate: parsed,
       status: "confirmed",
-      source: parsed === 1 ? "原始表格标注1，按人民币" : `原始表格标注汇率 ${parsed}`
+      source: parsed === 1 ? "原始表格标注 1，按人民币" : `原始表格标注汇率 ${parsed}`
     };
   }
 
@@ -95,7 +203,7 @@ function markedExchangeRate(row: RawRow): { rate: number; status: string; source
     return {
       rate: fallbackExchangeRate,
       status: "confirmed",
-      source: `${marker || "美金"}，按固定汇率 ${fallbackExchangeRate}`
+      source: `${marker || "美元"}，按固定汇率 ${fallbackExchangeRate}`
     };
   }
 
@@ -107,9 +215,7 @@ function markedExchangeRate(row: RawRow): { rate: number; status: string; source
 }
 
 function parseDate(value: CellValue): Date {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value;
-  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
   const parsed = new Date(text(value).replace(/-/g, "/"));
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
@@ -125,16 +231,14 @@ function isServiceBusiness(service: string, feeType: string): boolean {
 }
 
 function applyAmount(order: DraftOrder, direction: string, feeType: string, amount: number) {
-  const isReceivable = direction.includes("应收");
-  const isPayable = direction.includes("应付");
-  if (!isReceivable && !isPayable) {
-    return;
-  }
+  const isReceivable = direction.includes("应收") || direction.includes("收");
+  const isPayable = direction.includes("应付") || direction.includes("付");
+  if (!isReceivable && !isPayable) return;
 
   const target =
     feeType.includes("运费") ? "Freight" :
     feeType.includes("清关") || feeType.includes("报关") || feeType.includes("操作") || feeType.includes("拖车") ? "Clearance" :
-    feeType.includes("派送") ? "Delivery" :
+    feeType.includes("派送") || feeType.includes("配送") ? "Delivery" :
     "Other";
 
   if (isReceivable && target === "Freight") order.receivableFreight += amount;
@@ -147,27 +251,27 @@ function applyAmount(order: DraftOrder, direction: string, feeType: string, amou
   if (isPayable && target === "Other") order.otherCost += amount;
 }
 
-function makeDraft(row: RawRow): DraftOrder {
-  const orderDate = parseDate(row["下单时间"]);
-  const service = text(row["服务"]) || "未分类业务";
-  const feeType = text(row["费用类型"]);
+function makeDraft(row: CanonicalRow): DraftOrder {
+  const orderDate = parseDate(row.orderDate);
+  const service = text(row.service) || "未分类业务";
+  const feeType = text(row.feeType);
   const serviceBusiness = isServiceBusiness(service, feeType);
   const exchange = markedExchangeRate(row);
-  const orderNo = text(row["运单号"]);
-  const salespersonName = text(row["销售代表"]) || "未分配";
-  const customerServiceName = firstText(row, ["客服代表", "客服", "操作员", "客服人员", "客户代表", "跟单客服", "销售助理"]) || salespersonName;
+  const orderNo = text(row.orderNo);
+  const salespersonName = text(row.salespersonName) || "未分配";
+  const customerServiceName = text(row.customerServiceName) || salespersonName;
 
   return {
     orderNo,
-    customerOrderNo: text(row["客户订单号"]) || text(row["用户"]) || orderNo,
+    customerOrderNo: text(row.customerOrderNo) || text(row.customerName) || orderNo,
     orderDate,
     month: monthOf(orderDate),
-    customerName: text(row["用户"]) || text(row["客户订单号"]) || text(row["运单号"]),
+    customerName: text(row.customerName) || text(row.customerOrderNo) || orderNo,
     customerType: serviceBusiness ? "service" : "logistics",
     salespersonName,
     customerServiceName,
     businessType: service,
-    supplierName: text(row["供应商"]) || undefined,
+    supplierName: text(row.supplier) || undefined,
     currency: "CNY",
     exchangeRate: exchange.rate,
     exchangeRateSource: exchange.source,
@@ -193,7 +297,7 @@ function makeDraft(row: RawRow): DraftOrder {
     isCompanyCustomerAdjusted: false,
     needSupervisorConfirm: serviceBusiness || exchange.status === "pending",
     calculationNote: "",
-    remark: [text(row["主品名"]), text(row["内部备注"])].filter(Boolean).join(" / ")
+    remark: [text(row.mainProductName), text(row.internalRemark), text(row.remark)].filter(Boolean).join(" / ")
   };
 }
 
@@ -222,9 +326,7 @@ function commissionRate(monthlyLogisticsProfit: number): number {
 }
 
 function riskLevel(order: { adjustedGrossProfitRate: number | null }): "high" | "medium" {
-  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate > 0.5) {
-    return "medium";
-  }
+  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate > 0.5) return "medium";
   return "high";
 }
 
@@ -242,49 +344,47 @@ function riskType(order: {
   return "finance_review";
 }
 
-function normalizeHeader(value: CellValue) {
-  return text(value).replace(/\s+/g, "");
-}
-
-function normalizeUploadFileName(value: string) {
-  const decoded = Buffer.from(value, "latin1").toString("utf8");
-  return decoded.includes("�") ? value : decoded;
-}
-
-function extractHeaders(workbook: XLSX.WorkBook): { sheetName: string; headerRowIndex: number; headers: string[] } {
+function extractHeaders(workbook: XLSX.WorkBook): { sheetName: string; headerRowIndex: number; headers: string[]; mapping: HeaderMapping } {
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json<CellValue[]>(sheet, { header: 1, defval: null, raw: true });
 
     for (const [index, row] of rows.entries()) {
       const headers = row.map((cell) => text(cell)).filter(Boolean);
-      const normalized = new Set(headers.map(normalizeHeader));
-      if (requiredDetailHeaders.every((header) => normalized.has(header))) {
-        return { sheetName, headerRowIndex: index + 1, headers };
+      if (!headers.length) continue;
+      const mapping = buildHeaderMapping(headers);
+      if (!missingRequiredFields(mapping).length) {
+        return { sheetName, headerRowIndex: index + 1, headers, mapping };
       }
     }
   }
 
-  throw new Error("Excel 文件没有找到系统运单明细工作表，请确认包含：运单号、收付类型、费用类型");
+  throw new Error("Excel 文件没有找到系统运单明细工作表，请确认至少包含：运单号、收付类型、费用类型");
 }
 
-function findDetailSheet(workbook: XLSX.WorkBook): { sheetName: string; headerRowIndex: number; headers: string[]; rows: RawRow[] } {
+function findDetailSheet(workbook: XLSX.WorkBook) {
   const detail = extractHeaders(workbook);
   const sheet = workbook.Sheets[detail.sheetName];
   const rows = XLSX.utils.sheet_to_json<RawRow>(sheet, { defval: null, raw: true, range: detail.headerRowIndex - 1 });
   return { ...detail, rows };
 }
 
-async function validateHeaders(headers: string[]) {
-  const template = await prisma.excelImportTemplate.findUnique({ where: { templateKey } });
-  if (!template) return;
+function mappingReport(mapping: HeaderMapping) {
+  return (Object.entries(mapping) as [CanonicalField, string][]).map(([field, sourceHeader]) => ({
+    field,
+    sourceHeader
+  }));
+}
 
-  const expected = JSON.parse(template.headersJson) as string[];
-  const current = headers.map(normalizeHeader);
-  const saved = expected.map(normalizeHeader);
-  if (JSON.stringify(current) !== JSON.stringify(saved)) {
-    throw new Error(`Excel 表头与数据库模板不一致，请按模板导入。当前表头：${headers.join("、")}`);
-  }
+function importAudit(headers: string[], mapping: HeaderMapping) {
+  return {
+    parserMode: "auto-header-mapping",
+    fieldMapping: mappingReport(mapping),
+    missingRequiredFields: missingRequiredFields(mapping),
+    template: templateDiagnostics(headers),
+    agency: agencyRuntimeProfile,
+    selfHostedStack
+  };
 }
 
 export const excelService = {
@@ -316,32 +416,37 @@ export const excelService = {
       headerCount: detail.headers.length,
       headers: detail.headers,
       importedRows: 0,
-      importedOrders: 0
+      importedOrders: 0,
+      audit: importAudit(detail.headers, detail.mapping)
     };
   },
 
   async importWorkbook(buffer: Buffer, originalName: string) {
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
     const fileName = normalizeUploadFileName(originalName);
-    const { sheetName, headers, rows } = findDetailSheet(workbook);
-    await validateHeaders(headers);
+    const { sheetName, headers, mapping, rows } = findDetailSheet(workbook);
+    const missing = missingRequiredFields(mapping);
+    if (missing.length) {
+      throw new Error(`Excel 表头无法自动对应必填字段：${missing.join("、")}`);
+    }
     if (!rows.length) {
       throw new Error("Excel 工作表没有明细数据");
     }
 
     const orders = new Map<string, DraftOrder>();
-    for (const row of rows) {
-      const orderNo = text(row["运单号"]);
+    for (const rawRow of rows) {
+      const row = mapRawRow(rawRow, mapping);
+      const orderNo = text(row.orderNo);
       if (!orderNo) continue;
 
       const draft = orders.get(orderNo) ?? makeDraft(row);
-      const feeType = text(row["费用类型"]);
-      const direction = text(row["收付类型"]);
-      const originalAmount = number(row["金额"]) || number(row["本币费用"]);
+      const feeType = text(row.feeType);
+      const direction = text(row.direction);
+      const originalAmount = number(row.amount) || number(row.localAmount);
       const amount = Math.abs(originalAmount * markedExchangeRate(row).rate);
-      draft.supplierName = draft.supplierName || text(row["供应商"]) || undefined;
-      draft.customerOrderNo = text(row["客户订单号"]) || draft.customerOrderNo || text(row["用户"]) || orderNo;
-      draft.isServiceBusiness = draft.isServiceBusiness || isServiceBusiness(text(row["服务"]), feeType);
+      draft.supplierName = draft.supplierName || text(row.supplier) || undefined;
+      draft.customerOrderNo = text(row.customerOrderNo) || draft.customerOrderNo || text(row.customerName) || orderNo;
+      draft.isServiceBusiness = draft.isServiceBusiness || isServiceBusiness(text(row.service), feeType);
       draft.needSupervisorConfirm = draft.needSupervisorConfirm || draft.isServiceBusiness;
       applyAmount(draft, direction, feeType, amount);
       orders.set(orderNo, draft);
@@ -450,7 +555,8 @@ export const excelService = {
       importedRows: rows.length,
       importedOrders: createdOrders.length,
       serviceOrders: createdOrders.filter((order) => order.isServiceBusiness).length,
-      logisticsOrders: createdOrders.filter((order) => !order.isServiceBusiness).length
+      logisticsOrders: createdOrders.filter((order) => !order.isServiceBusiness).length,
+      audit: importAudit(headers, mapping)
     };
   }
 };
