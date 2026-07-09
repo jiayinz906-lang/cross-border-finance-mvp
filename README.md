@@ -111,9 +111,12 @@ pnpm verify:all
 单独验收：
 
 ```powershell
+pnpm doctor
 pnpm verify:import
 pnpm verify:ui
 ```
+
+`pnpm doctor` 是非破坏性体检命令：不重新导入 Excel、不改数据库，只检查前端、后端、数据库就绪、固定表头模板和仪表盘汇总是否可用。
 
 `pnpm verify:all` 覆盖：
 
@@ -137,6 +140,7 @@ pnpm verify:ui
 pnpm dev
 pnpm --filter cross-border-finance-server build
 pnpm --filter cross-border-finance-client build
+pnpm doctor
 pnpm verify:all
 pnpm verify:import
 pnpm verify:ui
