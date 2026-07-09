@@ -1,5 +1,5 @@
 import { request } from "./request";
 
-export function getCommissions() {
-  return request.get("/commissions");
+export function getCommissions(month?: string) {
+  return request.get("/commissions", month ? { params: { month } } : undefined);
 }

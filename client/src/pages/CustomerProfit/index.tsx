@@ -3,6 +3,7 @@ import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCustomerProfitAnalysis } from "../../api/analytics.api";
 import { getFinanceDashboard } from "../../api/finance.api";
+import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
@@ -204,6 +205,7 @@ function CustomerMatrix({ title, tag, customers, rows }: { title: string; tag: s
 }
 
 export default function CustomerProfit() {
+  const { selectedMonth } = useSelectedMonth();
   const [analysis, setAnalysis] = useState<CustomerAnalysis | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -212,8 +214,8 @@ export default function CustomerProfit() {
     setLoading(true);
     try {
       const [ledgerRes, dashboardRes] = await Promise.all([
-        getCustomerProfitAnalysis("2026-06"),
-        getFinanceDashboard("2026-06")
+        getCustomerProfitAnalysis(selectedMonth),
+        getFinanceDashboard(selectedMonth)
       ]);
       setAnalysis(ledgerRes.data);
       setDashboard(dashboardRes.data);
@@ -222,7 +224,7 @@ export default function CustomerProfit() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedMonth]);
 
   useEffect(() => {
     loadData();
@@ -303,7 +305,7 @@ export default function CustomerProfit() {
         </div>
         <Space size={12} wrap>
           <div className="profit-source">数据源：<b>6月数据 Excel</b></div>
-          <Button type="primary" className="profit-month-btn">2026年6月</Button>
+          <Button type="primary" className="profit-month-btn">{selectedMonth}</Button>
           <Button className="profit-print-btn" onClick={() => window.print()}>打印 / 导出 PDF</Button>
           <Button onClick={loadData}>刷新</Button>
         </Space>

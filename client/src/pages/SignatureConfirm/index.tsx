@@ -12,6 +12,7 @@ import {
   supervisorConfirmDocument,
   voidDocument
 } from "../../api/workflow.api";
+import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
@@ -37,13 +38,14 @@ export default function SignatureConfirm() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<ConfirmationDocument | null>(null);
+  const { selectedMonth } = useSelectedMonth();
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [docRes, dashboardRes] = await Promise.all([
-        getDocuments("2026-06", "logistics_commission"),
-        getFinanceDashboard("2026-06")
+        getDocuments(selectedMonth, "logistics_commission"),
+        getFinanceDashboard(selectedMonth)
       ]);
       setDocuments(docRes.data.rows ?? []);
       setDashboard(dashboardRes.data);
@@ -52,26 +54,26 @@ export default function SignatureConfirm() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedMonth]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   const handleBatchGenerate = async () => {
-    const res = await generateLogisticsDocuments("2026-06");
+    const res = await generateLogisticsDocuments(selectedMonth);
     message.success(`已批量生成 ${res.data.rows?.length ?? 0} 份确认单`);
     await loadData();
   };
 
   const handleExport = async () => {
-    const res = await createExportJob("signature_summary", "xlsx", "2026-06", { documentCount: documents.length });
+    const res = await createExportJob("signature_summary", "xlsx", selectedMonth, { documentCount: documents.length });
     message.success(`签名汇总表已生成：${res.data.fileName}`);
     window.open(exportDownloadUrl(res.data.id), "_blank");
   };
 
   const handleDownload = async (row: ConfirmationDocument, fileFormat: "pdf" | "png") => {
-    const res = await createExportJob(`signature_${fileFormat}`, fileFormat, "2026-06", row);
+    const res = await createExportJob(`signature_${fileFormat}`, fileFormat, selectedMonth, row);
     window.open(exportDownloadUrl(res.data.id), "_blank");
   };
 

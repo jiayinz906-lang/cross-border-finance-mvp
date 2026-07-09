@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCommissions } from "../../api/commissions.api";
 import { getFinanceDashboard } from "../../api/finance.api";
 import { confirmSalespersonCommission, generateLogisticsDocuments, getDocuments } from "../../api/workflow.api";
+import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
@@ -61,6 +62,7 @@ function rateText(value?: number | null) {
 }
 
 export default function Commission() {
+  const { selectedMonth } = useSelectedMonth();
   const [records, setRecords] = useState<CommissionRecord[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -70,8 +72,8 @@ export default function Commission() {
     setLoading(true);
     try {
       const [commissionRes, dashboardRes] = await Promise.all([
-        getCommissions(),
-        getFinanceDashboard("2026-06")
+        getCommissions(selectedMonth),
+        getFinanceDashboard(selectedMonth)
       ]);
       setRecords(commissionRes.data.rows ?? []);
       setDashboard(dashboardRes.data);
@@ -80,35 +82,35 @@ export default function Commission() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedMonth]);
 
   const handleGenerateDocuments = async () => {
-    const res = await generateLogisticsDocuments("2026-06");
+    const res = await generateLogisticsDocuments(selectedMonth);
     message.success(`已生成 ${res.data.rows?.length ?? 0} 份个人确认单`);
   };
 
   const handleViewSignatureStatus = async () => {
-    const res = await getDocuments("2026-06", "logistics_commission");
+    const res = await getDocuments(selectedMonth, "logistics_commission");
     const rows = res.data.rows ?? [];
     const signed = rows.filter((row: { signatureStatus: string }) => row.signatureStatus === "signed").length;
     message.info(`物流确认单 ${rows.length} 份，已签名 ${signed} 份`);
   };
 
   const handleConfirmSalesperson = async (row: SalespersonCommission) => {
-    await confirmSalespersonCommission(row.salespersonName, "2026-06");
+    await confirmSalespersonCommission(row.salespersonName, selectedMonth);
     message.success(`${row.salespersonName} 提成已确认`);
     await loadData();
   };
 
   const handleAdjustSalesperson = async (row: SalespersonCommission) => {
     const nextRate = row.commissionRate > 0 ? row.commissionRate : 0.15;
-    await confirmSalespersonCommission(row.salespersonName, "2026-06", nextRate);
+    await confirmSalespersonCommission(row.salespersonName, selectedMonth, nextRate);
     message.success(`${row.salespersonName} 已按 ${(nextRate * 100).toFixed(0)}% 调整并确认`);
     await loadData();
   };
 
   const handleGenerateOne = async (row: SalespersonCommission) => {
-    const res = await generateLogisticsDocuments("2026-06");
+    const res = await generateLogisticsDocuments(selectedMonth);
     const document = (res.data.rows ?? []).find((item: { ownerName: string }) => item.ownerName === row.salespersonName);
     message.success(document ? `${row.salespersonName} 确认单已生成` : "确认单已刷新");
   };

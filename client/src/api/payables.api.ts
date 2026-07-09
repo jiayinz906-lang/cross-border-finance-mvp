@@ -1,5 +1,5 @@
 import { request } from "./request";
 
-export function getPayables() {
-  return request.get("/payables");
+export function getPayables(month?: string) {
+  return request.get("/payables", month ? { params: { month } } : undefined);
 }

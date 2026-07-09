@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getFinanceDashboard } from "../../api/finance.api";
 import { getMonthlyReport } from "../../api/reports.api";
 import { confirmServiceRecord, generateServiceDocuments, getDocuments } from "../../api/workflow.api";
+import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
@@ -86,13 +87,14 @@ export default function ServiceConfirm() {
   const [rows, setRows] = useState<ServiceRecord[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
+  const { selectedMonth } = useSelectedMonth();
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [reportRes, dashboardRes] = await Promise.all([
-        getMonthlyReport(),
-        getFinanceDashboard("2026-06")
+        getMonthlyReport(selectedMonth),
+        getFinanceDashboard(selectedMonth)
       ]);
       setRows(reportRes.data.serviceRecords ?? []);
       setDashboard(dashboardRes.data);
@@ -101,19 +103,19 @@ export default function ServiceConfirm() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedMonth]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   const handleGenerateServiceDocuments = async () => {
-    const res = await generateServiceDocuments("2026-06");
+    const res = await generateServiceDocuments(selectedMonth);
     message.success(`已生成 ${res.data.rows?.length ?? 0} 份注册业务确认单`);
   };
 
   const handleViewSignatureStatus = async () => {
-    const res = await getDocuments("2026-06", "service_commission");
+    const res = await getDocuments(selectedMonth, "service_commission");
     const rows = res.data.rows ?? [];
     const signed = rows.filter((row: { signatureStatus: string }) => row.signatureStatus === "signed").length;
     message.info(`注册业务确认单 ${rows.length} 份，已签名 ${signed} 份`);

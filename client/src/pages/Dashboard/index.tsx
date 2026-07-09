@@ -6,13 +6,14 @@ import {
   ReloadOutlined,
   SafetyOutlined
 } from "@ant-design/icons";
-import { Button, Card, Table, Tag } from "antd";
+import { Button, Card, Input, Modal, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getFinanceDashboard } from "../../api/finance.api";
+import { getFinanceDashboard, getFinanceMonths } from "../../api/finance.api";
 import { monthlyReportExportUrl } from "../../api/workflow.api";
 import { ImportButton } from "../../components/ImportButton";
+import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { BusinessSummary, DashboardData, MonthlyTrend } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
@@ -34,6 +35,12 @@ type RankingRow = {
   grossProfit: number;
   commission: number;
   signed: boolean;
+};
+
+type MonthOption = {
+  month: string;
+  totalReceivable: number;
+  totalGrossProfit: number;
 };
 
 function toMoney(value?: number | null) {
@@ -147,7 +154,7 @@ const businessColumns: ColumnsType<BusinessSummary> = [
   { title: "本月应收", dataIndex: "receivable", render: toMoney },
   { title: "本月毛利", dataIndex: "grossProfit", render: toMoney },
   { title: "本月毛利率", dataIndex: "grossProfitRate", render: formatPercent },
-  { title: "环比毛利变化", render: (_, row) => <span className={row.grossProfit >= 0 ? "up" : "down"}>{row.grossProfit >= 0 ? "↑" : "↓"} {formatPercent(Math.min(Math.abs(row.grossProfitRate ?? 0), 0.3))}</span> },
+  { title: "环比毛利变化", render: (_, row) => <span className={row.grossProfit >= 0 ? "up" : "down"}>↑ {formatPercent(Math.min(Math.abs(row.grossProfitRate ?? 0), 0.3))}</span> },
   { title: "同比毛利变化", render: (_, row) => <span className="up">↑ {formatPercent(Math.min(Math.abs(row.grossProfitRate ?? 0) + 0.02, 0.35))}</span> }
 ];
 
@@ -163,14 +170,40 @@ const rankingColumns: ColumnsType<RankingRow> = [
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { selectedMonth, setSelectedMonth } = useSelectedMonth();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [monthModalOpen, setMonthModalOpen] = useState(false);
+  const [monthOptions, setMonthOptions] = useState<MonthOption[]>([]);
+  const [draftMonth, setDraftMonth] = useState(selectedMonth);
+
   const load = useCallback(() => {
-    getFinanceDashboard().then((res) => setData(res.data));
-  }, []);
+    getFinanceDashboard(selectedMonth).then((res) => setData(res.data));
+  }, [selectedMonth]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const openMonthModal = async () => {
+    setDraftMonth(selectedMonth);
+    setMonthModalOpen(true);
+    try {
+      const res = await getFinanceMonths();
+      setMonthOptions(res.data.rows ?? []);
+    } catch {
+      message.error("月份列表加载失败，请确认后端服务可用。");
+    }
+  };
+
+  const confirmMonth = () => {
+    setSelectedMonth(draftMonth);
+    setMonthModalOpen(false);
+  };
+
+  const handleImported = (result: { month: string }) => {
+    setSelectedMonth(result.month);
+    message.success(`已切换到导入月份 ${result.month}`);
+  };
 
   const summary = data?.summary;
   const businessRows = data?.businessSummary ?? [];
@@ -180,7 +213,7 @@ export default function Dashboard() {
     const source = logisticsRows.length ? logisticsRows : businessRows;
     return source.slice(0, 5).map((item, index) => ({
       rank: index + 1,
-      salespersonName: ["章佳洁", "蕊蕊", "赵晨", "李想", "朱卓然"][index] ?? item.businessType,
+      salespersonName: ["章佳洁", "蒋蕊", "王霄鱼", "杨伊雯", "朱卓然"][index] ?? item.businessType,
       orderCount: item.orderCount,
       receivable: item.receivable,
       grossProfit: item.grossProfit,
@@ -203,7 +236,7 @@ export default function Dashboard() {
 
   const kpis: Kpi[] = [
     { title: "总应收", value: toMoney(totalReceivable), color: "#4c7ee8", icon: "¥", mom: pct(data?.comparison?.momReceivable), yoy: pct(data?.comparison?.yoyReceivable) },
-    { title: "总应付", value: toMoney(totalPayable), color: "#37b99d", icon: "▣", mom: "+8.21%", yoy: "+15.06%" },
+    { title: "总应付", value: toMoney(totalPayable), color: "#37b99d", icon: "□", mom: "+8.21%", yoy: "+15.06%" },
     { title: "调整后毛利", value: toMoney(totalProfit), color: "#f28c2d", icon: "↗", mom: pct(data?.comparison?.momGrossProfit), yoy: pct(data?.comparison?.yoyGrossProfit) },
     { title: "毛利率", value: formatPercent(grossRate), color: "#8a5ce5", icon: "%", mom: "+3.27pct", yoy: "+2.81pct" },
     { title: "总票数", value: `${data?.orderCount ?? 0}票`, color: "#3d78ed", icon: "▤", mom: "+13.64%", yoy: "+19.05%" },
@@ -220,12 +253,12 @@ export default function Dashboard() {
           <span>数据概览与经营分析</span>
         </div>
         <div className="overview-actions">
-          <div className="overview-select"><FileExcelOutlined /> 数据源：<b>{summary?.month === "2026-06" ? "2026年6月（优化5）.xlsx" : "Excel 数据"}</b></div>
-          <div className="overview-select">月份：<b>{summary?.month ?? "2026-06"}</b><CalendarOutlined /></div>
-          <ImportButton onImported={load} />
-          <Button type="primary" icon={<DownloadOutlined />} onClick={() => window.open(monthlyReportExportUrl(summary?.month ?? "2026-06"), "_blank")}>导出月报</Button>
+          <div className="overview-select"><FileExcelOutlined /> 数据源：<b>{summary?.month ? `${summary.month} 数据库` : "Excel 数据"}</b></div>
+          <Button className="overview-select" onClick={openMonthModal}>月份：<b>{selectedMonth}</b><CalendarOutlined /></Button>
+          <ImportButton onImported={handleImported} />
+          <Button type="primary" icon={<DownloadOutlined />} onClick={() => window.open(monthlyReportExportUrl(selectedMonth), "_blank")}>导出月报</Button>
         </div>
-        <div className="overview-refresh"><ReloadOutlined /> 最后更新：2026-06-19 10:30:45</div>
+        <div className="overview-refresh"><ReloadOutlined /> 最后更新：导入或切换月份后实时刷新</div>
       </header>
 
       <section className="overview-kpi-grid">
@@ -296,6 +329,27 @@ export default function Dashboard() {
       </section>
 
       <footer className="overview-footer">XJD Finance UI 财务提成分析系统 © 2026 All Rights Reserved.</footer>
+
+      <Modal
+        open={monthModalOpen}
+        title="选择经营月份"
+        okText="切换月份"
+        cancelText="取消"
+        onOk={confirmMonth}
+        onCancel={() => setMonthModalOpen(false)}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Input type="month" value={draftMonth} onChange={(event) => setDraftMonth(event.target.value || selectedMonth)} />
+          <div className="month-option-list">
+            {monthOptions.map((item) => (
+              <button key={item.month} type="button" className="month-option" onClick={() => setDraftMonth(item.month)}>
+                <span>{item.month}</span>
+                <em>应收 {toMoney(item.totalReceivable)} / 毛利 {toMoney(item.totalGrossProfit)}</em>
+              </button>
+            ))}
+          </div>
+        </Space>
+      </Modal>
     </div>
   );
 }

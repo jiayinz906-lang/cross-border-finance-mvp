@@ -2,6 +2,7 @@ import { Button, Card, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getFinanceDashboard } from "../../api/finance.api";
+import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { BusinessSummary, DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
@@ -40,6 +41,7 @@ function toPlainMoney(value?: number | null) {
 }
 
 export default function ProfitAnalysis() {
+  const { selectedMonth } = useSelectedMonth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [showBusinessSummary, setShowBusinessSummary] = useState(true);
@@ -47,14 +49,14 @@ export default function ProfitAnalysis() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getFinanceDashboard("2026-06");
+      const res = await getFinanceDashboard(selectedMonth);
       setData(res.data);
     } catch {
       message.error("业务利润数据加载失败，请确认后端服务可用。");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedMonth]);
 
   useEffect(() => {
     loadData();
@@ -180,7 +182,7 @@ export default function ProfitAnalysis() {
         </div>
         <Space size={12} wrap>
           <div className="profit-source">数据源：<b>6月数据 Excel</b></div>
-          <Button type="primary" className="profit-month-btn">2026年6月</Button>
+          <Button type="primary" className="profit-month-btn">{selectedMonth}</Button>
           <Button className="profit-print-btn" onClick={() => window.print()}>打印 / 导出 PDF</Button>
           <Button onClick={loadData}>刷新</Button>
         </Space>

@@ -5,6 +5,7 @@ import type { Key } from "react";
 import { getFinanceDashboard } from "../../api/finance.api";
 import { getRisks } from "../../api/risks.api";
 import { markRiskReviewed } from "../../api/workflow.api";
+import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData, FinanceOrder } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
@@ -103,6 +104,7 @@ function rawRows(order?: RiskFinanceOrder): RawDataRow[] {
 }
 
 export default function Risks() {
+  const { selectedMonth } = useSelectedMonth();
   const [rows, setRows] = useState<RiskRow[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [selectedRisk, setSelectedRisk] = useState<RiskRow | null>(null);
@@ -114,8 +116,8 @@ export default function Risks() {
     setLoading(true);
     try {
       const [riskRes, dashboardRes] = await Promise.all([
-        getRisks(),
-        getFinanceDashboard("2026-06")
+        getRisks(selectedMonth),
+        getFinanceDashboard(selectedMonth)
       ]);
       setRows(riskRes.data.rows ?? []);
       setDashboard(dashboardRes.data);
@@ -124,7 +126,7 @@ export default function Risks() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedMonth]);
 
   useEffect(() => {
     loadData();
@@ -264,7 +266,7 @@ export default function Risks() {
         </div>
         <Space size={12} wrap>
           <div className="profit-source">数据源：<b>6月数据 Excel</b></div>
-          <Button type="primary" className="profit-month-btn">2026年6月</Button>
+          <Button type="primary" className="profit-month-btn">{selectedMonth}</Button>
           <Button className="profit-print-btn" onClick={() => window.print()}>打印 / 导出 PDF</Button>
           <Button onClick={loadData}>刷新</Button>
         </Space>

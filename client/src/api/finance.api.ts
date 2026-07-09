@@ -20,6 +20,10 @@ export function getFinanceDashboard(month?: string) {
   return request.get("/finance/dashboard", params(month));
 }
 
+export function getFinanceMonths() {
+  return request.get("/finance/months");
+}
+
 export function importFinanceExcel(file: File) {
   const formData = new FormData();
   formData.append("file", file);

@@ -1,5 +1,15 @@
-import { DatePicker } from "antd";
+import { Input } from "antd";
+import { useSelectedMonth } from "../contexts/MonthContext";
 
 export function MonthSelector() {
-  return <DatePicker picker="month" placeholder="选择月份" />;
+  const { selectedMonth, setSelectedMonth } = useSelectedMonth();
+
+  return (
+    <Input
+      type="month"
+      value={selectedMonth}
+      onChange={(event) => setSelectedMonth(event.target.value)}
+      style={{ width: 150 }}
+    />
+  );
 }

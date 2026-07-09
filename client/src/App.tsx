@@ -1,4 +1,5 @@
 import { Navigate, RouterProvider, createHashRouter } from "react-router-dom";
+import { MonthProvider } from "./contexts/MonthContext";
 import { routes } from "./router";
 
 const router = createHashRouter([
@@ -10,5 +11,9 @@ const router = createHashRouter([
 ]);
 
 export default function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <MonthProvider>
+      <RouterProvider router={router} />
+    </MonthProvider>
+  );
 }

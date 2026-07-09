@@ -23,6 +23,13 @@ export const financeRepository = {
     return prisma.financeSummary.findMany({ orderBy: { month: "asc" } });
   },
 
+  listMonths() {
+    return prisma.financeSummary.findMany({
+      select: { month: true, updatedAt: true, totalReceivable: true, totalGrossProfit: true },
+      orderBy: { month: "desc" }
+    });
+  },
+
   listLogisticsOrders(month?: string) {
     return prisma.financeOrder.findMany({
       where: { ...(month ? { month } : {}), isServiceBusiness: false },

@@ -14,6 +14,10 @@ export async function dashboardController(req: Request, res: Response) {
   res.json(await financeService.getDashboard(req.query.month as string | undefined));
 }
 
+export async function monthsController(_req: Request, res: Response) {
+  res.json(await financeService.listMonths());
+}
+
 export async function importExcelController(req: Request, res: Response) {
   if (!req.file?.buffer) {
     res.status(400).json({ message: "请上传 Excel 文件" });

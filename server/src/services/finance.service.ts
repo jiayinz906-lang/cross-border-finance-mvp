@@ -30,6 +30,18 @@ export const financeService = {
     return financeRepository.getLatestSummary(month);
   },
 
+  async listMonths() {
+    const rows = await financeRepository.listMonths();
+    return {
+      rows: rows.map((item) => ({
+        month: item.month,
+        updatedAt: item.updatedAt,
+        totalReceivable: item.totalReceivable,
+        totalGrossProfit: item.totalGrossProfit
+      }))
+    };
+  },
+
   async getDashboard(month?: string) {
     const summary = await financeRepository.getLatestSummary(month);
     const selectedMonth = month ?? summary?.month;
