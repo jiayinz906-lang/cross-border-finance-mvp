@@ -32,7 +32,7 @@ export async function importPreviewController(req: Request, res: Response) {
     return;
   }
 
-  res.json(excelService.previewWorkbook(req.file.buffer, req.file.originalname));
+  res.json(await excelService.previewWorkbook(req.file.buffer, req.file.originalname));
 }
 
 export async function importExcelController(req: Request, res: Response) {

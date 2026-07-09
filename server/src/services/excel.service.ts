@@ -28,6 +28,17 @@ type CanonicalField =
 
 type HeaderMapping = Partial<Record<CanonicalField, string>>;
 type CanonicalRow = Partial<Record<CanonicalField, CellValue>>;
+type CommissionTier = { min: number; max: number | null; rate: number };
+
+type ImportRules = {
+  cnyRate: number;
+  usdRate: number;
+  highRiskBelow: number;
+  abnormalHighAbove: number;
+  companyCustomerCommissionRate: number;
+  serviceKeywords: string[];
+  commissionTiers: CommissionTier[];
+};
 
 type DraftOrder = {
   orderNo: string;
@@ -68,23 +79,24 @@ type DraftOrder = {
   remark?: string;
 };
 
-const fallbackExchangeRate = 6.85;
 const templateKey = "system_waybill_detail";
-
-const serviceBusinessKeywords = [
-  "注册",
-  "注销",
-  "证书",
-  "店铺",
-  "租赁",
-  "商标",
-  "财税",
-  "EAC",
-  "COC",
-  "DOC"
-];
-
 const requiredCanonicalFields: CanonicalField[] = ["orderNo", "direction", "feeType"];
+
+const defaultImportRules: ImportRules = {
+  cnyRate: 1,
+  usdRate: 6.85,
+  highRiskBelow: 0.1,
+  abnormalHighAbove: 0.5,
+  companyCustomerCommissionRate: 0.1,
+  serviceKeywords: ["注册", "注销", "证书", "店铺", "租赁", "商标", "财税", "EAC", "COC", "DOC"],
+  commissionTiers: [
+    { min: 150000, max: null, rate: 0.3 },
+    { min: 100000, max: 150000, rate: 0.25 },
+    { min: 50000, max: 100000, rate: 0.2 },
+    { min: 15000, max: 50000, rate: 0.15 },
+    { min: 0, max: 15000, rate: 0.15 }
+  ]
+};
 
 const templateHeaders = [
   "运单号",
@@ -149,6 +161,50 @@ function nullableNumber(value: CellValue): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function safeJson<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+async function loadImportRules(): Promise<ImportRules> {
+  const rows = await prisma.parameterRule.findMany({
+    where: {
+      isActive: true,
+      ruleKey: {
+        in: [
+          "exchange_rate_policy",
+          "risk_profit_rate_threshold",
+          "logistics_commission_tiers",
+          "company_customer_commission_rate",
+          "service_business_scope"
+        ]
+      }
+    }
+  });
+  const byKey = new Map(rows.map((row) => [row.ruleKey, row.valueJson]));
+  const exchange = safeJson<{ cnyRate?: number; usdRate?: number }>(byKey.get("exchange_rate_policy"), {});
+  const risk = safeJson<{ highRiskBelow?: number; abnormalHighAbove?: number }>(byKey.get("risk_profit_rate_threshold"), {});
+  const company = safeJson<{ rate?: number }>(byKey.get("company_customer_commission_rate"), {});
+  const serviceKeywords = safeJson<string[]>(byKey.get("service_business_scope"), defaultImportRules.serviceKeywords);
+  const commissionTiers = safeJson<CommissionTier[]>(byKey.get("logistics_commission_tiers"), defaultImportRules.commissionTiers);
+
+  return {
+    cnyRate: Number.isFinite(exchange.cnyRate) ? Number(exchange.cnyRate) : defaultImportRules.cnyRate,
+    usdRate: Number.isFinite(exchange.usdRate) ? Number(exchange.usdRate) : defaultImportRules.usdRate,
+    highRiskBelow: Number.isFinite(risk.highRiskBelow) ? Number(risk.highRiskBelow) : defaultImportRules.highRiskBelow,
+    abnormalHighAbove: Number.isFinite(risk.abnormalHighAbove) ? Number(risk.abnormalHighAbove) : defaultImportRules.abnormalHighAbove,
+    companyCustomerCommissionRate: Number.isFinite(company.rate) ? Number(company.rate) : defaultImportRules.companyCustomerCommissionRate,
+    serviceKeywords: Array.isArray(serviceKeywords) && serviceKeywords.length ? serviceKeywords : defaultImportRules.serviceKeywords,
+    commissionTiers: Array.isArray(commissionTiers) && commissionTiers.length
+      ? commissionTiers.sort((a, b) => b.min - a.min)
+      : defaultImportRules.commissionTiers
+  };
+}
+
 function normalizeHeader(value: CellValue) {
   return text(value).replace(/\s+/g, "").toLowerCase();
 }
@@ -201,7 +257,7 @@ function exchangeRateMarker(row: CanonicalRow): string {
   return text(row.exchangeRate) || text(row.remark) || text(row.internalRemark);
 }
 
-function markedExchangeRate(row: CanonicalRow): { rate: number; status: string; source: string } {
+function markedExchangeRate(row: CanonicalRow, rules: ImportRules): { rate: number; status: string; source: string } {
   const marker = exchangeRateMarker(row);
   const parsed = nullableNumber(row.exchangeRate) ?? nullableNumber(marker);
   if (parsed !== null) {
@@ -214,14 +270,14 @@ function markedExchangeRate(row: CanonicalRow): { rate: number; status: string; 
 
   if (/美金|美元|USD|\$|汇率未出/i.test(marker)) {
     return {
-      rate: fallbackExchangeRate,
+      rate: rules.usdRate,
       status: "confirmed",
-      source: `${marker || "美元"}，按固定汇率 ${fallbackExchangeRate}`
+      source: `${marker || "美元"}，按参数规则汇率 ${rules.usdRate}`
     };
   }
 
   return {
-    rate: 1,
+    rate: rules.cnyRate,
     status: marker ? "pending" : "confirmed",
     source: marker || "未标注汇率，按人民币暂列"
   };
@@ -239,8 +295,8 @@ function monthOf(date: Date): string {
   return `${year}-${month}`;
 }
 
-function isServiceBusiness(service: string, feeType: string): boolean {
-  return serviceBusinessKeywords.some((keyword) => service.includes(keyword) || feeType.includes(keyword));
+function isServiceBusiness(service: string, feeType: string, rules: ImportRules): boolean {
+  return rules.serviceKeywords.some((keyword) => service.includes(keyword) || feeType.includes(keyword));
 }
 
 function applyAmount(order: DraftOrder, direction: string, feeType: string, amount: number) {
@@ -264,12 +320,12 @@ function applyAmount(order: DraftOrder, direction: string, feeType: string, amou
   if (isPayable && target === "Other") order.otherCost += amount;
 }
 
-function makeDraft(row: CanonicalRow): DraftOrder {
+function makeDraft(row: CanonicalRow, rules: ImportRules): DraftOrder {
   const orderDate = parseDate(row.orderDate);
   const service = text(row.service) || "未分类业务";
   const feeType = text(row.feeType);
-  const serviceBusiness = isServiceBusiness(service, feeType);
-  const exchange = markedExchangeRate(row);
+  const serviceBusiness = isServiceBusiness(service, feeType, rules);
+  const exchange = markedExchangeRate(row, rules);
   const orderNo = text(row.orderNo);
   const salespersonName = text(row.salespersonName) || "未分配";
   const customerServiceName = text(row.customerServiceName) || salespersonName;
@@ -314,7 +370,7 @@ function makeDraft(row: CanonicalRow): DraftOrder {
   };
 }
 
-function finalize(order: DraftOrder): DraftOrder {
+function finalize(order: DraftOrder, rules: ImportRules): DraftOrder {
   order.adjustedReceivable = order.receivableFreight + order.receivableClearance + order.receivableDelivery + order.otherReceivable;
   order.adjustedPayable = order.payableFreight + order.payableClearance + order.payableDelivery + order.otherCost;
   order.adjustedGrossProfit = order.adjustedReceivable - order.adjustedPayable;
@@ -322,8 +378,8 @@ function finalize(order: DraftOrder): DraftOrder {
 
   const notes = [];
   if (order.exchangeRateStatus === "pending") notes.push("汇率缺失或非数字，待主管复核");
-  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate < 0.1) notes.push("利润率低于10%");
-  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate > 0.5) notes.push("利润率高于50%");
+  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate < rules.highRiskBelow) notes.push(`利润率低于${rules.highRiskBelow * 100}%`);
+  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate > rules.abnormalHighAbove) notes.push(`利润率高于${rules.abnormalHighAbove * 100}%`);
   if (order.adjustedPayable === 0 && !order.isServiceBusiness) notes.push("未识别到应付成本");
   if (order.isServiceBusiness) notes.push("注册/证书/店铺等服务类业务，进入主管确认，不计入物流利润分析");
   order.needSupervisorConfirm = order.needSupervisorConfirm || notes.length > 0;
@@ -331,15 +387,13 @@ function finalize(order: DraftOrder): DraftOrder {
   return order;
 }
 
-function commissionRate(monthlyLogisticsProfit: number): number {
-  if (monthlyLogisticsProfit >= 150000) return 0.3;
-  if (monthlyLogisticsProfit >= 100000) return 0.25;
-  if (monthlyLogisticsProfit >= 50000) return 0.2;
-  return 0.15;
+function commissionRate(monthlyLogisticsProfit: number, rules: ImportRules): number {
+  const tier = rules.commissionTiers.find((item) => monthlyLogisticsProfit >= item.min && (item.max === null || monthlyLogisticsProfit < item.max));
+  return tier?.rate ?? 0.15;
 }
 
-function riskLevel(order: { adjustedGrossProfitRate: number | null }): "high" | "medium" {
-  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate > 0.5) return "medium";
+function riskLevel(order: { adjustedGrossProfitRate: number | null }, rules: ImportRules): "high" | "medium" {
+  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate > rules.abnormalHighAbove) return "medium";
   return "high";
 }
 
@@ -348,10 +402,10 @@ function riskType(order: {
   adjustedGrossProfitRate: number | null;
   adjustedPayable: number;
   isServiceBusiness: boolean;
-}): string {
+}, rules: ImportRules): string {
   if (order.exchangeRateStatus === "pending") return "exchange_rate_missing";
-  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate > 0.5) return "abnormal_high_profit";
-  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate < 0.1) return "low_profit";
+  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate > rules.abnormalHighAbove) return "abnormal_high_profit";
+  if (order.adjustedGrossProfitRate !== null && order.adjustedGrossProfitRate < rules.highRiskBelow) return "low_profit";
   if (order.adjustedPayable === 0 && !order.isServiceBusiness) return "cost_missing";
   if (order.isServiceBusiness) return "service_confirm";
   return "finance_review";
@@ -386,18 +440,19 @@ function mappingReport(mapping: HeaderMapping) {
   return (Object.entries(mapping) as [CanonicalField, string][]).map(([field, sourceHeader]) => ({ field, sourceHeader }));
 }
 
-function importAudit(headers: string[], mapping: HeaderMapping) {
+function importAudit(headers: string[], mapping: HeaderMapping, rules?: ImportRules) {
   return {
     parserMode: "auto-header-mapping",
     fieldMapping: mappingReport(mapping),
     missingRequiredFields: missingRequiredFields(mapping),
     template: templateDiagnostics(headers),
+    activeRules: rules,
     agency: agencyRuntimeProfile,
     selfHostedStack
   };
 }
 
-function summarizeOrders(orders: DraftOrder[]) {
+function summarizeOrders(orders: DraftOrder[], rules: ImportRules) {
   const totalReceivable = orders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
   const totalPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
   const totalGrossProfit = orders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
@@ -409,13 +464,14 @@ function summarizeOrders(orders: DraftOrder[]) {
     totalPayable,
     totalGrossProfit,
     grossProfitRate: totalReceivable > 0 ? totalGrossProfit / totalReceivable : null,
-    riskOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < 0.1 || order.needSupervisorConfirm).length,
-    abnormalHighProfitOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > 0.5).length,
+    riskOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < rules.highRiskBelow || order.needSupervisorConfirm).length,
+    abnormalHighProfitOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > rules.abnormalHighAbove).length,
     pendingSupervisorConfirmCount: orders.filter((order) => order.needSupervisorConfirm).length
   };
 }
 
-function parseWorkbook(buffer: Buffer, originalName: string) {
+async function parseWorkbook(buffer: Buffer, originalName: string) {
+  const rules = await loadImportRules();
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
   const fileName = normalizeUploadFileName(originalName);
   const { sheetName, headers, mapping, rows } = findDetailSheet(workbook);
@@ -429,24 +485,24 @@ function parseWorkbook(buffer: Buffer, originalName: string) {
     const orderNo = text(row.orderNo);
     if (!orderNo) continue;
 
-    const draft = orders.get(orderNo) ?? makeDraft(row);
+    const draft = orders.get(orderNo) ?? makeDraft(row, rules);
     const feeType = text(row.feeType);
     const direction = text(row.direction);
     const originalAmount = number(row.localAmount) || number(row.amount);
-    const amount = Math.abs(originalAmount * markedExchangeRate(row).rate);
+    const amount = Math.abs(originalAmount * markedExchangeRate(row, rules).rate);
     draft.supplierName = draft.supplierName || text(row.supplier) || undefined;
     draft.customerOrderNo = text(row.customerOrderNo) || draft.customerOrderNo || text(row.customerName) || orderNo;
-    draft.isServiceBusiness = draft.isServiceBusiness || isServiceBusiness(text(row.service), feeType);
+    draft.isServiceBusiness = draft.isServiceBusiness || isServiceBusiness(text(row.service), feeType, rules);
     draft.needSupervisorConfirm = draft.needSupervisorConfirm || draft.isServiceBusiness;
     applyAmount(draft, direction, feeType, amount);
     orders.set(orderNo, draft);
   }
 
-  const finalized = Array.from(orders.values()).map(finalize);
+  const finalized = Array.from(orders.values()).map((order) => finalize(order, rules));
   const month = finalized[0]?.month ?? monthOf(new Date());
   const monthOrders = finalized.filter((order) => order.month === month);
-  const summary = summarizeOrders(monthOrders);
-  const audit = importAudit(headers, mapping);
+  const summary = summarizeOrders(monthOrders, rules);
+  const audit = importAudit(headers, mapping, rules);
 
   return {
     fileName,
@@ -457,6 +513,7 @@ function parseWorkbook(buffer: Buffer, originalName: string) {
     mapping,
     orders: monthOrders,
     importedRows: rows.length,
+    rules,
     ...summary,
     audit
   };
@@ -467,11 +524,14 @@ function batchNo(month: string) {
 }
 
 async function rebuildFinanceSummary(month: string) {
+  const rules = await loadImportRules();
   const orders = await prisma.financeOrder.findMany({ where: { month } });
   const totalReceivable = orders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
   const totalPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
   const totalGrossProfit = orders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
   const commissions = await prisma.commissionRecord.findMany({ where: { financeOrder: { month } } });
+  const riskOrderCount = orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < rules.highRiskBelow || order.needSupervisorConfirm).length;
+  const abnormalHighProfitOrderCount = orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > rules.abnormalHighAbove).length;
 
   await prisma.financeSummary.upsert({
     where: { month },
@@ -483,8 +543,8 @@ async function rebuildFinanceSummary(month: string) {
       totalGrossProfit,
       grossProfitRate: totalReceivable > 0 ? totalGrossProfit / totalReceivable : null,
       totalCommission: commissions.reduce((sum, item) => sum + item.commissionAmount, 0),
-      riskOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < 0.1 || order.needSupervisorConfirm).length,
-      abnormalHighProfitOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > 0.5).length,
+      riskOrderCount,
+      abnormalHighProfitOrderCount,
       pendingSupervisorConfirmCount: orders.filter((order) => order.needSupervisorConfirm).length
     },
     create: {
@@ -496,8 +556,8 @@ async function rebuildFinanceSummary(month: string) {
       totalGrossProfit,
       grossProfitRate: totalReceivable > 0 ? totalGrossProfit / totalReceivable : null,
       totalCommission: commissions.reduce((sum, item) => sum + item.commissionAmount, 0),
-      riskOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < 0.1 || order.needSupervisorConfirm).length,
-      abnormalHighProfitOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > 0.5).length,
+      riskOrderCount,
+      abnormalHighProfitOrderCount,
       pendingSupervisorConfirmCount: orders.filter((order) => order.needSupervisorConfirm).length
     }
   });
@@ -505,10 +565,13 @@ async function rebuildFinanceSummary(month: string) {
 
 async function createDerivedRecords(
   order: Awaited<ReturnType<typeof prisma.financeOrder.create>>,
-  logisticsProfitBySalesperson: Map<string, number>
+  logisticsProfitBySalesperson: Map<string, number>,
+  rules: ImportRules
 ) {
   if (!order.isServiceBusiness && order.adjustedGrossProfit > 0) {
-    const rate = commissionRate(logisticsProfitBySalesperson.get(order.salespersonName) ?? 0);
+    const rate = order.isCompanyCustomerAdjusted
+      ? rules.companyCustomerCommissionRate
+      : commissionRate(logisticsProfitBySalesperson.get(order.salespersonName) ?? 0, rules);
     await prisma.commissionRecord.create({
       data: {
         financeOrderId: order.id,
@@ -524,12 +587,12 @@ async function createDerivedRecords(
     });
   }
 
-  if (order.needSupervisorConfirm || (order.adjustedGrossProfitRate ?? 1) < 0.1 || (order.adjustedGrossProfitRate ?? 0) > 0.5) {
+  if (order.needSupervisorConfirm || (order.adjustedGrossProfitRate ?? 1) < rules.highRiskBelow || (order.adjustedGrossProfitRate ?? 0) > rules.abnormalHighAbove) {
     await prisma.riskRecord.create({
       data: {
         financeOrderId: order.id,
-        riskLevel: riskLevel(order),
-        riskType: riskType(order),
+        riskLevel: riskLevel(order, rules),
+        riskType: riskType(order, rules),
         riskReasons: `${order.orderNo}：${order.calculationNote}`,
         suggestion: "复核原始 Excel、汇率、应收应付和成本归集后再确认。",
         status: "open"
@@ -589,8 +652,8 @@ export const excelService = {
     };
   },
 
-  previewWorkbook(buffer: Buffer, originalName: string) {
-    const parsed = parseWorkbook(buffer, originalName);
+  async previewWorkbook(buffer: Buffer, originalName: string) {
+    const parsed = await parseWorkbook(buffer, originalName);
     const sampleOrders = parsed.orders.slice(0, 5).map((order) => ({
       orderNo: order.orderNo,
       customerOrderNo: order.customerOrderNo,
@@ -626,7 +689,7 @@ export const excelService = {
   },
 
   async importWorkbook(buffer: Buffer, originalName: string) {
-    const parsed = parseWorkbook(buffer, originalName);
+    const parsed = await parseWorkbook(buffer, originalName);
     const batchNumber = batchNo(parsed.month);
 
     const batch = await prisma.importBatch.create({
@@ -649,7 +712,8 @@ export const excelService = {
           totalReceivable: parsed.totalReceivable,
           totalPayable: parsed.totalPayable,
           totalGrossProfit: parsed.totalGrossProfit,
-          grossProfitRate: parsed.grossProfitRate
+          grossProfitRate: parsed.grossProfitRate,
+          activeRules: parsed.rules
         })
       }
     });
@@ -681,7 +745,7 @@ export const excelService = {
     }
 
     for (const order of createdOrders) {
-      await createDerivedRecords(order, logisticsProfitBySalesperson);
+      await createDerivedRecords(order, logisticsProfitBySalesperson, parsed.rules);
     }
 
     await rebuildFinanceSummary(parsed.month);
