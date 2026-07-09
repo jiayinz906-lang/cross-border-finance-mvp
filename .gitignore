@@ -8,3 +8,4 @@ server/dist/
 client/dist/
 .codex-spreadsheet-work/
 outputs/
+.codex-server.log
