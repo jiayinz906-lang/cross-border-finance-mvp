@@ -28,6 +28,16 @@ export async function importExcelController(req: Request, res: Response) {
   res.json(result);
 }
 
+export async function importTemplateController(req: Request, res: Response) {
+  if (!req.file?.buffer) {
+    res.status(400).json({ message: "请上传 Excel 模板文件" });
+    return;
+  }
+
+  const result = await excelService.saveImportTemplate(req.file.buffer, req.file.originalname);
+  res.json(result);
+}
+
 export function agentRulesController(_req: Request, res: Response) {
   res.json(financeService.getAgentRules());
 }
