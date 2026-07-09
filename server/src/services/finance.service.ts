@@ -168,7 +168,7 @@ export const financeService = {
   async getDashboard(month?: string) {
     const summary = await financeRepository.getLatestSummary(month);
     const selectedMonth = month ?? summary?.month;
-    const [orders, summaries, commissions, confirmationDocuments] = await Promise.all([
+    const [orders, summaries, commissions, confirmationDocuments, risks] = await Promise.all([
       financeRepository.listOrders(selectedMonth),
       financeRepository.listSummaries(),
       prisma.commissionRecord.findMany({
@@ -179,6 +179,10 @@ export const financeService = {
           ...(selectedMonth ? { month: selectedMonth } : {}),
           documentType: "logistics_commission"
         }
+      }),
+      prisma.riskRecord.findMany({
+        where: selectedMonth ? { financeOrder: { month: selectedMonth } } : undefined,
+        include: { financeOrder: true }
       })
     ]);
 
@@ -281,6 +285,19 @@ export const financeService = {
             : "not_generated";
     }
 
+    const riskOverview = {
+      highRiskCount: risks.filter((risk) => risk.riskLevel === "high").length,
+      mediumRiskCount: risks.filter((risk) => risk.riskLevel === "medium").length,
+      negativeProfitCount: orders.filter((order) => order.adjustedGrossProfit < 0).length,
+      lowProfitUnderFiveCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < 0.05).length,
+      abnormalHighProfitCount: risks.filter((risk) => risk.riskType === "abnormal_high_profit").length,
+      exchangeRateMissingCount: risks.filter((risk) => risk.riskType === "exchange_rate_missing").length,
+      costMissingCount: risks.filter((risk) => risk.riskType === "cost_missing").length,
+      openRiskCount: risks.filter((risk) => risk.status !== "reviewed").length,
+      reviewedRiskCount: risks.filter((risk) => risk.status === "reviewed").length,
+      topRiskReason: risks[0]?.riskReasons ?? null
+    };
+
     const selected = selectedMonth ? summaries.find((item) => item.month === selectedMonth) : summaries.at(-1);
     const previous = selectedMonth ? summaries.find((item) => item.month === previousMonth(selectedMonth)) : undefined;
     const previousYear = selectedMonth ? summaries.find((item) => item.month === previousYearMonth(selectedMonth)) : undefined;
@@ -307,6 +324,7 @@ export const financeService = {
           ratio: safeRate(item.payable, totalPayable) ?? 0
         }))
         .sort((a, b) => b.payable - a.payable),
+      riskOverview,
       monthlyTrend: summaries.map((item) => ({
         month: item.month,
         receivable: item.totalReceivable,

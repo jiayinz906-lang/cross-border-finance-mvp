@@ -79,6 +79,19 @@ export type SupplierPayableSummary = {
   ratio: number;
 };
 
+export type RiskOverview = {
+  highRiskCount: number;
+  mediumRiskCount: number;
+  negativeProfitCount: number;
+  lowProfitUnderFiveCount: number;
+  abnormalHighProfitCount: number;
+  exchangeRateMissingCount: number;
+  costMissingCount: number;
+  openRiskCount: number;
+  reviewedRiskCount: number;
+  topRiskReason?: string | null;
+};
+
 export type DashboardData = {
   summary: FinanceSummary | null;
   orderCount: number;
@@ -89,6 +102,7 @@ export type DashboardData = {
   businessSummary: BusinessSummary[];
   salespersonSummary: SalespersonSummary[];
   supplierPayableSummary: SupplierPayableSummary[];
+  riskOverview: RiskOverview;
   monthlyTrend: MonthlyTrend[];
   comparison: {
     month: string | null;

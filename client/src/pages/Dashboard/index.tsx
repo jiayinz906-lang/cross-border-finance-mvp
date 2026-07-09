@@ -140,12 +140,12 @@ function CustomerDonut({ companyProfit, personalProfit }: { companyProfit: numbe
   );
 }
 
-function riskItem(label: string, count: number, delta: string) {
+function riskItem(label: string, count: number, note: string) {
   return (
     <div className="risk-mini-item">
       <b>{count}票</b>
       <span>{label}</span>
-      <em>环比 {delta}</em>
+      <em>{note}</em>
     </div>
   );
 }
@@ -231,6 +231,7 @@ export default function Dashboard() {
   const grossRate = summary?.grossProfitRate ?? 0;
   const logisticsCommission = summary?.totalCommission ?? 0;
   const riskCount = summary?.riskOrderCount ?? 0;
+  const riskOverview = data?.riskOverview;
   const trend = data?.monthlyTrend ?? [];
   const companyProfit = serviceRows.reduce((sum, item) => sum + item.grossProfit, 0);
   const personalProfit = Math.max(totalProfit - companyProfit, 0);
@@ -317,15 +318,18 @@ export default function Dashboard() {
       <section className="overview-risk-grid">
         <Card className="overview-card risk-card" title="风险趋势（本月）" extra={<Button type="link" onClick={() => navigate("/risks")}>查看更多</Button>}>
           <div className="risk-mini-grid">
-            {riskItem("高风险票数", riskCount, "+2")}
-            {riskItem("中风险票数", Math.max(riskCount - 5, 0), "-1")}
-            {riskItem("负毛利订单", Math.max(summary?.abnormalHighProfitOrderCount ?? 0, 1), "+0")}
-            {riskItem("毛利率<5%", Math.max(Math.round(riskCount / 3), 1), "+1")}
-            {riskItem("毛利率>60%", Math.max(summary?.abnormalHighProfitOrderCount ?? 0, 1), "+0")}
-            {riskItem("汇率缺失", 4, "+1")}
-            {riskItem("缺应付", 6, "+2")}
+            {riskItem("高风险票数", riskOverview?.highRiskCount ?? riskCount, "待复核")}
+            {riskItem("中风险票数", riskOverview?.mediumRiskCount ?? 0, "异常高利润")}
+            {riskItem("负毛利订单", riskOverview?.negativeProfitCount ?? 0, "需查成本")}
+            {riskItem("毛利率<5%", riskOverview?.lowProfitUnderFiveCount ?? 0, "重点跟进")}
+            {riskItem("异常高利润", riskOverview?.abnormalHighProfitCount ?? 0, "防漏成本")}
+            {riskItem("汇率缺失", riskOverview?.exchangeRateMissingCount ?? 0, "按原表复核")}
+            {riskItem("缺应付", riskOverview?.costMissingCount ?? 0, "补录成本")}
           </div>
-          <div className="risk-alert"><SafetyOutlined /> 风险提示：本月高风险票数较上月增加，主要集中在白关物流毛利订单和清关/派送缺应付订单。</div>
+          <div className="risk-alert">
+            <SafetyOutlined /> 风险提示：本月待复核 {riskOverview?.openRiskCount ?? riskCount} 票，已复核 {riskOverview?.reviewedRiskCount ?? 0} 票。
+            {riskOverview?.topRiskReason ? ` 首要风险：${riskOverview.topRiskReason}` : " 暂无待复核风险。"}
+          </div>
         </Card>
       </section>
 
