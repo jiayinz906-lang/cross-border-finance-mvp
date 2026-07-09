@@ -8,6 +8,7 @@ import { authService, parseAuthToken } from "../server/src/services/auth.service
 import { financeService } from "../server/src/services/finance.service.js";
 import { payableService } from "../server/src/services/payable.service.js";
 import { receivableService } from "../server/src/services/receivable.service.js";
+import { riskService } from "../server/src/services/risk.service.js";
 import { settlementService } from "../server/src/services/settlement.service.js";
 import { excelService } from "../server/src/services/excel.service.js";
 import { workflowService } from "../server/src/services/workflow.service.js";
@@ -137,7 +138,32 @@ async function verifyRbac(checks: Check[]) {
   assertCheck(checks, "Supervisor can close month", can("supervisor", "finance:close"));
   assertCheck(checks, "Sales cannot rollback", !can("sales", "finance:rollback"));
   assertCheck(checks, "Finance can import", can("finance", "finance:import"));
+  assertCheck(checks, "Finance can review risk", can("finance", "risk:review"));
   assertCheck(checks, "Executive cannot write rules", !can("executive", "rules:write"));
+}
+
+async function verifyRiskReview(checks: Check[], month: string) {
+  const risk = await prisma.riskRecord.findFirst({
+    where: { financeOrder: { month } },
+    include: { financeOrder: true },
+    orderBy: { id: "asc" }
+  });
+  assertCheck(checks, "Risk record exists for review", Boolean(risk), risk?.financeOrder.orderNo);
+  if (!risk) return;
+
+  const reviewed = await riskService.reviewRisk(risk.id, {
+    reviewNote: "verify-import 已核对原始 Excel、应收应付和毛利口径，确认风险复核闭环可写库。",
+    reviewConclusion: "验证通过，可关闭该风险记录",
+    reviewedBy: "verify-import"
+  });
+  const logs = await workflowService.actionLogs({ month, entityType: "risk_record", entityId: String(risk.id) });
+
+  assertCheck(checks, "Risk review saves status", reviewed.status === "reviewed", reviewed.status);
+  assertCheck(checks, "Risk review saves note", reviewed.reviewNote?.includes("确认风险复核闭环") ?? false, reviewed.reviewNote ?? undefined);
+  assertCheck(checks, "Risk review saves conclusion", reviewed.reviewConclusion === "验证通过，可关闭该风险记录", reviewed.reviewConclusion ?? undefined);
+  assertCheck(checks, "Risk review saves reviewer", reviewed.reviewedBy === "verify-import", reviewed.reviewedBy ?? undefined);
+  assertCheck(checks, "Risk review saves reviewedAt", Boolean(reviewed.reviewedAt), reviewed.reviewedAt?.toISOString());
+  assertCheck(checks, "Risk review action log written", logs.some((log) => log.action === "review_risk_with_note"), logs.map((log) => log.action).join(","));
 }
 
 async function verifySignature(checks: Check[], month: string) {
@@ -293,6 +319,7 @@ async function main() {
   const checks: Check[] = [];
   const imported = await verifyImport(checks);
   await verifyRbac(checks);
+  await verifyRiskReview(checks, imported.month);
   await verifySignature(checks, imported.month);
   await verifyAging(checks, imported.month);
   await verifySettlements(checks, imported.month);

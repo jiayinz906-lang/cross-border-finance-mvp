@@ -1,10 +1,9 @@
-import { Alert, Button, Card, Modal, Select, Space, Table, Tag, message } from "antd";
+import { Alert, Button, Card, Input, Modal, Select, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Key } from "react";
 import { getFinanceDashboard, getRawLedgerLines } from "../../api/finance.api";
-import { getRisks } from "../../api/risks.api";
-import { markRiskReviewed } from "../../api/workflow.api";
+import { getRisks, reviewRisk } from "../../api/risks.api";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData, FinanceOrder, RawLedgerLine } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
@@ -17,6 +16,10 @@ type RiskRow = {
   riskReasons: string;
   suggestion: string;
   status: string;
+  reviewNote?: string | null;
+  reviewConclusion?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
   financeOrder?: RiskFinanceOrder;
 };
 
@@ -120,6 +123,11 @@ export default function Risks() {
   const [filter, setFilter] = useState("all");
   const [expandedKeys, setExpandedKeys] = useState<Key[]>([]);
   const [loading, setLoading] = useState(false);
+  const [reviewingRisk, setReviewingRisk] = useState<RiskRow | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewConclusion, setReviewConclusion] = useState("已复核，按原始台账和成本口径确认");
+  const [reviewedBy, setReviewedBy] = useState("主管");
+  const [reviewSaving, setReviewSaving] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -196,10 +204,35 @@ export default function Risks() {
     return rows;
   }, [filter, rows]);
 
-  const handleMarkReviewed = async (row: RiskRow) => {
-    await markRiskReviewed(row.id);
-    message.success(`${row.financeOrder?.orderNo} 已标记复核`);
-    await loadData();
+  const openReviewModal = (row: RiskRow) => {
+    setReviewingRisk(row);
+    setReviewConclusion(row.reviewConclusion || "已复核，按原始台账和成本口径确认");
+    setReviewNote(row.reviewNote || riskReasonText(row));
+    setReviewedBy(row.reviewedBy || "主管");
+  };
+
+  const submitReview = async () => {
+    if (!reviewingRisk) return;
+    if (!reviewNote.trim()) {
+      message.error("请填写风险复核说明");
+      return;
+    }
+
+    setReviewSaving(true);
+    try {
+      await reviewRisk(reviewingRisk.id, {
+        reviewNote,
+        reviewConclusion,
+        reviewedBy
+      });
+      message.success(`${reviewingRisk.financeOrder?.orderNo} 风险复核已保存`);
+      setReviewingRisk(null);
+      await loadData();
+    } catch {
+      message.error("风险复核保存失败，请检查权限或后端服务");
+    } finally {
+      setReviewSaving(false);
+    }
   };
 
   const openRawData = async (row: RiskRow) => {
@@ -262,8 +295,8 @@ export default function Risks() {
         <Space size={6}>
           <Button size="small" onClick={() => setExpandedKeys([row.id])}>详情</Button>
           <Button size="small" onClick={() => openRawData(row)}>原始数据</Button>
-          <Button size="small" onClick={() => handleMarkReviewed(row)}>
-            标记复核
+          <Button size="small" onClick={() => openReviewModal(row)}>
+            复核
           </Button>
         </Space>
       )
@@ -361,7 +394,9 @@ export default function Risks() {
                     <strong>处理动作：</strong>
                     {row.riskType === "low_profit" ? "高风险业务：复核收入、应付成本和费用归集" : "异常高利润：需复核应付成本是否漏录"}
                   </p>
-                  <p><strong>复查说明：</strong>暂无补充说明</p>
+                  <p><strong>复核结论：</strong>{row.reviewConclusion || "待主管填写"}</p>
+                  <p><strong>复核说明：</strong>{row.reviewNote || "暂无补充说明"}</p>
+                  {row.reviewedAt && <p><strong>复核人/时间：</strong>{row.reviewedBy || "-"} / {String(row.reviewedAt).replace("T", " ").slice(0, 19)}</p>}
                 </div>
               );
             }
@@ -396,6 +431,33 @@ export default function Risks() {
           locale={{ emptyText: rawLoading ? "加载中" : "未找到该运单的原始 Excel 行" }}
           scroll={{ x: 1450 }}
         />
+      </Modal>
+
+      <Modal
+        open={Boolean(reviewingRisk)}
+        title={`风险复核：${reviewingRisk?.financeOrder?.orderNo ?? ""}`}
+        okText="保存复核"
+        cancelText="取消"
+        confirmLoading={reviewSaving}
+        onOk={submitReview}
+        onCancel={() => setReviewingRisk(null)}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Alert
+            type="warning"
+            showIcon
+            message={reviewingRisk ? riskReasonText(reviewingRisk) : "风险复核"}
+            description="请记录复核依据、处理结论和责任人；保存后会写入风险记录和操作审计日志。"
+          />
+          <Input value={reviewedBy} onChange={(event) => setReviewedBy(event.target.value)} addonBefore="复核人" />
+          <Input value={reviewConclusion} onChange={(event) => setReviewConclusion(event.target.value)} addonBefore="处理结论" />
+          <Input.TextArea
+            value={reviewNote}
+            onChange={(event) => setReviewNote(event.target.value)}
+            rows={5}
+            placeholder="填写复核说明，例如：已核对原始 Excel 应收应付、供应商成本和汇率标注，确认可关闭风险；或说明需补录的成本/回款问题。"
+          />
+        </Space>
       </Modal>
     </div>
   );

@@ -5,6 +5,7 @@ export type Permission =
   | "finance:import"
   | "finance:rollback"
   | "finance:close"
+  | "risk:review"
   | "rules:write"
   | "confirmation:approve"
   | "reports:export";
@@ -18,9 +19,9 @@ export const roleLabels: Record<UserRole, string> = {
 };
 
 export const rolePermissions: Record<UserRole, Permission[]> = {
-  admin: ["finance:read", "finance:import", "finance:rollback", "finance:close", "rules:write", "confirmation:approve", "reports:export"],
-  finance: ["finance:read", "finance:import", "reports:export"],
-  supervisor: ["finance:read", "finance:close", "confirmation:approve", "reports:export"],
+  admin: ["finance:read", "finance:import", "finance:rollback", "finance:close", "risk:review", "rules:write", "confirmation:approve", "reports:export"],
+  finance: ["finance:read", "finance:import", "risk:review", "reports:export"],
+  supervisor: ["finance:read", "finance:close", "risk:review", "confirmation:approve", "reports:export"],
   executive: ["finance:read", "reports:export"],
   sales: ["finance:read"]
 };
