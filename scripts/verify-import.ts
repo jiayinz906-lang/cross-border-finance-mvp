@@ -69,6 +69,7 @@ async function verifyImport(checks: Check[]) {
     prisma.riskRecord.findMany({ where: { financeOrder: { month: imported.month } } }),
     prisma.serviceBusinessRecord.findMany({ where: { financeOrder: { month: imported.month } } })
   ]);
+  const rawLines = await excelService.listRawLedgerLines({ batchId: imported.batchId });
 
   const orderReceivable = orders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
   const orderPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
@@ -79,6 +80,9 @@ async function verifyImport(checks: Check[]) {
   assertCheck(checks, "Commission records generated", commissions.length === 22, String(commissions.length));
   assertCheck(checks, "Service confirmation records generated", services.length === 3, String(services.length));
   assertCheck(checks, "Risk records generated", risks.length >= 1, String(risks.length));
+  assertCheck(checks, "Raw ledger lines stored", rawLines.rows.length === preview.importedRows, `${rawLines.rows.length} / ${preview.importedRows}`);
+  assertCheck(checks, "Raw ledger line keeps original row json", Boolean(rawLines.rows[0]?.raw && Object.keys(rawLines.rows[0].raw).length), JSON.stringify(rawLines.rows[0]?.raw));
+  assertCheck(checks, "Raw ledger line keeps canonical fields", Boolean(rawLines.rows.find((line) => line.orderNo)?.canonical?.orderNo), JSON.stringify(rawLines.rows.find((line) => line.orderNo)?.canonical));
   assertCheck(checks, "Batch is active", batch?.status === "active", batch?.status);
   assertCheck(checks, "Summary exists", Boolean(summary), summary?.month);
   assertCheck(checks, "Summary receivable matches orders", closeEnough(summary?.totalReceivable ?? 0, orderReceivable), `${summary?.totalReceivable} / ${orderReceivable}`);

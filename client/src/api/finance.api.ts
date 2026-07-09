@@ -56,6 +56,10 @@ export function getImportBatches(month?: string) {
   return request.get("/finance/import-batches", params(month));
 }
 
+export function getRawLedgerLines(filters: { month?: string; orderNo?: string; batchId?: number }) {
+  return request.get("/finance/raw-ledger-lines", { params: filters });
+}
+
 export function rollbackImportBatch(id: number) {
   return request.post(`/finance/import-batches/${id}/rollback`);
 }

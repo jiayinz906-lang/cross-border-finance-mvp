@@ -55,6 +55,28 @@ model FinanceOrder {
   serviceBusinessRecords      ServiceBusinessRecord[]
 }
 
+model RawLedgerLine {
+  id              Int         @id @default(autoincrement())
+  importBatchId   Int
+  importBatch     ImportBatch @relation(fields: [importBatchId], references: [id])
+  month           String
+  orderNo         String?
+  customerOrderNo String?
+  rowIndex        Int
+  sheetName       String
+  sourceFileName  String
+  rowHash         String
+  rawJson         String
+  canonicalJson   String?
+  parseStatus     String      @default("parsed")
+  parseMessage    String?
+  createdAt       DateTime    @default(now())
+
+  @@index([month, orderNo])
+  @@index([importBatchId, rowIndex])
+  @@unique([importBatchId, rowIndex])
+}
+
 model ImportBatch {
   id                      Int            @id @default(autoincrement())
   batchNo                 String         @unique
@@ -79,6 +101,7 @@ model ImportBatch {
   updatedAt               DateTime       @updatedAt
   revertedAt              DateTime?
   financeOrders           FinanceOrder[]
+  rawLedgerLines          RawLedgerLine[]
 
   @@index([month, status])
 }

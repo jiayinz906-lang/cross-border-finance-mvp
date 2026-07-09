@@ -2,6 +2,7 @@ FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 ENV DATABASE_URL=file:./dev.db
+ENV VITE_API_BASE_URL=/api
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -9,39 +10,40 @@ RUN apt-get update \
 
 RUN corepack enable
 
-COPY tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY prisma ./prisma
-COPY server/package.json ./server/package.json
-COPY server/tsconfig.json ./server/tsconfig.json
+COPY server/package.json server/tsconfig.json ./server/
+COPY client/package.json client/tsconfig.json client/vite.config.ts client/index.html ./client/
 
-RUN cd server && pnpm install
+RUN pnpm install --frozen-lockfile
 
 COPY server/src ./server/src
+COPY client/src ./client/src
 
-RUN cd server && pnpm exec prisma generate --schema ../prisma/schema.prisma
-RUN cd server && pnpm run build
-RUN cd server && pnpm exec prisma db push --schema ../prisma/schema.prisma
-RUN cd server && pnpm prune --prod
+RUN pnpm prisma:deploy
+RUN pnpm --filter cross-border-finance-client build
+RUN pnpm --filter cross-border-finance-server build
 
 FROM node:22-bookworm-slim AS runner
 
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=4000
+ENV DATABASE_URL=file:./dev.db
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-RUN corepack enable
-
+COPY package.json pnpm-workspace.yaml ./
 COPY prisma ./prisma
 COPY server/package.json ./server/package.json
-COPY server/tsconfig.json ./server/tsconfig.json
-COPY --from=build /app/prisma/dev.db ./prisma/dev.db
+COPY client/package.json ./client/package.json
+COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/server/dist ./server/dist
-COPY --from=build /app/server/node_modules ./server/node_modules
+COPY --from=build /app/client/dist ./client/dist
+COPY --from=build /app/prisma/dev.db ./prisma/dev.db
 
 EXPOSE 4000
 
-CMD ["sh", "-c", "cd server && node dist/index.js"]
+CMD ["node", "server/dist/index.js"]

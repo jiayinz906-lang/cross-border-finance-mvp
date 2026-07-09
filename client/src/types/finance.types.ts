@@ -134,6 +134,22 @@ export type ImportBatch = {
   revertedAt?: string | null;
 };
 
+export type RawLedgerLine = {
+  id: number;
+  importBatchId: number;
+  month: string;
+  orderNo?: string | null;
+  customerOrderNo?: string | null;
+  rowIndex: number;
+  sheetName: string;
+  sourceFileName: string;
+  rowHash: string;
+  parseStatus: string;
+  parseMessage?: string | null;
+  raw: Record<string, unknown>;
+  canonical: Record<string, unknown>;
+};
+
 export type ParameterRule = {
   id: number;
   ruleKey: string;

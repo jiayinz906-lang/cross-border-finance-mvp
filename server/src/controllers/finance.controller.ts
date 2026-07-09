@@ -63,6 +63,20 @@ export async function importBatchesController(req: Request, res: Response) {
   res.json({ rows: await excelService.listImportBatches(req.query.month as string | undefined) });
 }
 
+export async function rawLedgerLinesController(req: Request, res: Response) {
+  const batchId = req.query.batchId ? Number(req.query.batchId) : undefined;
+  if (batchId !== undefined && !Number.isInteger(batchId)) {
+    res.status(400).json({ message: "导入批次 ID 无效" });
+    return;
+  }
+
+  res.json(await excelService.listRawLedgerLines({
+    month: req.query.month as string | undefined,
+    orderNo: req.query.orderNo as string | undefined,
+    batchId
+  }));
+}
+
 export async function rollbackImportBatchController(req: Request, res: Response) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {

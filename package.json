@@ -14,8 +14,11 @@
     "build": "npm run build:server && npm run build:client",
     "build:server": "npm run build -w server",
     "build:client": "npm run build -w client",
+    "build:render": "pnpm prisma:deploy && pnpm --filter cross-border-finance-client build && pnpm --filter cross-border-finance-server build && pnpm prisma db seed",
+    "start:render": "cd server && node dist/index.js",
     "verify:import": "tsx scripts/verify-import.ts",
     "prisma:generate": "prisma generate",
+    "prisma:deploy": "prisma generate && prisma db push",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:seed": "tsx prisma/seed.ts"
   },

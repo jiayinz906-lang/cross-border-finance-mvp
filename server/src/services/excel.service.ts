@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import crypto from "node:crypto";
 import { agencyRuntimeProfile } from "../config/agent.registry.js";
 import { selfHostedStack } from "../config/selfhosted-stack.js";
 import { prisma } from "../prisma/client.js";
@@ -77,6 +78,16 @@ type DraftOrder = {
   needSupervisorConfirm: boolean;
   calculationNote: string;
   remark?: string;
+};
+
+type ParsedRawLine = {
+  rowIndex: number;
+  orderNo?: string;
+  customerOrderNo?: string | null;
+  raw: RawRow;
+  canonical: CanonicalRow;
+  parseStatus: "parsed" | "skipped";
+  parseMessage?: string;
 };
 
 const templateKey = "system_waybill_detail";
@@ -168,6 +179,17 @@ function safeJson<T>(value: string | null | undefined, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item) => {
+    if (item instanceof Date) return item.toISOString();
+    return item;
+  });
+}
+
+function rowHash(value: unknown): string {
+  return crypto.createHash("sha256").update(stableJson(value)).digest("hex");
 }
 
 async function loadImportRules(): Promise<ImportRules> {
@@ -480,9 +502,20 @@ async function parseWorkbook(buffer: Buffer, originalName: string) {
   if (!rows.length) throw new Error("Excel 工作表没有明细数据。");
 
   const orders = new Map<string, DraftOrder>();
-  for (const rawRow of rows) {
+  const rawLines: ParsedRawLine[] = [];
+  for (const [index, rawRow] of rows.entries()) {
     const row = mapRawRow(rawRow, mapping);
     const orderNo = text(row.orderNo);
+    const rawLine: ParsedRawLine = {
+      rowIndex: index + 1,
+      orderNo: orderNo || undefined,
+      customerOrderNo: text(row.customerOrderNo) || null,
+      raw: rawRow,
+      canonical: row,
+      parseStatus: orderNo ? "parsed" : "skipped",
+      parseMessage: orderNo ? undefined : "缺少运单号，未进入订单聚合"
+    };
+    rawLines.push(rawLine);
     if (!orderNo) continue;
 
     const draft = orders.get(orderNo) ?? makeDraft(row, rules);
@@ -509,6 +542,7 @@ async function parseWorkbook(buffer: Buffer, originalName: string) {
     sheetName,
     month,
     rows,
+    rawLines,
     headers,
     mapping,
     orders: monthOrders,
@@ -684,7 +718,7 @@ export const excelService = {
       pendingSupervisorConfirmCount: parsed.pendingSupervisorConfirmCount,
       sampleOrders,
       audit: parsed.audit,
-      writeMode: "确认后将按月份覆盖写入数据库，并生成导入批次。"
+      writeMode: "确认后将保留每一行原始台账，并按月份重建订单、应收应付、毛利、风险和提成派生数据。"
     };
   },
 
@@ -734,6 +768,25 @@ export const excelService = {
       createdOrders.push(await prisma.financeOrder.create({ data: { ...order, importBatchId: batch.id } }));
     }
 
+    if (parsed.rawLines.length) {
+      await prisma.rawLedgerLine.createMany({
+        data: parsed.rawLines.map((line) => ({
+          importBatchId: batch.id,
+          month: parsed.month,
+          orderNo: line.orderNo,
+          customerOrderNo: line.customerOrderNo,
+          rowIndex: line.rowIndex,
+          sheetName: parsed.sheetName,
+          sourceFileName: parsed.fileName,
+          rowHash: rowHash(line.raw),
+          rawJson: stableJson(line.raw),
+          canonicalJson: stableJson(line.canonical),
+          parseStatus: line.parseStatus,
+          parseMessage: line.parseMessage
+        }))
+      });
+    }
+
     const logisticsProfitBySalesperson = new Map<string, number>();
     for (const order of createdOrders) {
       if (!order.isServiceBusiness && order.adjustedGrossProfit > 0) {
@@ -770,6 +823,36 @@ export const excelService = {
       orderBy: { createdAt: "desc" },
       take: 20
     });
+  },
+
+  async listRawLedgerLines(params: { month?: string; orderNo?: string; batchId?: number }) {
+    const rows = await prisma.rawLedgerLine.findMany({
+      where: {
+        month: params.month,
+        orderNo: params.orderNo,
+        importBatchId: params.batchId
+      },
+      orderBy: [{ importBatchId: "desc" }, { rowIndex: "asc" }],
+      take: 500
+    });
+
+    return {
+      rows: rows.map((row) => ({
+        id: row.id,
+        importBatchId: row.importBatchId,
+        month: row.month,
+        orderNo: row.orderNo,
+        customerOrderNo: row.customerOrderNo,
+        rowIndex: row.rowIndex,
+        sheetName: row.sheetName,
+        sourceFileName: row.sourceFileName,
+        rowHash: row.rowHash,
+        parseStatus: row.parseStatus,
+        parseMessage: row.parseMessage,
+        raw: safeJson<Record<string, CellValue>>(row.rawJson, {}),
+        canonical: safeJson<Record<string, CellValue>>(row.canonicalJson, {})
+      }))
+    };
   },
 
   async rollbackImportBatch(id: number) {

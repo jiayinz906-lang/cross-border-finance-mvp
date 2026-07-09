@@ -104,8 +104,8 @@ export function ImportButton({ onImported }: Props) {
             <Alert
               type="warning"
               showIcon
-              message="本次仍按月份覆盖写入数据库"
-              description="确认后会替换同月现有订单并生成导入批次。请先核对月份、票数、物流/注册拆分和风险数量。"
+              message="原始 Excel 明细将保留入库"
+              description="确认后会保存每一行原始台账用于追溯，同时按月份重建订单、应收应付、毛利、风险和提成派生数据。请先核对月份、票数、物流/注册拆分和风险数量。"
             />
             <Descriptions size="small" bordered column={4}>
               <Descriptions.Item label="文件">{preview.fileName}</Descriptions.Item>
