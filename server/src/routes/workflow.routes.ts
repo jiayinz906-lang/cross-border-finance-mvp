@@ -4,6 +4,7 @@ import {
   confirmServiceRecordController,
   confirmSalespersonCommissionController,
   createExportJobController,
+  downloadConfirmationDocumentController,
   downloadExportJobController,
   generateLogisticsDocumentsController,
   generateServiceDocumentsController,
@@ -28,6 +29,7 @@ workflowRoutes.post("/documents/:id/send-signature", sendSignatureLinkController
 workflowRoutes.post("/signature/:token/sign", signByTokenController);
 workflowRoutes.post("/documents/:id/supervisor-confirm", supervisorConfirmController);
 workflowRoutes.post("/documents/:id/void", voidDocumentController);
+workflowRoutes.get("/documents/:id/download", downloadConfirmationDocumentController);
 workflowRoutes.post("/exports", createExportJobController);
 workflowRoutes.get("/exports/:id/download", downloadExportJobController);
 workflowRoutes.post("/risks/:id/reviewed", markRiskReviewedController);

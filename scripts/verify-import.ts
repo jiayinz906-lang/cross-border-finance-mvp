@@ -198,6 +198,16 @@ async function verifySignature(checks: Check[], month: string) {
   assertCheck(checks, "Signature documents generated", Boolean(first), String(docs.length));
   if (!first) return;
 
+  const confirmationFile = await workflowService.downloadConfirmationDocument(first.id);
+  const confirmationWorkbook = XLSX.read(confirmationFile.buffer, { type: "buffer" });
+  assertCheck(checks, "Confirmation document export returns xlsx", confirmationFile.fileName.endsWith(".xlsx") && confirmationFile.buffer.length > 1000, `${confirmationFile.fileName} / ${confirmationFile.buffer.length}`);
+  assertCheck(
+    checks,
+    "Confirmation document export includes sheets",
+    ["确认单摘要", "订单明细", "签名与证据"].every((sheet) => confirmationWorkbook.SheetNames.includes(sheet)),
+    confirmationWorkbook.SheetNames.join(",")
+  );
+
   const sent = await workflowService.sendSignatureLink(first.id);
   assertCheck(checks, "Signature token generated", Boolean(sent.signatureToken), sent.signatureToken ?? undefined);
   assertCheck(checks, "Signature token expiry generated", Boolean(sent.signatureTokenExpiresAt), sent.signatureTokenExpiresAt?.toISOString());

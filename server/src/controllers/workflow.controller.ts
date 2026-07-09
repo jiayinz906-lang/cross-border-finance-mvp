@@ -61,6 +61,13 @@ export async function downloadExportJobController(req: Request, res: Response) {
   res.send(file.buffer);
 }
 
+export async function downloadConfirmationDocumentController(req: Request, res: Response) {
+  const file = await workflowService.downloadConfirmationDocument(Number(req.params.id));
+  res.setHeader("Content-Type", file.contentType);
+  res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.fileName)}"`);
+  res.send(file.buffer);
+}
+
 export async function markRiskReviewedController(req: Request, res: Response) {
   res.json(await workflowService.markRiskReviewed(Number(req.params.id)));
 }

@@ -58,6 +58,24 @@ function signatureEvidence(input: SignatureEvidenceInput) {
   };
 }
 
+function safeJson<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function money(value: unknown) {
+  const number = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0;
+}
+
+function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], sheetName: string) {
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows.length ? rows : [{ 说明: "无数据" }]), sheetName.slice(0, 31));
+}
+
 async function logAction(input: {
   month?: string;
   entityType: string;
@@ -436,6 +454,73 @@ startxref
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "导出数据");
     return {
       fileName: job.fileName,
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer
+    };
+  },
+
+  async downloadConfirmationDocument(id: number) {
+    const document = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
+    const payload = safeJson<Record<string, any>>(document.payloadJson, {});
+    const summary = payload.summary ?? {};
+    const details = Array.isArray(payload.details) ? payload.details : [];
+    const trace = payload.signatureTrace ?? {};
+    const workbook = XLSX.utils.book_new();
+
+    appendSheet(workbook, [
+      { 项目: "确认单标题", 内容: payload.title ?? "员工个人提成签名确认单" },
+      { 项目: "确认单编号", 内容: payload.documentCode ?? `DOC-${document.id}` },
+      { 项目: "月份", 内容: payload.monthLabel ?? document.month },
+      { 项目: "员工/销售代表", 内容: document.ownerName },
+      { 项目: "业务类型", 内容: summary.businessType ?? document.businessType ?? "-" },
+      { 项目: "订单数量", 内容: document.orderCount },
+      { 项目: "应收金额", 内容: money(summary.receivable) },
+      { 项目: "应付金额", 内容: money(summary.payable) },
+      { 项目: "确认毛利", 内容: money(document.grossProfit) },
+      { 项目: "提成比例", 内容: typeof summary.commissionRate === "number" ? `${(summary.commissionRate * 100).toFixed(2)}%` : "-" },
+      { 项目: "最终确认提成", 内容: money(document.commissionAmount) },
+      { 项目: "单据状态", 内容: document.documentStatus },
+      { 项目: "发送状态", 内容: document.sendStatus },
+      { 项目: "员工签名状态", 内容: document.signatureStatus },
+      { 项目: "主管确认状态", 内容: document.supervisorStatus },
+      { 项目: "员工签名时间", 内容: document.signedAt?.toISOString() ?? "-" },
+      { 项目: "主管确认时间", 内容: document.confirmedAt?.toISOString() ?? "-" }
+    ], "确认单摘要");
+
+    appendSheet(workbook, details.map((item: any) => ({
+      运单号: item.orderNo,
+      原始订单号: item.originalOrderNo,
+      客户: item.customerName,
+      业务类型: item.businessType,
+      应收: money(item.receivable),
+      应付: money(item.payable),
+      毛利: money(item.grossProfit),
+      毛利率: typeof item.grossProfitRate === "number" ? `${(item.grossProfitRate * 100).toFixed(2)}%` : "-",
+      提成比例: typeof item.commissionRate === "number" ? `${(item.commissionRate * 100).toFixed(2)}%` : "-",
+      提成金额: money(item.commissionAmount),
+      来源: item.source ?? "原始台账导入记录"
+    })), "订单明细");
+
+    appendSheet(workbook, [
+      { 项目: "确认声明", 内容: payload.statement ?? "本人已核对以上业务提成明细，确认真实无误。" },
+      { 项目: "员工签名", 内容: document.signatureStatus === "signed" ? "已电子签名" : trace.employeeSignature ?? "待员工签名" },
+      { 项目: "签名 IP", 内容: document.signerIp ?? trace.confirmIp ?? "-" },
+      { 项目: "签名设备", 内容: document.signerUserAgent ?? trace.deviceInfo ?? "-" },
+      { 项目: "签名角色", 内容: document.signerRole ?? "-" },
+      { 项目: "签名证据", 内容: document.signatureEvidenceJson ?? "-" },
+      { 项目: "主管确认", 内容: document.supervisorStatus === "confirmed" ? "主管已确认" : trace.supervisorConfirm ?? "待主管确认" }
+    ], "签名与证据");
+
+    await logAction({
+      month: document.month,
+      entityType: "confirmation_document",
+      entityId: document.id,
+      action: "download_confirmation_xlsx",
+      payload: { ownerName: document.ownerName, documentType: document.documentType }
+    });
+
+    return {
+      fileName: `${document.month}-${document.ownerName}-confirmation.xlsx`,
       contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       buffer: XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer
     };

@@ -73,6 +73,10 @@ export function exportDownloadUrl(id: number) {
   return `${request.defaults.baseURL}/workflow/exports/${id}/download`;
 }
 
+export function confirmationDocumentDownloadUrl(id: number) {
+  return `${request.defaults.baseURL}/workflow/documents/${id}/download`;
+}
+
 export function monthlyReportExportUrl(month = "2026-06") {
   return `${request.defaults.baseURL}/reports/monthly/export?month=${encodeURIComponent(month)}`;
 }

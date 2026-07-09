@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getFinanceDashboard } from "../../api/finance.api";
 import {
   type ConfirmationDocument,
+  confirmationDocumentDownloadUrl,
   createExportJob,
   exportDownloadUrl,
   generateLogisticsDocuments,
@@ -193,6 +194,7 @@ export default function SignatureConfirm() {
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看个人确认单</Button>
           <Button size="small" onClick={() => handleSend(row)}>发送签名链接</Button>
           <Button size="small" onClick={() => navigator.clipboard?.writeText(`${location.origin}${row.signatureUrl ?? ""}`)}>复制链接</Button>
+          <Button size="small" onClick={() => window.open(confirmationDocumentDownloadUrl(row.id), "_blank")}>下载确认单</Button>
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>下载 PDF</Button>
           <Button size="small" onClick={() => handleDownload(row, "png")}>下载 PNG</Button>
           <Button size="small" disabled={row.supervisorStatus === "confirmed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
