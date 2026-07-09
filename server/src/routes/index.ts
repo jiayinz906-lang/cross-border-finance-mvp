@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { analyticsRoutes } from "./analytics.routes.js";
+import { authRoutes } from "./auth.routes.js";
 import { commissionsRoutes } from "./commissions.routes.js";
 import { agentRulesController } from "../controllers/finance.controller.js";
 import { financeRoutes } from "./finance.routes.js";
@@ -14,6 +15,7 @@ import { workflowRoutes } from "./workflow.routes.js";
 export const routes = Router();
 
 routes.use("/health", healthRoutes);
+routes.use("/auth", authRoutes);
 routes.use("/analytics", analyticsRoutes);
 routes.use("/finance", financeRoutes);
 routes.use("/receivables", receivablesRoutes);

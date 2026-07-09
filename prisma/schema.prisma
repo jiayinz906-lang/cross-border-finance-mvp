@@ -7,6 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model AppUser {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  displayName  String
+  role         String
+  passwordHash String
+  passwordSalt String
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 model FinanceOrder {
   id                          Int                     @id @default(autoincrement())
   importBatchId               Int?

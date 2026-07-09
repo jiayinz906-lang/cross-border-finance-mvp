@@ -8,6 +8,7 @@ import {
   rollbackImportBatch,
   updateParameterRule
 } from "../../api/finance.api";
+import { login } from "../../api/auth.api";
 import {
   getActionLogs,
   getMonthCloseStatus,
@@ -23,6 +24,7 @@ import { formatMoney } from "../../utils/formatMoney";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
 const roleStorageKey = "xjd-finance-role";
+const tokenStorageKey = "xjd-finance-token";
 
 type RuleDraft = Record<string, { valueJson: string; description: string }>;
 
@@ -45,6 +47,10 @@ export default function Settings() {
   const { selectedMonth } = useSelectedMonth();
   const [auth, setAuth] = useState<AuthContext | null>(null);
   const [currentRole, setCurrentRole] = useState(() => localStorage.getItem(roleStorageKey) || "admin");
+  const [loginUser, setLoginUser] = useState(() => localStorage.getItem("xjd-finance-user") || "");
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("admin123");
+  const [loginLoading, setLoginLoading] = useState(false);
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [rules, setRules] = useState<ParameterRule[]>([]);
   const [monthClose, setMonthClose] = useState<MonthCloseStatus | null>(null);
@@ -144,6 +150,32 @@ export default function Settings() {
     localStorage.setItem(roleStorageKey, role);
     setCurrentRole(role);
     message.success("角色已切换，后续请求会按新角色权限执行");
+  };
+
+  const submitLogin = async () => {
+    setLoginLoading(true);
+    try {
+      const res = await login(username, password);
+      localStorage.setItem(tokenStorageKey, res.data.token);
+      localStorage.setItem(roleStorageKey, res.data.user.role);
+      localStorage.setItem("xjd-finance-user", `${res.data.user.displayName}（${res.data.user.username}）`);
+      setLoginUser(`${res.data.user.displayName}（${res.data.user.username}）`);
+      setCurrentRole(res.data.user.role);
+      message.success(`已登录：${res.data.user.displayName}`);
+      await loadAuth();
+    } catch {
+      message.error("登录失败，请检查账号密码");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    localStorage.removeItem(tokenStorageKey);
+    localStorage.removeItem("xjd-finance-user");
+    setLoginUser("");
+    message.success("已退出登录，系统回到本地测试角色模式");
+    await loadAuth();
   };
 
   const rollback = async (id: number) => {
@@ -335,8 +367,15 @@ export default function Settings() {
       />
 
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
-        <Card title="角色权限">
+        <Card title="登录与角色权限">
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Space wrap>
+              <Input style={{ width: 180 }} value={username} onChange={(event) => setUsername(event.target.value)} placeholder="账号" />
+              <Input.Password style={{ width: 180 }} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" />
+              <Button type="primary" loading={loginLoading} onClick={submitLogin}>登录</Button>
+              <Button onClick={logout} disabled={!loginUser}>退出</Button>
+              {loginUser && <Tag color="green">已登录：{loginUser}</Tag>}
+            </Space>
             <Space wrap>
               <span>当前角色</span>
               <Select
@@ -353,8 +392,8 @@ export default function Settings() {
             <Alert
               type="info"
               showIcon
-              message="当前为轻量级角色模式"
-              description="角色保存在本机浏览器，用请求头传给后端。后端已对导入、回滚、参数保存等敏感接口做权限校验；后续可替换为正式登录账号。"
+              message="已支持正式登录 token，同时保留本地测试角色模式"
+              description="默认测试账号：admin/admin123、finance/finance123、supervisor/supervisor123、boss/boss123、sales/sales123。登录后后端优先按 token 中的用户角色鉴权；未登录时才使用本地测试角色。"
             />
           </Space>
         </Card>

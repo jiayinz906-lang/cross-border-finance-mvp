@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { can } from "../server/src/config/rbac.js";
 import { prisma } from "../server/src/prisma/client.js";
+import { authService, parseAuthToken } from "../server/src/services/auth.service.js";
 import { payableService } from "../server/src/services/payable.service.js";
 import { receivableService } from "../server/src/services/receivable.service.js";
 import { settlementService } from "../server/src/services/settlement.service.js";
@@ -112,6 +113,10 @@ async function verifyImport(checks: Check[]) {
 }
 
 async function verifyRbac(checks: Check[]) {
+  const login = await authService.login("finance", "finance123");
+  const payload = parseAuthToken(login.token);
+  assertCheck(checks, "Default finance user can login", login.user.role === "finance", login.user.role);
+  assertCheck(checks, "Auth token parses role", payload?.role === "finance", payload?.role);
   assertCheck(checks, "Admin can rollback", can("admin", "finance:rollback"));
   assertCheck(checks, "Supervisor can close month", can("supervisor", "finance:close"));
   assertCheck(checks, "Sales cannot rollback", !can("sales", "finance:rollback"));
