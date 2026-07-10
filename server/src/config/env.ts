@@ -13,5 +13,11 @@ export const env = {
   port: Number(process.env.PORT ?? 4000),
   databaseUrl: process.env.DATABASE_URL,
   authTokenSecret: process.env.AUTH_TOKEN_SECRET || localDevTokenSecret,
-  nodeEnv: process.env.NODE_ENV ?? "development"
+  nodeEnv: process.env.NODE_ENV ?? "development",
+  authRequireToken: process.env.AUTH_REQUIRE_TOKEN
+    ? process.env.AUTH_REQUIRE_TOKEN === "true"
+    : isProduction,
+  allowHeaderRole: process.env.ALLOW_HEADER_ROLE
+    ? process.env.ALLOW_HEADER_ROLE === "true"
+    : !isProduction
 };

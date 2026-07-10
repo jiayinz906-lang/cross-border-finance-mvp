@@ -13,6 +13,8 @@ export type FinanceOrder = {
   currency: string;
   exchangeRate?: number | null;
   exchangeRateStatus: string;
+  receivableCompensation?: number;
+  payableCompensation?: number;
   adjustedReceivable: number;
   adjustedPayable: number;
   adjustedGrossProfit: number;

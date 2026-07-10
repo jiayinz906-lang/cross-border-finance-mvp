@@ -17,6 +17,7 @@ type CanonicalField =
   | "feeType"
   | "amount"
   | "localAmount"
+  | "convertedAmount"
   | "salespersonName"
   | "remark"
   | "exchangeRate"
@@ -59,10 +60,12 @@ type DraftOrder = {
   receivableFreight: number;
   receivableClearance: number;
   receivableDelivery: number;
+  receivableCompensation: number;
   otherReceivable: number;
   payableFreight: number;
   payableClearance: number;
   payableDelivery: number;
+  payableCompensation: number;
   otherCost: number;
   adjustedReceivable: number;
   adjustedPayable: number;
@@ -151,7 +154,8 @@ const fieldAliases: Record<CanonicalField, string[]> = {
   direction: ["收付类型", "收/付类型", "应收应付", "收支类型", "类型"],
   feeType: ["费用类型", "费用项目", "费用名称", "费用类别"],
   amount: ["金额", "原始金额", "外币金额", "费用金额"],
-  localAmount: ["本币费用", "人民币金额", "折算金额", "折合人民币", "RMB金额"],
+  localAmount: ["本币费用", "人民币金额", "折算金额", "RMB金额"],
+  convertedAmount: ["折合人民币", "折合RMB", "折合金额", "人民币折合"],
   salespersonName: ["销售代表", "业务员", "销售", "业务代表", "负责人"],
   remark: ["备注", "备注_1", "说明"],
   exchangeRate: ["汇率", "币种汇率"],
@@ -338,24 +342,39 @@ function isServiceBusiness(service: string, feeType: string, rules: ImportRules)
   return rules.serviceKeywords.some((keyword) => service.includes(keyword) || feeType.includes(keyword));
 }
 
+function isCompensationFee(feeType: string) {
+  return feeType.includes("赔付") || feeType.includes("赔偿") || feeType.includes("理赔");
+}
+
+function isReceivableDirection(direction: string) {
+  return direction.includes("应收") || (direction.includes("收") && !direction.includes("付"));
+}
+
+function isPayableDirection(direction: string) {
+  return direction.includes("应付") || direction.includes("付");
+}
+
 function applyAmount(order: DraftOrder, direction: string, feeType: string, amount: number) {
-  const isReceivable = direction.includes("应收") || direction.includes("收");
-  const isPayable = direction.includes("应付") || direction.includes("付");
+  const isReceivable = isReceivableDirection(direction);
+  const isPayable = isPayableDirection(direction);
   if (!isReceivable && !isPayable) return;
 
   const target =
     feeType.includes("运费") ? "Freight" :
     feeType.includes("清关") || feeType.includes("报关") || feeType.includes("操作") || feeType.includes("拖车") ? "Clearance" :
     feeType.includes("派送") || feeType.includes("配送") ? "Delivery" :
+    isCompensationFee(feeType) ? "Compensation" :
     "Other";
 
   if (isReceivable && target === "Freight") order.receivableFreight += amount;
   if (isReceivable && target === "Clearance") order.receivableClearance += amount;
   if (isReceivable && target === "Delivery") order.receivableDelivery += amount;
+  if (isReceivable && target === "Compensation") order.receivableCompensation += amount;
   if (isReceivable && target === "Other") order.otherReceivable += amount;
   if (isPayable && target === "Freight") order.payableFreight += amount;
   if (isPayable && target === "Clearance") order.payableClearance += amount;
   if (isPayable && target === "Delivery") order.payableDelivery += amount;
+  if (isPayable && target === "Compensation") order.payableCompensation += amount;
   if (isPayable && target === "Other") order.otherCost += amount;
 }
 
@@ -387,10 +406,12 @@ function makeDraft(row: CanonicalRow, rules: ImportRules): DraftOrder {
     receivableFreight: 0,
     receivableClearance: 0,
     receivableDelivery: 0,
+    receivableCompensation: 0,
     otherReceivable: 0,
     payableFreight: 0,
     payableClearance: 0,
     payableDelivery: 0,
+    payableCompensation: 0,
     otherCost: 0,
     adjustedReceivable: 0,
     adjustedPayable: 0,
@@ -410,8 +431,8 @@ function makeDraft(row: CanonicalRow, rules: ImportRules): DraftOrder {
 }
 
 function finalize(order: DraftOrder, rules: ImportRules): DraftOrder {
-  order.adjustedReceivable = order.receivableFreight + order.receivableClearance + order.receivableDelivery + order.otherReceivable;
-  order.adjustedPayable = order.payableFreight + order.payableClearance + order.payableDelivery + order.otherCost;
+  order.adjustedReceivable = order.receivableFreight + order.receivableClearance + order.receivableDelivery + order.receivableCompensation + order.otherReceivable;
+  order.adjustedPayable = order.payableFreight + order.payableClearance + order.payableDelivery + order.payableCompensation + order.otherCost;
   order.adjustedGrossProfit = order.adjustedReceivable - order.adjustedPayable;
   order.adjustedGrossProfitRate = order.adjustedReceivable > 0 ? order.adjustedGrossProfit / order.adjustedReceivable : null;
 
@@ -569,7 +590,7 @@ function buildQualityReport(input: { orders: DraftOrder[]; rawLines: ParsedRawLi
   if (noReceivableOrders.length) {
     issues.push({
       key: "orders_without_receivable",
-      level: "error",
+      level: "warning",
       title: "订单无应收",
       count: noReceivableOrders.length,
       orderNos: compactOrderNos(noReceivableOrders.map((order) => order.orderNo)),
@@ -602,7 +623,7 @@ function buildQualityReport(input: { orders: DraftOrder[]; rawLines: ParsedRawLi
   if (negativeProfitOrders.length) {
     issues.push({
       key: "negative_profit",
-      level: "error",
+      level: "warning",
       title: "负毛利订单",
       count: negativeProfitOrders.length,
       orderNos: compactOrderNos(negativeProfitOrders.map((order) => order.orderNo)),
@@ -695,8 +716,21 @@ async function parseWorkbook(buffer: Buffer, originalName: string) {
     const draft = orders.get(orderNo) ?? makeDraft(row, rules);
     const feeType = text(row.feeType);
     const direction = text(row.direction);
-    const originalAmount = number(row.localAmount) || number(row.amount);
-    const amount = Math.abs(originalAmount * markedExchangeRate(row, rules).rate);
+    const convertedAmount = number(row.convertedAmount);
+    const localAmount = number(row.localAmount);
+    const originalAmount = number(row.amount);
+    const exchange = markedExchangeRate(row, rules);
+    const hasConvertedAmount = convertedAmount !== 0;
+    const rawAmount = hasConvertedAmount
+      ? convertedAmount
+      : localAmount !== 0
+        ? localAmount * exchange.rate
+        : originalAmount * exchange.rate;
+    const amount = hasConvertedAmount
+      ? isPayableDirection(direction) ? -rawAmount : rawAmount
+      : isCompensationFee(feeType)
+        ? isPayableDirection(direction) ? -rawAmount : rawAmount
+        : Math.abs(rawAmount);
     draft.supplierName = draft.supplierName || text(row.supplier) || undefined;
     draft.customerOrderNo = text(row.customerOrderNo) || draft.customerOrderNo || text(row.customerName) || orderNo;
     draft.isServiceBusiness = draft.isServiceBusiness || isServiceBusiness(text(row.service), feeType, rules);

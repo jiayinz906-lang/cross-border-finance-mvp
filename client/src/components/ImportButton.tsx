@@ -145,10 +145,6 @@ export function ImportButton({ onImported }: Props) {
       message.error("字段映射存在缺失，不能写入数据库。请调整 Excel 表头后重新上传。");
       return;
     }
-    if ((preview.qualityReport?.blockingCount ?? 0) > 0) {
-      message.error("导入质量校验存在阻断项，请先修正无应收或负毛利等问题后再写入数据库。");
-      return;
-    }
     setImporting(true);
     try {
       const response = await importFinanceExcel(pendingFile);

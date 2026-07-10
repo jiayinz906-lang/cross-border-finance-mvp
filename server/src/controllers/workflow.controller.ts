@@ -38,11 +38,15 @@ export async function signByTokenController(req: Request, res: Response) {
 }
 
 export async function supervisorConfirmController(req: Request, res: Response) {
-  res.json(await workflowService.supervisorConfirm(Number(req.params.id), evidence(req, "supervisor_confirm")));
+  res.json(await workflowService.supervisorConfirm(
+    Number(req.params.id),
+    evidence(req, "supervisor_confirm"),
+    req.body?.adjustReason
+  ));
 }
 
 export async function voidDocumentController(req: Request, res: Response) {
-  res.json(await workflowService.voidDocument(Number(req.params.id)));
+  res.json(await workflowService.voidDocument(Number(req.params.id), req.body?.voidReason));
 }
 
 export async function createExportJobController(req: Request, res: Response) {
@@ -87,7 +91,8 @@ export async function confirmSalespersonCommissionController(req: Request, res: 
   res.json(await workflowService.confirmSalespersonCommission(
     month(req),
     req.params.salespersonName,
-    req.body?.manualRate
+    req.body?.manualRate,
+    req.body?.adjustReason
   ));
 }
 
@@ -103,6 +108,10 @@ export async function actionLogsController(req: Request, res: Response) {
 
 export async function monthCloseStatusController(req: Request, res: Response) {
   res.json(await workflowService.monthCloseStatus(month(req)));
+}
+
+export async function monthStatusController(req: Request, res: Response) {
+  res.json(await workflowService.monthStatus(month(req)));
 }
 
 export async function lockMonthController(req: Request, res: Response) {

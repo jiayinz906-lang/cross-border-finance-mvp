@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -41,10 +41,12 @@ model FinanceOrder {
   receivableFreight           Float                   @default(0)
   receivableClearance         Float                   @default(0)
   receivableDelivery          Float                   @default(0)
+  receivableCompensation      Float                   @default(0)
   otherReceivable             Float                   @default(0)
   payableFreight              Float                   @default(0)
   payableClearance            Float                   @default(0)
   payableDelivery             Float                   @default(0)
+  payableCompensation         Float                   @default(0)
   otherCost                   Float                   @default(0)
   adjustedReceivable          Float                   @default(0)
   adjustedPayable             Float                   @default(0)
@@ -208,6 +210,7 @@ model CommissionRecord {
   commissionRate          Float
   commissionAmount        Float
   manualCommissionAmount  Float?
+  adjustReason            String?
   needSupervisorConfirm   Boolean      @default(false)
   confirmStatus           String       @default("pending")
   createdAt               DateTime     @default(now())
@@ -269,6 +272,7 @@ model ConfirmationDocument {
   month               String
   documentType        String
   ownerName           String
+  version             Int       @default(1)
   businessType        String?
   orderCount          Int       @default(0)
   grossProfit         Float     @default(0)
@@ -285,6 +289,8 @@ model ConfirmationDocument {
   signerUserAgent     String?
   signerRole          String?
   signatureEvidenceJson String?
+  adjustReason        String?
+  voidReason          String?
   signedAt            DateTime?
   confirmedAt         DateTime?
   voidedAt            DateTime?
@@ -292,7 +298,8 @@ model ConfirmationDocument {
   updatedAt           DateTime  @updatedAt
 
   @@index([month, documentType])
-  @@unique([month, documentType, ownerName])
+  @@index([month, documentType, ownerName])
+  @@unique([month, documentType, ownerName, version])
 }
 
 model ExportJob {

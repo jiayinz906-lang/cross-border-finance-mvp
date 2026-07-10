@@ -8,8 +8,18 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
-        value: file:./dev.db
+        fromDatabase:
+          name: cross-border-finance-db
+          property: connectionString
       - key: VITE_API_BASE_URL
         value: /api
+      - key: AUTH_REQUIRE_TOKEN
+        value: true
+      - key: ALLOW_HEADER_ROLE
+        value: false
       - key: AUTH_TOKEN_SECRET
         generateValue: true
+
+databases:
+  - name: cross-border-finance-db
+    plan: free

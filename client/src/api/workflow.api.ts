@@ -5,6 +5,7 @@ export type ConfirmationDocument = {
   month: string;
   documentType: string;
   ownerName: string;
+  version: number;
   businessType?: string | null;
   orderCount: number;
   grossProfit: number;
@@ -14,9 +15,27 @@ export type ConfirmationDocument = {
   signatureStatus: string;
   supervisorStatus: string;
   signatureUrl?: string | null;
+  adjustReason?: string | null;
+  voidReason?: string | null;
   signedAt?: string | null;
   confirmedAt?: string | null;
   payloadJson?: string | null;
+};
+
+export type MonthWorkflowStep = {
+  key: string;
+  status: "pending" | "active" | "done" | "blocked" | string;
+  count: number;
+  ownerRole: string;
+  nextAction: string;
+};
+
+export type MonthWorkflowStatus = {
+  month: string;
+  locked: boolean;
+  readyToClose: boolean;
+  blockers: string[];
+  steps: MonthWorkflowStep[];
 };
 
 export type MonthCloseStatus = {
@@ -57,12 +76,12 @@ export function sendSignatureLink(id: number) {
   return request.post(`/workflow/documents/${id}/send-signature`);
 }
 
-export function supervisorConfirmDocument(id: number) {
-  return request.post(`/workflow/documents/${id}/supervisor-confirm`);
+export function supervisorConfirmDocument(id: number, adjustReason?: string) {
+  return request.post(`/workflow/documents/${id}/supervisor-confirm`, { adjustReason });
 }
 
-export function voidDocument(id: number) {
-  return request.post(`/workflow/documents/${id}/void`);
+export function voidDocument(id: number, voidReason: string) {
+  return request.post(`/workflow/documents/${id}/void`, { voidReason });
 }
 
 export function createExportJob(exportType: string, fileFormat = "xlsx", month = "2026-06", payload?: unknown) {
@@ -94,12 +113,16 @@ export function confirmServiceRecord(id: number, finalCommission: number) {
   return request.post(`/workflow/service-records/${id}/confirm`, { finalCommission });
 }
 
-export function confirmSalespersonCommission(salespersonName: string, month = "2026-06", manualRate?: number) {
-  return request.post(`/workflow/commissions/${encodeURIComponent(salespersonName)}/confirm`, { month, manualRate });
+export function confirmSalespersonCommission(salespersonName: string, month = "2026-06", manualRate?: number, adjustReason?: string) {
+  return request.post(`/workflow/commissions/${encodeURIComponent(salespersonName)}/confirm`, { month, manualRate, adjustReason });
 }
 
 export function getMonthCloseStatus(month = "2026-06") {
   return request.get("/workflow/month-close", { params: { month } });
+}
+
+export function getMonthWorkflowStatus(month = "2026-06") {
+  return request.get<MonthWorkflowStatus>("/workflow/month-status", { params: { month } });
 }
 
 export function lockMonth(month = "2026-06", note?: string) {

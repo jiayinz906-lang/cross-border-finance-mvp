@@ -13,6 +13,7 @@ import {
   listDocumentsController,
   markRiskReviewedController,
   monthCloseStatusController,
+  monthStatusController,
   sendSignatureLinkController,
   signByTokenController,
   supervisorConfirmController,
@@ -24,20 +25,21 @@ import { requirePermission } from "../middleware/rbac.middleware.js";
 export const workflowRoutes = Router();
 
 workflowRoutes.get("/documents", listDocumentsController);
-workflowRoutes.post("/documents/logistics/generate", generateLogisticsDocumentsController);
-workflowRoutes.post("/documents/service/generate", generateServiceDocumentsController);
-workflowRoutes.post("/documents/:id/send-signature", sendSignatureLinkController);
+workflowRoutes.post("/documents/logistics/generate", requirePermission("confirmation:approve"), generateLogisticsDocumentsController);
+workflowRoutes.post("/documents/service/generate", requirePermission("confirmation:approve"), generateServiceDocumentsController);
+workflowRoutes.post("/documents/:id/send-signature", requirePermission("confirmation:approve"), sendSignatureLinkController);
 workflowRoutes.post("/signature/:token/sign", signByTokenController);
-workflowRoutes.post("/documents/:id/supervisor-confirm", supervisorConfirmController);
-workflowRoutes.post("/documents/:id/void", voidDocumentController);
+workflowRoutes.post("/documents/:id/supervisor-confirm", requirePermission("confirmation:approve"), supervisorConfirmController);
+workflowRoutes.post("/documents/:id/void", requirePermission("confirmation:approve"), voidDocumentController);
 workflowRoutes.get("/documents/:id/download", downloadConfirmationDocumentController);
-workflowRoutes.post("/exports", createExportJobController);
+workflowRoutes.post("/exports", requirePermission("reports:export"), createExportJobController);
 workflowRoutes.get("/exports/:id/download", downloadExportJobController);
 workflowRoutes.get("/backup/export", requirePermission("reports:export"), exportSystemBackupController);
-workflowRoutes.post("/risks/:id/reviewed", markRiskReviewedController);
-workflowRoutes.post("/service-records/:id/confirm", confirmServiceRecordController);
-workflowRoutes.post("/commissions/:salespersonName/confirm", confirmSalespersonCommissionController);
+workflowRoutes.post("/risks/:id/reviewed", requirePermission("risk:review"), markRiskReviewedController);
+workflowRoutes.post("/service-records/:id/confirm", requirePermission("confirmation:approve"), confirmServiceRecordController);
+workflowRoutes.post("/commissions/:salespersonName/confirm", requirePermission("confirmation:approve"), confirmSalespersonCommissionController);
 workflowRoutes.get("/actions", actionLogsController);
+workflowRoutes.get("/month-status", monthStatusController);
 workflowRoutes.get("/month-close", monthCloseStatusController);
 workflowRoutes.post("/month-close/lock", requirePermission("finance:close"), lockMonthController);
 workflowRoutes.post("/month-close/unlock", requirePermission("finance:close"), unlockMonthController);

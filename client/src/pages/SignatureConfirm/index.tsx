@@ -146,13 +146,19 @@ export default function SignatureConfirm() {
   };
 
   const handleSupervisorConfirm = async (row: ConfirmationDocument) => {
-    await supervisorConfirmDocument(row.id);
+    const adjustReason = window.prompt("如本次主管确认涉及调整，请填写原因；无调整可直接确定：") ?? undefined;
+    await supervisorConfirmDocument(row.id, adjustReason?.trim() || undefined);
     message.success(`${row.ownerName} 已主管确认`);
     await loadData();
   };
 
   const handleVoid = async (row: ConfirmationDocument) => {
-    await voidDocument(row.id);
+    const voidReason = window.prompt("请输入作废/重签原因：");
+    if (!voidReason?.trim()) {
+      message.warning("作废确认单必须填写原因");
+      return;
+    }
+    await voidDocument(row.id, voidReason.trim());
     message.success(`${row.ownerName} 已作废，等待重签`);
     await loadData();
   };

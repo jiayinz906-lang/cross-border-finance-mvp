@@ -245,3 +245,13 @@ docker run --rm -p 4000:4000 xjd-finance-ui
 
 - GitHub Pages：https://jiayinz906-lang.github.io/cross-border-finance-mvp/
 - Render API：https://cross-border-finance-server.onrender.com/api
+
+## Production trial controls
+
+- Production must use PostgreSQL through `DATABASE_URL`. Render deployment reads the Render PostgreSQL `connectionString`; SQLite is only kept for local backup or historical validation.
+- Set `AUTH_REQUIRE_TOKEN=true` and `ALLOW_HEADER_ROLE=false` in production. With this mode enabled, `x-finance-role` is ignored and all protected API calls require a Bearer token.
+- Public endpoints are limited to `/api/health`, `/api/auth/login`, and `/api/workflow/signature/:token/sign`.
+- Write operations require explicit permissions: Excel import/template/rollback, parameter rules, risk review, confirmation approval, exports, and month close.
+- Excel import is a two-step flow: preview first, confirm import second. Preview does not write orders, raw ledger lines, or import batches.
+- Month close is blocked until risk review, service confirmation, commission signature/supervisor confirmation, and receivable/payable reconciliation are completed.
+- Commission confirmation documents are versioned. Supervisor-confirmed documents are immutable; voiding requires a reason and regeneration creates a new version. Signature tokens are one-time-use and store IP, User-Agent, and signature timestamps.

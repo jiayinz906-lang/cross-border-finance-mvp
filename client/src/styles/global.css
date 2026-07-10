@@ -410,6 +410,93 @@ body {
   margin: 16px 0;
 }
 
+.month-workflow-card {
+  margin: 16px 0;
+  border-radius: 7px;
+  border-color: #dfe8f5;
+  box-shadow: 0 12px 28px rgba(31, 45, 78, 0.06);
+}
+
+.month-workflow-card .ant-card-body {
+  padding: 16px 18px;
+}
+
+.month-workflow-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.month-workflow-head strong {
+  display: block;
+  color: #071737;
+  font-size: 17px;
+  font-weight: 950;
+}
+
+.month-workflow-head span {
+  display: block;
+  margin-top: 4px;
+  color: #6f7c92;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.month-workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.month-workflow-step {
+  min-height: 104px;
+  padding: 11px 12px;
+  border: 1px solid #e4ebf6;
+  border-radius: 6px;
+  background: #fbfdff;
+}
+
+.month-workflow-step b,
+.month-workflow-step span,
+.month-workflow-step em {
+  display: block;
+}
+
+.month-workflow-step b {
+  margin-top: 7px;
+  color: #17233d;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.month-workflow-step span {
+  margin-top: 5px;
+  color: #52647f;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.month-workflow-step em {
+  margin-top: 5px;
+  color: #8290a8;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.month-workflow-step.is-blocked {
+  border-color: #ffd2d9;
+  background: #fff7f8;
+}
+
+.month-workflow-alert {
+  margin-top: 12px;
+}
+
 .overview-kpi-card {
   min-height: 130px;
   border: 1px solid #edf1f7;
@@ -1888,12 +1975,34 @@ body {
   font-size: 12px;
   font-weight: 900;
   border-bottom: none;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .risk-raw-table .ant-table-tbody > tr > td {
   color: #263552;
   font-weight: 750;
   border-bottom: 1px solid #edf1f7;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.risk-raw-table .ant-table-container {
+  border: 1px solid #e7edf7;
+  border-radius: 8px;
+}
+
+.risk-raw-table .ant-table-body {
+  scrollbar-width: thin;
+}
+
+.risk-raw-money {
+  display: inline-block;
+  min-width: 96px;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
 
 .month-option-list {
@@ -1962,7 +2071,8 @@ body {
   }
 
   .overview-main-grid,
-  .overview-three-grid {
+  .overview-three-grid,
+  .month-workflow-steps {
     grid-template-columns: 1fr;
   }
 

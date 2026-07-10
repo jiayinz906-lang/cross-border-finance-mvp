@@ -13,6 +13,7 @@ import { useNavigate } from "react-router-dom";
 import { getFinanceDashboard, getFinanceMonths } from "../../api/finance.api";
 import { monthlyReportExportUrl } from "../../api/workflow.api";
 import { ImportButton } from "../../components/ImportButton";
+import { MonthWorkflowStatus } from "../../components/MonthWorkflowStatus";
 import { TemplateImportButton } from "../../components/TemplateImportButton";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { BusinessSummary, DashboardData, MonthlyTrend } from "../../types/finance.types";
@@ -207,9 +208,13 @@ export default function Dashboard() {
   const [monthOptions, setMonthOptions] = useState<MonthOption[]>([]);
   const [draftMonth, setDraftMonth] = useState(selectedMonth);
 
+  const loadMonth = useCallback((month: string) => {
+    return getFinanceDashboard(month).then((res) => setData(res.data));
+  }, []);
+
   const load = useCallback(() => {
-    getFinanceDashboard(selectedMonth).then((res) => setData(res.data));
-  }, [selectedMonth]);
+    return loadMonth(selectedMonth);
+  }, [loadMonth, selectedMonth]);
 
   useEffect(() => {
     load();
@@ -233,6 +238,7 @@ export default function Dashboard() {
 
   const handleImported = (result: { month: string }) => {
     setSelectedMonth(result.month);
+    void loadMonth(result.month);
     message.success(`已切换到导入月份 ${result.month}`);
   };
 
@@ -284,6 +290,8 @@ export default function Dashboard() {
         </div>
         <div className="overview-refresh"><ReloadOutlined /> 最后更新：导入或切换月份后实时刷新</div>
       </header>
+
+      <MonthWorkflowStatus month={selectedMonth} />
 
       <section className="overview-kpi-grid">
         {kpis.map((item) => <MetricCard key={item.title} item={item} />)}

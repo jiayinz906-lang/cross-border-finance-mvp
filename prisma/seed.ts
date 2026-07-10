@@ -94,24 +94,26 @@ function riskType(rate: number | null, needSupervisorConfirm: boolean) {
 
 function splitReceivable(order: SeedOrder) {
   if (order.isServiceBusiness) {
-    return { receivableFreight: 0, receivableClearance: 0, receivableDelivery: 0, otherReceivable: order.receivable };
+    return { receivableFreight: 0, receivableClearance: 0, receivableDelivery: 0, receivableCompensation: 0, otherReceivable: order.receivable };
   }
   return {
     receivableFreight: Math.round(order.receivable * 0.72 * 100) / 100,
     receivableClearance: Math.round(order.receivable * 0.16 * 100) / 100,
     receivableDelivery: Math.round(order.receivable * 0.12 * 100) / 100,
+    receivableCompensation: 0,
     otherReceivable: 0
   };
 }
 
 function splitPayable(order: SeedOrder) {
   if (order.isServiceBusiness) {
-    return { payableFreight: 0, payableClearance: 0, payableDelivery: 0, otherCost: order.payable };
+    return { payableFreight: 0, payableClearance: 0, payableDelivery: 0, payableCompensation: 0, otherCost: order.payable };
   }
   return {
     payableFreight: Math.round(order.payable * 0.76 * 100) / 100,
     payableClearance: Math.round(order.payable * 0.14 * 100) / 100,
     payableDelivery: Math.round(order.payable * 0.1 * 100) / 100,
+    payableCompensation: 0,
     otherCost: 0
   };
 }

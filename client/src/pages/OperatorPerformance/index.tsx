@@ -1,4 +1,4 @@
-import { Button, Card, Space, Table, Tag, message } from "antd";
+import { Button, Card, Input, InputNumber, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getOperatorPerformanceAnalysis } from "../../api/analytics.api";
@@ -45,6 +45,9 @@ type OperatorGroup = {
   totalCommission: number;
   payablePerformance: number;
 };
+
+type EditableNumberField = "orderCount" | "baseCount" | "rate";
+type EditableTextField = "orderType" | "note";
 
 const rules: PerformanceRule[] = [
   {
@@ -142,6 +145,26 @@ function buildRows(operatorName: string, orders: FinanceOrder[]) {
   });
 }
 
+function recalculateRow(row: PerformanceRow): PerformanceRow {
+  const commissionOrderCount = row.orderCount - row.baseCount;
+  return {
+    ...row,
+    commissionOrderCount,
+    commissionAmount: Math.max(commissionOrderCount, 0) * row.rate
+  };
+}
+
+function recalculateGroup(group: OperatorGroup): OperatorGroup {
+  const rows = group.rows.map(recalculateRow);
+  const totalCommission = rows.reduce((sum, row) => sum + row.commissionAmount, 0);
+  return {
+    ...group,
+    rows,
+    totalCommission,
+    payablePerformance: Math.round(totalCommission * 0.8)
+  };
+}
+
 export default function OperatorPerformance() {
   const { selectedMonth } = useSelectedMonth();
   const [operatorGroups, setOperatorGroups] = useState<OperatorGroup[]>([]);
@@ -168,7 +191,29 @@ export default function OperatorPerformance() {
     loadData();
   }, [loadData]);
 
+  const handleNumberChange = (rowId: string, field: EditableNumberField, value: number | null) => {
+    setOperatorGroups((groups) => groups.map((group) => {
+      const rows = group.rows.map((row) => (
+        row.id === rowId
+          ? recalculateRow({ ...row, [field]: Number(value ?? 0) })
+          : row
+      ));
+      return recalculateGroup({ ...group, rows });
+    }));
+  };
+
+  const handleTextChange = (rowId: string, field: EditableTextField, value: string) => {
+    setOperatorGroups((groups) => groups.map((group) => ({
+      ...group,
+      rows: group.rows.map((row) => row.id === rowId ? { ...row, [field]: value } : row)
+    })));
+  };
+
   const summary = dashboard?.summary;
+  const totalPayablePerformance = useMemo(
+    () => operatorGroups.reduce((sum, group) => sum + group.payablePerformance, 0),
+    [operatorGroups]
+  );
 
   const metrics: MetricCard[] = useMemo(() => [
     {
@@ -226,13 +271,50 @@ export default function OperatorPerformance() {
         props: { rowSpan: row.rowSpan }
       })
     },
-    { title: "订单类型", dataIndex: "orderType", width: 190 },
-    { title: "票数", dataIndex: "orderCount", align: "right", width: 90 },
-    { title: "基础票数", dataIndex: "baseCount", align: "right", width: 110 },
+    {
+      title: "订单类型",
+      dataIndex: "orderType",
+      width: 190,
+      render: (value: string, row) => (
+        <Input value={value} onChange={(event) => handleTextChange(row.id, "orderType", event.target.value)} />
+      )
+    },
+    {
+      title: "票数",
+      dataIndex: "orderCount",
+      align: "right",
+      width: 110,
+      render: (value: number, row) => (
+        <InputNumber min={0} precision={0} value={value} onChange={(next) => handleNumberChange(row.id, "orderCount", next)} />
+      )
+    },
+    {
+      title: "基础票数",
+      dataIndex: "baseCount",
+      align: "right",
+      width: 120,
+      render: (value: number, row) => (
+        <InputNumber min={0} precision={0} value={value} onChange={(next) => handleNumberChange(row.id, "baseCount", next)} />
+      )
+    },
     { title: "提成票数", dataIndex: "commissionOrderCount", align: "right", width: 120 },
-    { title: "提成比例", dataIndex: "rate", align: "right", width: 110 },
+    {
+      title: "提成比例",
+      dataIndex: "rate",
+      align: "right",
+      width: 120,
+      render: (value: number, row) => (
+        <InputNumber min={0} precision={2} value={value} onChange={(next) => handleNumberChange(row.id, "rate", next)} />
+      )
+    },
     { title: "提成金额", dataIndex: "commissionAmount", align: "right", width: 120 },
-    { title: "备注", dataIndex: "note" }
+    {
+      title: "备注",
+      dataIndex: "note",
+      render: (value: string, row) => (
+        <Input value={value} onChange={(event) => handleTextChange(row.id, "note", event.target.value)} />
+      )
+    }
   ];
 
   return (
@@ -267,7 +349,12 @@ export default function OperatorPerformance() {
       <Card
         className="operator-performance-card"
         title="操作员绩效计算"
-        extra={<Tag bordered={false} className="operator-policy-tag">操作员=客服代表，按图片绩效表口径生成</Tag>}
+        extra={(
+          <Space size={10} wrap>
+            <Tag bordered={false} className="operator-policy-tag">操作员=客服代表，按图片绩效表口径生成</Tag>
+            <Tag color="blue">总绩效金额：{totalPayablePerformance}</Tag>
+          </Space>
+        )}
       >
         <div className="operator-rule-panel">
           <span className="operator-rule-title">操作员业务量绩效表规则</span>

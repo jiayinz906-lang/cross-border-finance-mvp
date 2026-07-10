@@ -20,6 +20,7 @@ import { formatPercent } from "../../utils/formatPercent";
 type CommissionOrder = {
   orderNo: string;
   customerOrderNo?: string | null;
+  customerName?: string | null;
   adjustedReceivable: number;
   adjustedGrossProfitRate: number | null;
   needSupervisorConfirm: boolean;
@@ -152,7 +153,12 @@ export default function Commission() {
 
   const handleAdjustSalesperson = async (row: SalespersonCommission) => {
     const nextRate = row.commissionRate > 0 ? row.commissionRate : 0.15;
-    await confirmSalespersonCommission(row.salespersonName, selectedMonth, nextRate);
+    const adjustReason = window.prompt("请输入主管调整提成比例原因：");
+    if (!adjustReason?.trim()) {
+      message.warning("调整提成比例必须填写原因");
+      return;
+    }
+    await confirmSalespersonCommission(row.salespersonName, selectedMonth, nextRate, adjustReason.trim());
     message.success(`${row.salespersonName} 已按 ${(nextRate * 100).toFixed(0)}% 调整并确认`);
     await loadData();
   };
@@ -181,13 +187,19 @@ export default function Commission() {
   };
 
   const handleSupervisorConfirm = async (row: ConfirmationDocument) => {
-    await supervisorConfirmDocument(row.id);
+    const adjustReason = window.prompt("如本次主管确认涉及调整，请填写原因；无调整可直接确定。") ?? undefined;
+    await supervisorConfirmDocument(row.id, adjustReason?.trim() || undefined);
     message.success(`${row.ownerName} 已主管确认`);
     await loadDocuments();
   };
 
   const handleVoidDocument = async (row: ConfirmationDocument) => {
-    await voidDocument(row.id);
+    const voidReason = window.prompt("请输入作废/重签原因：");
+    if (!voidReason?.trim()) {
+      message.warning("作废确认单必须填写原因");
+      return;
+    }
+    await voidDocument(row.id, voidReason.trim());
     message.success(`${row.ownerName} 已作废，可重新生成确认单`);
     await loadDocuments();
   };
@@ -319,6 +331,7 @@ export default function Commission() {
   const detailColumns: ColumnsType<CommissionRecord> = [
     { title: "单号", dataIndex: ["financeOrder", "orderNo"], width: 130 },
     { title: "原始订单号", dataIndex: ["financeOrder", "customerOrderNo"], width: 160, render: (value) => value || "-" },
+    { title: "对应用户", dataIndex: ["financeOrder", "customerName"], width: 160, render: (value) => value || "-" },
     { title: "毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
     {
       title: "提成比例",
@@ -373,19 +386,16 @@ export default function Commission() {
 
   return (
     <div className="commission-board">
-      <section className="profit-metric-grid">
+      <div className="metric-grid metric-grid-compact">
         {metrics.map((item) => (
-          <Card key={item.title} className={`profit-metric-card profit-accent-${item.accent}`} loading={loading}>
-            <span className="profit-metric-icon" />
-            <span className="profit-metric-title">{item.title}</span>
+          <div key={item.title} className={`metric-card metric-${item.accent}`}>
+            <div className="metric-icon" />
+            <span>{item.title}</span>
             <strong>{item.value}</strong>
-            <div className="profit-metric-note">
-              <Tag bordered={false}>{item.tag}</Tag>
-              <span>{item.note}</span>
-            </div>
-          </Card>
+            <p><Tag bordered={false}>{item.tag}</Tag>{item.note}</p>
+          </div>
         ))}
-      </section>
+      </div>
 
       <Card
         className="commission-confirm-card"
@@ -418,13 +428,13 @@ export default function Commission() {
         </div>
 
         <Table
-          rowKey="salespersonName"
           className="commission-summary-table"
+          rowKey="salespersonName"
           loading={loading}
-          columns={columns}
           dataSource={salespersonRows}
+          columns={columns}
           pagination={false}
-          scroll={{ x: 1300 }}
+          scroll={{ x: 1180 }}
         />
       </Card>
 
@@ -432,7 +442,7 @@ export default function Commission() {
         open={Boolean(selectedSalesperson)}
         title={`${selectedSalesperson ?? ""} 物流提成订单明细`}
         footer={<Button type="primary" onClick={() => setSelectedSalesperson(null)}>关闭</Button>}
-        width={980}
+        width={1120}
         onCancel={() => setSelectedSalesperson(null)}
       >
         <Table
@@ -441,7 +451,6 @@ export default function Commission() {
           pagination={false}
           dataSource={selectedRows}
           columns={detailColumns}
-          scroll={{ x: 880 }}
         />
       </Modal>
 
@@ -454,12 +463,12 @@ export default function Commission() {
       >
         <Table
           rowKey="id"
-          size="small"
           loading={documentsLoading}
+          size="small"
           pagination={false}
           dataSource={documents}
           columns={documentColumns}
-          scroll={{ x: 1120 }}
+          scroll={{ x: 1100 }}
         />
       </Modal>
     </div>

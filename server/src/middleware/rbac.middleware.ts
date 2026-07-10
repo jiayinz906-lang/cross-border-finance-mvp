@@ -1,11 +1,13 @@
 import type { NextFunction, Request, Response } from "express";
 import { can, resolveRole } from "../config/rbac.js";
 import type { Permission } from "../config/rbac.js";
+import { env } from "../config/env.js";
 import { parseAuthToken } from "../services/auth.service.js";
 
 export function currentRole(req: Request) {
   const payload = parseAuthToken(req.header("authorization"));
   if (payload) return payload.role;
+  if (!env.allowHeaderRole) return "sales";
   return resolveRole(req.header("x-finance-role"));
 }
 
@@ -25,7 +27,7 @@ export function requirePermission(permission: Permission) {
     const role = currentRole(req);
     if (!can(role, permission)) {
       res.status(403).json({
-        message: "当前角色无权执行该操作",
+        message: "Current role is not allowed to perform this operation.",
         role,
         requiredPermission: permission
       });
@@ -33,4 +35,30 @@ export function requirePermission(permission: Permission) {
     }
     next();
   };
+}
+
+function isPublicRequest(req: Request) {
+  if (req.method === "OPTIONS") return true;
+  if (req.path.startsWith("/health")) return true;
+  if (req.method === "POST" && req.path === "/auth/login") return true;
+  if (req.method === "POST" && /^\/workflow\/signature\/[^/]+\/sign$/.test(req.path)) return true;
+  return false;
+}
+
+export function requireAuthToken(req: Request, res: Response, next: NextFunction) {
+  if (!env.authRequireToken || isPublicRequest(req)) {
+    next();
+    return;
+  }
+
+  const payload = parseAuthToken(req.header("authorization"));
+  if (!payload) {
+    res.status(401).json({
+      message: "Please log in before accessing finance system data.",
+      code: "AUTH_TOKEN_REQUIRED"
+    });
+    return;
+  }
+
+  next();
 }

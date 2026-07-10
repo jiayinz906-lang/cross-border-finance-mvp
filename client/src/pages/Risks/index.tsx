@@ -27,10 +27,12 @@ type RiskFinanceOrder = FinanceOrder & {
   receivableFreight?: number;
   receivableClearance?: number;
   receivableDelivery?: number;
+  receivableCompensation?: number;
   otherReceivable?: number;
   payableFreight?: number;
   payableClearance?: number;
   payableDelivery?: number;
+  payableCompensation?: number;
   otherCost?: number;
 };
 
@@ -91,6 +93,10 @@ function rawNumber(row: RawLedgerLine, field: string) {
   const value = row.canonical?.[field] ?? row.raw?.[field];
   const parsed = typeof value === "number" ? value : Number(String(value ?? "").replace(/,/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function rawMoney(value?: number | null) {
+  return <span className="risk-raw-money">{toPlainMoney(value)}</span>;
 }
 
 function rawRows(lines: RawLedgerLine[]): RawDataRow[] {
@@ -310,8 +316,8 @@ export default function Risks() {
     { title: "业务类型", dataIndex: "service", width: 120 },
     { title: "收付", dataIndex: "direction", width: 70 },
     { title: "费用类型", dataIndex: "feeType", width: 100 },
-    { title: "原始金额", dataIndex: "amount", align: "right", render: toPlainMoney },
-    { title: "本币费用", dataIndex: "localAmount", align: "right", render: toPlainMoney },
+    { title: "原始金额", dataIndex: "amount", align: "right", width: 128, render: rawMoney },
+    { title: "本币费用", dataIndex: "localAmount", align: "right", width: 128, render: rawMoney },
     { title: "汇率/标注", dataIndex: "exchangeRate", width: 100 },
     { title: "供应商", dataIndex: "supplierName", width: 130 },
     { title: "销售代表", dataIndex: "salespersonName", width: 100 },
@@ -407,7 +413,7 @@ export default function Risks() {
       <Modal
         open={Boolean(selectedRisk)}
         title="原始数据明细"
-        width={980}
+        width={1180}
         footer={null}
         onCancel={() => setSelectedRisk(null)}
       >
@@ -429,7 +435,7 @@ export default function Risks() {
           dataSource={rawRows(rawLines)}
           pagination={false}
           locale={{ emptyText: rawLoading ? "加载中" : "未找到该运单的原始 Excel 行" }}
-          scroll={{ x: 1450 }}
+          scroll={{ x: 1580 }}
         />
       </Modal>
 

@@ -169,6 +169,14 @@ export default function Payables() {
       <PageHeader title="上游应付" description="按订单编号追踪供应商应付、付款状态和未付款金额。" />
 
       <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="本页应付严格按导入 Excel 原始费用明细计算"
+        description="上游应付仅统计物流类订单；公司注册、EAC 证书、店铺租赁等服务类应付已从本页排除。供应商汇总按 Excel 原始应付明细行归集，单票多供应商会拆分到各自供应商。"
+      />
+
+      <Alert
         type={data?.totals.overdueOutstanding ? "warning" : "success"}
         showIcon
         style={{ marginBottom: 16 }}
