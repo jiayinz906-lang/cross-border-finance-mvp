@@ -41,6 +41,7 @@ type RawDataRow = {
   rowIndex: number;
   orderNo: string;
   customerOrderNo: string;
+  customerName: string;
   service: string;
   direction: string;
   feeType: string;
@@ -105,6 +106,7 @@ function rawRows(lines: RawLedgerLine[]): RawDataRow[] {
     rowIndex: line.rowIndex,
     orderNo: rawText(line, "orderNo"),
     customerOrderNo: rawText(line, "customerOrderNo"),
+    customerName: rawText(line, "customerName"),
     service: rawText(line, "service"),
     direction: rawText(line, "direction"),
     feeType: rawText(line, "feeType"),
@@ -326,6 +328,17 @@ export default function Risks() {
     { title: "下单时间", dataIndex: "orderTime", width: 170 }
   ];
 
+  const enhancedRawColumns = useMemo<ColumnsType<RawDataRow>>(() => {
+    const columns: ColumnsType<RawDataRow> = [];
+    for (const column of rawColumns) {
+      columns.push(column);
+      if ("dataIndex" in column && column.dataIndex === "customerOrderNo") {
+        columns.push({ title: "对应用户", dataIndex: "customerName", width: 150 });
+      }
+    }
+    return columns;
+  }, []);
+
   return (
     <div className="risk-board">
       <header className="profit-hero">
@@ -431,7 +444,7 @@ export default function Risks() {
           rowKey="id"
           className="risk-raw-table"
           loading={rawLoading}
-          columns={rawColumns}
+          columns={enhancedRawColumns}
           dataSource={rawRows(rawLines)}
           pagination={false}
           locale={{ emptyText: rawLoading ? "加载中" : "未找到该运单的原始 Excel 行" }}
