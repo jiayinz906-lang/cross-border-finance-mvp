@@ -1,5 +1,7 @@
 import * as XLSX from "xlsx";
 import crypto from "node:crypto";
+import PDFDocument from "pdfkit";
+import sharp from "sharp";
 import { prisma } from "../prisma/client.js";
 
 type DocumentType = "logistics_commission" | "service_commission";
@@ -80,6 +82,178 @@ function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], s
     XLSX.utils.json_to_sheet(rows.length ? rows : [{ note: "no data" }]),
     sheetName.slice(0, 31)
   );
+}
+
+function textValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "number") return Number.isFinite(value) ? String(Math.round(value * 100) / 100) : "-";
+  return String(value);
+}
+
+function percentText(value: unknown) {
+  return typeof value === "number" ? `${(value * 100).toFixed(2)}%` : "-";
+}
+
+function xmlEscape(value: unknown) {
+  return textValue(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function confirmationRows(document: {
+  id: number;
+  month: string;
+  ownerName: string;
+  version: number;
+  businessType: string | null;
+  orderCount: number;
+  grossProfit: number;
+  commissionAmount: number;
+  documentStatus: string;
+  sendStatus: string;
+  signatureStatus: string;
+  supervisorStatus: string;
+  signedAt: Date | null;
+  confirmedAt: Date | null;
+  adjustReason: string | null;
+  voidReason: string | null;
+  signerIp: string | null;
+  signerUserAgent: string | null;
+  signerRole: string | null;
+  signatureEvidenceJson: string | null;
+  payloadJson: string | null;
+}) {
+  const payload = safeJson<Record<string, any>>(document.payloadJson, {});
+  const summary = payload.summary ?? {};
+  const details = Array.isArray(payload.details) ? payload.details : [];
+  const trace = payload.signatureTrace ?? {};
+  const summaryRows = [
+    { item: "title", value: payload.title ?? "Employee Commission Signature Confirmation" },
+    { item: "documentCode", value: payload.documentCode ?? `DOC-${document.id}` },
+    { item: "version", value: document.version },
+    { item: "month", value: payload.monthLabel ?? document.month },
+    { item: "employeeOrOwner", value: document.ownerName },
+    { item: "businessType", value: summary.businessType ?? document.businessType ?? "-" },
+    { item: "orderCount", value: document.orderCount },
+    { item: "receivable", value: money(summary.receivable) },
+    { item: "payable", value: money(summary.payable) },
+    { item: "grossProfit", value: money(document.grossProfit) },
+    { item: "commissionRate", value: percentText(summary.commissionRate) },
+    { item: "finalCommission", value: money(document.commissionAmount) },
+    { item: "adjustReason", value: document.adjustReason ?? "-" },
+    { item: "voidReason", value: document.voidReason ?? "-" },
+    { item: "documentStatus", value: document.documentStatus },
+    { item: "sendStatus", value: document.sendStatus },
+    { item: "signatureStatus", value: document.signatureStatus },
+    { item: "supervisorStatus", value: document.supervisorStatus },
+    { item: "signedAt", value: document.signedAt?.toISOString() ?? "-" },
+    { item: "confirmedAt", value: document.confirmedAt?.toISOString() ?? "-" }
+  ];
+  const detailRows = details.map((item: any) => ({
+    systemOrderNo: item.orderNo,
+    originalOrderNo: item.originalOrderNo,
+    customerName: item.customerName,
+    businessType: item.businessType,
+    receivable: money(item.receivable),
+    payable: money(item.payable),
+    grossProfit: money(item.grossProfit),
+    grossProfitRate: percentText(item.grossProfitRate),
+    commissionRate: percentText(item.commissionRate),
+    commissionAmount: money(item.commissionAmount),
+    source: item.source ?? "raw ledger"
+  }));
+  const evidenceRows = [
+    { item: "statement", value: payload.statement ?? "Employee confirms the commission details." },
+    { item: "employeeSignature", value: document.signatureStatus === "signed" ? "signed" : trace.employeeSignature ?? "pending" },
+    { item: "signatureIp", value: document.signerIp ?? trace.confirmIp ?? "-" },
+    { item: "signatureUserAgent", value: document.signerUserAgent ?? trace.deviceInfo ?? "-" },
+    { item: "signatureRole", value: document.signerRole ?? "-" },
+    { item: "signatureEvidence", value: document.signatureEvidenceJson ?? "-" },
+    { item: "supervisorConfirmation", value: document.supervisorStatus === "confirmed" ? "confirmed" : trace.supervisorConfirm ?? "pending" },
+    { item: "adjustReason", value: document.adjustReason ?? "-" },
+    { item: "voidReason", value: document.voidReason ?? "-" }
+  ];
+  return { payload, summaryRows, detailRows, evidenceRows };
+}
+
+function pdfBuffer(document: { ownerName: string; month: string; version: number; documentType: string; payloadJson: string | null } & any) {
+  const { payload, summaryRows, detailRows, evidenceRows } = confirmationRows(document);
+  const doc = new PDFDocument({ size: "A4", margin: 36 });
+  const chunks: Buffer[] = [];
+  doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+  const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+
+  doc.fontSize(16).text(textValue(payload.title ?? "Commission Confirmation"), { align: "center" });
+  doc.moveDown(0.5);
+  doc.fontSize(10).text(`Owner: ${document.ownerName}    Month: ${document.month}    Version: ${document.version}`);
+  doc.text(`Type: ${document.documentType}    Generated from imported Excel ledger data`);
+  doc.moveDown();
+  doc.fontSize(12).text("Summary", { underline: true });
+  doc.fontSize(9);
+  for (const row of summaryRows) doc.text(`${row.item}: ${textValue(row.value)}`);
+  doc.moveDown();
+  doc.fontSize(12).text("Order Details", { underline: true });
+  doc.fontSize(8);
+  for (const row of detailRows.slice(0, 35)) {
+    doc.text(`${row.systemOrderNo} | ${row.originalOrderNo ?? "-"} | ${row.customerName ?? "-"} | GP ${row.grossProfit} | Rate ${row.commissionRate} | Commission ${row.commissionAmount}`);
+  }
+  if (detailRows.length > 35) doc.text(`... ${detailRows.length - 35} more rows included in XLSX confirmation file`);
+  doc.moveDown();
+  doc.fontSize(12).text("Signature Evidence", { underline: true });
+  doc.fontSize(9);
+  for (const row of evidenceRows) doc.text(`${row.item}: ${textValue(row.value).slice(0, 180)}`);
+  doc.end();
+  return done;
+}
+
+async function pngBuffer(document: { ownerName: string; month: string; version: number; documentType: string; payloadJson: string | null } & any) {
+  const { payload, summaryRows, detailRows, evidenceRows } = confirmationRows(document);
+  const width = 1400;
+  const rowHeight = 34;
+  const height = Math.min(2200, 260 + summaryRows.length * 24 + Math.min(detailRows.length, 18) * rowHeight + evidenceRows.length * 24);
+  const detailSvg = detailRows.slice(0, 18).map((row, index) => {
+    const y = 520 + index * rowHeight;
+    return `<text x="72" y="${y}" class="small">${xmlEscape(row.systemOrderNo)}</text>
+<text x="260" y="${y}" class="small">${xmlEscape(row.originalOrderNo)}</text>
+<text x="430" y="${y}" class="small">${xmlEscape(row.customerName)}</text>
+<text x="690" y="${y}" class="small">${xmlEscape(row.grossProfit)}</text>
+<text x="860" y="${y}" class="small">${xmlEscape(row.commissionRate)}</text>
+<text x="1040" y="${y}" class="small">${xmlEscape(row.commissionAmount)}</text>
+<line x1="60" y1="${y + 12}" x2="1340" y2="${y + 12}" stroke="#e6edf7"/>`;
+  }).join("");
+  const summarySvg = summaryRows.slice(0, 14).map((row, index) => {
+    const y = 154 + index * 24;
+    return `<text x="72" y="${y}" class="label">${xmlEscape(row.item)}</text><text x="300" y="${y}" class="text">${xmlEscape(row.value)}</text>`;
+  }).join("");
+  const evidenceStart = 550 + Math.min(detailRows.length, 18) * rowHeight;
+  const evidenceSvg = evidenceRows.slice(0, 8).map((row, index) => {
+    const y = evidenceStart + index * 24;
+    return `<text x="72" y="${y}" class="label">${xmlEscape(row.item)}</text><text x="300" y="${y}" class="text">${xmlEscape(textValue(row.value).slice(0, 105))}</text>`;
+  }).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+<style>
+.title{font:700 30px Arial,"Microsoft YaHei",sans-serif;fill:#071737}
+.sub{font:600 18px Arial,"Microsoft YaHei",sans-serif;fill:#52627d}
+.section{font:700 22px Arial,"Microsoft YaHei",sans-serif;fill:#071737}
+.label{font:700 15px Arial,"Microsoft YaHei",sans-serif;fill:#71809c}
+.text{font:700 15px Arial,"Microsoft YaHei",sans-serif;fill:#071737}
+.small{font:700 15px Arial,"Microsoft YaHei",sans-serif;fill:#13213c}
+</style>
+<rect width="100%" height="100%" fill="#f4f7fb"/>
+<rect x="40" y="40" width="1320" height="${height - 80}" rx="14" fill="#fff" stroke="#dbe5f2"/>
+<text x="70" y="94" class="title">${xmlEscape(payload.title ?? "Commission Confirmation")}</text>
+<text x="70" y="126" class="sub">Owner: ${xmlEscape(document.ownerName)}   Month: ${xmlEscape(document.month)}   Version: ${document.version}   Source: imported Excel ledger</text>
+<text x="70" y="154" class="section">Summary</text>
+${summarySvg}
+<text x="70" y="470" class="section">Order Details</text>
+<text x="72" y="500" class="label">System No</text><text x="260" y="500" class="label">Original No</text><text x="430" y="500" class="label">Customer</text><text x="690" y="500" class="label">Gross Profit</text><text x="860" y="500" class="label">Rate</text><text x="1040" y="500" class="label">Commission</text>
+${detailSvg}
+<text x="70" y="${evidenceStart - 16}" class="section">Signature Evidence</text>
+${evidenceSvg}
+</svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
 }
 
 function requireReason(reason: string | undefined, message: string) {
@@ -635,62 +809,47 @@ startxref
     };
   },
 
-  async downloadConfirmationDocument(id: number) {
+  async downloadConfirmationDocument(id: number, format: "xlsx" | "pdf" | "png" = "xlsx") {
     const document = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
-    const payload = safeJson<Record<string, any>>(document.payloadJson, {});
-    const summary = payload.summary ?? {};
-    const details = Array.isArray(payload.details) ? payload.details : [];
-    const trace = payload.signatureTrace ?? {};
+    const { summaryRows, detailRows, evidenceRows } = confirmationRows(document);
+
+    if (format === "pdf") {
+      const buffer = await pdfBuffer(document);
+      await logAction({
+        month: document.month,
+        entityType: "confirmation_document",
+        entityId: document.id,
+        action: "download_confirmation_pdf",
+        payload: { ownerName: document.ownerName, documentType: document.documentType, version: document.version }
+      });
+      return {
+        fileName: `${document.month}-${document.ownerName}-v${document.version}-confirmation.pdf`,
+        contentType: "application/pdf",
+        buffer
+      };
+    }
+
+    if (format === "png") {
+      const buffer = await pngBuffer(document);
+      await logAction({
+        month: document.month,
+        entityType: "confirmation_document",
+        entityId: document.id,
+        action: "download_confirmation_png",
+        payload: { ownerName: document.ownerName, documentType: document.documentType, version: document.version }
+      });
+      return {
+        fileName: `${document.month}-${document.ownerName}-v${document.version}-confirmation.png`,
+        contentType: "image/png",
+        buffer
+      };
+    }
+
     const workbook = XLSX.utils.book_new();
 
-    appendSheet(workbook, [
-      { item: "title", value: payload.title ?? "Employee Commission Signature Confirmation" },
-      { item: "documentCode", value: payload.documentCode ?? `DOC-${document.id}` },
-      { item: "version", value: document.version },
-      { item: "month", value: payload.monthLabel ?? document.month },
-      { item: "employeeOrOwner", value: document.ownerName },
-      { item: "businessType", value: summary.businessType ?? document.businessType ?? "-" },
-      { item: "orderCount", value: document.orderCount },
-      { item: "receivable", value: money(summary.receivable) },
-      { item: "payable", value: money(summary.payable) },
-      { item: "grossProfit", value: money(document.grossProfit) },
-      { item: "commissionRate", value: typeof summary.commissionRate === "number" ? `${(summary.commissionRate * 100).toFixed(2)}%` : "-" },
-      { item: "finalCommission", value: money(document.commissionAmount) },
-      { item: "adjustReason", value: document.adjustReason ?? "-" },
-      { item: "voidReason", value: document.voidReason ?? "-" },
-      { item: "documentStatus", value: document.documentStatus },
-      { item: "sendStatus", value: document.sendStatus },
-      { item: "signatureStatus", value: document.signatureStatus },
-      { item: "supervisorStatus", value: document.supervisorStatus },
-      { item: "signedAt", value: document.signedAt?.toISOString() ?? "-" },
-      { item: "confirmedAt", value: document.confirmedAt?.toISOString() ?? "-" }
-    ], "summary");
-
-    appendSheet(workbook, details.map((item: any) => ({
-      systemOrderNo: item.orderNo,
-      originalOrderNo: item.originalOrderNo,
-      customerName: item.customerName,
-      businessType: item.businessType,
-      receivable: money(item.receivable),
-      payable: money(item.payable),
-      grossProfit: money(item.grossProfit),
-      grossProfitRate: typeof item.grossProfitRate === "number" ? `${(item.grossProfitRate * 100).toFixed(2)}%` : "-",
-      commissionRate: typeof item.commissionRate === "number" ? `${(item.commissionRate * 100).toFixed(2)}%` : "-",
-      commissionAmount: money(item.commissionAmount),
-      source: item.source ?? "raw ledger"
-    })), "details");
-
-    appendSheet(workbook, [
-      { item: "statement", value: payload.statement ?? "Employee confirms the commission details." },
-      { item: "employeeSignature", value: document.signatureStatus === "signed" ? "signed" : trace.employeeSignature ?? "pending" },
-      { item: "signatureIp", value: document.signerIp ?? trace.confirmIp ?? "-" },
-      { item: "signatureUserAgent", value: document.signerUserAgent ?? trace.deviceInfo ?? "-" },
-      { item: "signatureRole", value: document.signerRole ?? "-" },
-      { item: "signatureEvidence", value: document.signatureEvidenceJson ?? "-" },
-      { item: "supervisorConfirmation", value: document.supervisorStatus === "confirmed" ? "confirmed" : trace.supervisorConfirm ?? "pending" },
-      { item: "adjustReason", value: document.adjustReason ?? "-" },
-      { item: "voidReason", value: document.voidReason ?? "-" }
-    ], "signature_evidence");
+    appendSheet(workbook, summaryRows, "summary");
+    appendSheet(workbook, detailRows, "details");
+    appendSheet(workbook, evidenceRows, "signature_evidence");
 
     await logAction({
       month: document.month,

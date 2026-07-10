@@ -66,7 +66,8 @@ export async function downloadExportJobController(req: Request, res: Response) {
 }
 
 export async function downloadConfirmationDocumentController(req: Request, res: Response) {
-  const file = await workflowService.downloadConfirmationDocument(Number(req.params.id));
+  const format = req.query.format === "pdf" || req.query.format === "png" ? req.query.format : "xlsx";
+  const file = await workflowService.downloadConfirmationDocument(Number(req.params.id), format);
   res.setHeader("Content-Type", file.contentType);
   res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.fileName)}"`);
   res.send(file.buffer);

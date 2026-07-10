@@ -76,6 +76,10 @@ export function sendSignatureLink(id: number) {
   return request.post(`/workflow/documents/${id}/send-signature`);
 }
 
+export function signDocumentByToken(token: string) {
+  return request.post(`/workflow/signature/${encodeURIComponent(token)}/sign`);
+}
+
 export function supervisorConfirmDocument(id: number, adjustReason?: string) {
   return request.post(`/workflow/documents/${id}/supervisor-confirm`, { adjustReason });
 }
@@ -92,8 +96,8 @@ export function exportDownloadUrl(id: number) {
   return `${request.defaults.baseURL}/workflow/exports/${id}/download`;
 }
 
-export function confirmationDocumentDownloadUrl(id: number) {
-  return `${request.defaults.baseURL}/workflow/documents/${id}/download`;
+export function confirmationDocumentDownloadUrl(id: number, format: "xlsx" | "pdf" | "png" = "xlsx") {
+  return `${request.defaults.baseURL}/workflow/documents/${id}/download?format=${encodeURIComponent(format)}`;
 }
 
 export function monthlyReportExportUrl(month = "2026-06") {

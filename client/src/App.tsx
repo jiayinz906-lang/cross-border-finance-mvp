@@ -2,12 +2,17 @@ import { message } from "antd";
 import { useEffect } from "react";
 import { Navigate, RouterProvider, createHashRouter } from "react-router-dom";
 import { MonthProvider } from "./contexts/MonthContext";
+import SignaturePublic from "./pages/SignaturePublic";
 import { routes } from "./router";
 
 const router = createHashRouter([
   {
     path: "/",
     element: <Navigate to="/dashboard" replace />
+  },
+  {
+    path: "/signature/:token",
+    element: <SignaturePublic />
   },
   ...routes
 ]);

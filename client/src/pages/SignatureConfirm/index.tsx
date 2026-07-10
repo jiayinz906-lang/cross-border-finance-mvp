@@ -1,7 +1,6 @@
 import { Button, Card, Descriptions, Modal, Progress, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { getFinanceDashboard } from "../../api/finance.api";
+import { useCallback, useEffect, useState } from "react";
 import {
   type ConfirmationDocument,
   confirmationDocumentDownloadUrl,
@@ -14,17 +13,8 @@ import {
   voidDocument
 } from "../../api/workflow.api";
 import { useSelectedMonth } from "../../contexts/MonthContext";
-import type { DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
-
-type MetricCard = {
-  title: string;
-  value: string;
-  accent: "blue" | "green" | "orange" | "red";
-  tag: string;
-  note: string;
-};
 
 type ConfirmationPayloadDetail = {
   orderNo: string;
@@ -92,9 +82,14 @@ function dateTimeText(value?: string | null) {
   return value ? value.replace("T", " ").slice(0, 19) : "____ 年 ____ 月 ____ 日 ____:____";
 }
 
+function externalSignatureUrl(signatureUrl?: string | null) {
+  if (!signatureUrl) return "";
+  const route = signatureUrl.startsWith("/") ? signatureUrl : `/${signatureUrl}`;
+  return `${window.location.origin}${window.location.pathname}#${route}`;
+}
+
 export default function SignatureConfirm() {
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<ConfirmationDocument | null>(null);
   const { selectedMonth } = useSelectedMonth();
@@ -104,12 +99,8 @@ export default function SignatureConfirm() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [docRes, dashboardRes] = await Promise.all([
-        getDocuments(selectedMonth, "logistics_commission"),
-        getFinanceDashboard(selectedMonth)
-      ]);
+      const docRes = await getDocuments(selectedMonth, "logistics_commission");
       setDocuments(docRes.data.rows ?? []);
-      setDashboard(dashboardRes.data);
     } catch {
       message.error("电子签名数据加载失败，请确认后端服务可用。");
     } finally {
@@ -134,14 +125,14 @@ export default function SignatureConfirm() {
   };
 
   const handleDownload = async (row: ConfirmationDocument, fileFormat: "pdf" | "png") => {
-    const res = await createExportJob(`signature_${fileFormat}`, fileFormat, selectedMonth, row);
-    window.open(exportDownloadUrl(res.data.id), "_blank");
+    window.open(confirmationDocumentDownloadUrl(row.id, fileFormat), "_blank");
   };
 
   const handleSend = async (row: ConfirmationDocument) => {
     const res = await sendSignatureLink(row.id);
-    await navigator.clipboard?.writeText(`${location.origin}${res.data.signatureUrl ?? ""}`);
-    message.success("签名链接已生成并复制");
+    const url = externalSignatureUrl(res.data.signatureUrl);
+    await navigator.clipboard?.writeText(url);
+    message.success("外部签名链接已生成并复制，可直接发送给员工");
     await loadData();
   };
 
@@ -162,16 +153,6 @@ export default function SignatureConfirm() {
     message.success(`${row.ownerName} 已作废，等待重签`);
     await loadData();
   };
-
-  const summary = dashboard?.summary;
-  const metrics: MetricCard[] = useMemo(() => [
-    { title: "总应收", value: toPlainMoney(summary?.totalReceivable), accent: "blue", tag: "原始台账", note: "按导入后的原始台账记录汇总" },
-    { title: "调整后毛利", value: toPlainMoney(summary?.totalGrossProfit), accent: "green", tag: formatPercent(summary?.grossProfitRate), note: "用于经营分析口径" },
-    { title: "物流提成", value: toPlainMoney(summary?.totalCommission), accent: "orange", tag: "阶梯", note: "按销售代表月毛利计提" },
-    { title: "高风险票", value: `${summary?.riskOrderCount ?? 0}票`, accent: "red", tag: "需复核", note: "汇率、负毛利、缺应付" },
-    { title: "总票数", value: `${dashboard?.orderCount ?? 0}`, accent: "blue", tag: "Excel", note: "按运单口径去重" },
-    { title: "调整后应付", value: toPlainMoney(summary?.totalPayable), accent: "green", tag: "含暂估", note: "清关/派送缺应付补齐" }
-  ], [dashboard?.orderCount, summary]);
 
   const needConfirmCount = documents.length;
   const sentCount = documents.filter((row) => row.sendStatus === "sent").length;
@@ -199,8 +180,8 @@ export default function SignatureConfirm() {
         <Space size={6} wrap>
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看个人确认单</Button>
           <Button size="small" onClick={() => handleSend(row)}>发送签名链接</Button>
-          <Button size="small" onClick={() => navigator.clipboard?.writeText(`${location.origin}${row.signatureUrl ?? ""}`)}>复制链接</Button>
-          <Button size="small" onClick={() => window.open(confirmationDocumentDownloadUrl(row.id), "_blank")}>下载确认单</Button>
+          <Button size="small" disabled={!row.signatureUrl} onClick={() => navigator.clipboard?.writeText(externalSignatureUrl(row.signatureUrl))}>复制链接</Button>
+          <Button size="small" onClick={() => window.open(confirmationDocumentDownloadUrl(row.id, "xlsx"), "_blank")}>下载确认单</Button>
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>下载 PDF</Button>
           <Button size="small" onClick={() => handleDownload(row, "png")}>下载 PNG</Button>
           <Button size="small" disabled={row.supervisorStatus === "confirmed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
@@ -224,17 +205,6 @@ export default function SignatureConfirm() {
 
   return (
     <div className="signature-board">
-      <section className="profit-metric-grid">
-        {metrics.map((item) => (
-          <Card key={item.title} className={`profit-metric-card profit-accent-${item.accent}`} loading={loading}>
-            <span className="profit-metric-icon" />
-            <span className="profit-metric-title">{item.title}</span>
-            <strong>{item.value}</strong>
-            <div className="profit-metric-note"><Tag bordered={false}>{item.tag}</Tag><span>{item.note}</span></div>
-          </Card>
-        ))}
-      </section>
-
       <Card
         className="signature-confirm-card"
         title={<div className="signature-title-block"><strong>员工电子签名确认中心</strong><span>主管生成个人提成确认单，员工在线签名后回传状态，最终由主管确认发放。</span></div>}
@@ -305,7 +275,7 @@ export default function SignatureConfirm() {
               <Descriptions.Item label="设备信息">{selectedPayload.signatureTrace.deviceInfo}</Descriptions.Item>
               <Descriptions.Item label="主管最终确认">{selectedDocument?.supervisorStatus === "confirmed" ? "主管已确认" : selectedPayload.signatureTrace.supervisorConfirm}</Descriptions.Item>
               <Descriptions.Item label="签名链接">
-                {selectedDocument?.signatureUrl ? `${location.origin}${selectedDocument.signatureUrl}` : "待发送后生成"}
+                {selectedDocument?.signatureUrl ? externalSignatureUrl(selectedDocument.signatureUrl) : "待发送后生成"}
               </Descriptions.Item>
             </Descriptions>
           </Space>
