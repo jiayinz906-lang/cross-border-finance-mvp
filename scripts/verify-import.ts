@@ -255,10 +255,16 @@ async function verifySignature(checks: Check[], month: string) {
   assertCheck(checks, "Signature token generated", Boolean(sent.signatureToken), sent.signatureToken ?? undefined);
   assertCheck(checks, "Signature token expiry generated", Boolean(sent.signatureTokenExpiresAt), sent.signatureTokenExpiresAt?.toISOString());
 
+  const publicDocument = await workflowService.publicSignatureDocument(sent.signatureToken!);
+  assertCheck(checks, "Public signature document returns owner snapshot", publicDocument.document.ownerName === first.ownerName, publicDocument.document.ownerName);
+  assertCheck(checks, "Public signature document returns order details", Array.isArray(publicDocument.payload.details), String(publicDocument.payload.details.length));
+
   const signed = await workflowService.signByToken(sent.signatureToken!, {
     ip: "127.0.0.1",
     userAgent: "verify-import-employee",
-    role: "sales"
+    role: "sales",
+    signedName: first.ownerName,
+    acceptedStatement: true
   });
   assertCheck(checks, "Employee signed by token", signed.signatureStatus === "signed", signed.signatureStatus);
   assertCheck(checks, "Employee evidence stored", Boolean(signed.signatureEvidenceJson), signed.signatureEvidenceJson ?? undefined);
