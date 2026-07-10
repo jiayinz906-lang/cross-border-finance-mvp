@@ -23,6 +23,8 @@ type ServiceRecord = {
     orderNo: string;
     customerOrderNo?: string | null;
     customerName: string;
+    salespersonName: string;
+    customerServiceName?: string | null;
     calculationNote?: string | null;
   };
 };
@@ -227,7 +229,36 @@ export default function ServiceConfirm() {
   ], [dashboard?.orderCount, rows.length, serviceProfit, serviceReceivable, summary]);
 
   const columns: ColumnsType<ServiceRecord> = [
-    { title: "单号/客户", dataIndex: ["financeOrder", "orderNo"], fixed: "left", width: 150 },
+    {
+      title: "单号",
+      dataIndex: ["financeOrder", "orderNo"],
+      fixed: "left",
+      width: 150,
+      render: (value: string, row) => (
+        <div className="service-order-cell">
+          <strong>{value || "-"}</strong>
+          {row.financeOrder?.customerOrderNo ? <span>原始: {row.financeOrder.customerOrderNo}</span> : null}
+        </div>
+      )
+    },
+    {
+      title: "对应用户",
+      dataIndex: ["financeOrder", "customerName"],
+      width: 150,
+      render: (value: string) => value || "-"
+    },
+    {
+      title: "销售代表",
+      dataIndex: ["financeOrder", "salespersonName"],
+      width: 120,
+      render: (value: string) => value || "-"
+    },
+    {
+      title: "客服代表",
+      dataIndex: ["financeOrder", "customerServiceName"],
+      width: 120,
+      render: (value: string | null) => value || "-"
+    },
     { title: "服务", dataIndex: "serviceType", width: 150 },
     { title: "成交单价", dataIndex: "originalPrice", align: "right", render: toPlainMoney },
     { title: "成交利润", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
@@ -335,7 +366,7 @@ export default function ServiceConfirm() {
           dataSource={rows}
           columns={columns}
           pagination={false}
-          scroll={{ x: 1320 }}
+          scroll={{ x: 1600 }}
         />
       </Card>
     </div>
