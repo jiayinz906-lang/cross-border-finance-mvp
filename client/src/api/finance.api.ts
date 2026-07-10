@@ -64,6 +64,10 @@ export function getRawLedgerLines(filters: { month?: string; orderNo?: string; b
   return request.get("/finance/raw-ledger-lines", { params: filters });
 }
 
+export function getChargeLines(filters: { month?: string; orderNo?: string; batchId?: number; direction?: string; feeType?: string }) {
+  return request.get("/finance/charge-lines", { params: filters });
+}
+
 export function rollbackImportBatch(id: number) {
   return request.post(`/finance/import-batches/${id}/rollback`);
 }

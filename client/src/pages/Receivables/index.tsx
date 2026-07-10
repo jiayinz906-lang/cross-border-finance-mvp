@@ -1,10 +1,12 @@
 import { Alert, Button, Card, Col, DatePicker, Input, InputNumber, Modal, Popconfirm, Row, Segmented, Space, Statistic, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState } from "react";
+import { getChargeLines } from "../../api/finance.api";
 import { getReceivables, getReceiptRecords, recordReceipt, voidReceipt } from "../../api/receivables.api";
 import { OrderNoPopup } from "../../components/OrderNoPopup";
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
+import type { FinanceChargeLine } from "../../types/finance.types";
 import type { AgingBucket, CustomerReceivableAging, ReceivableResponse, ReceivableRow } from "../../types/receivable.types";
 import { formatMoney } from "../../utils/formatMoney";
 
@@ -32,6 +34,8 @@ export default function Receivables() {
   const [searchText, setSearchText] = useState("");
   const [quickFilter, setQuickFilter] = useState<"all" | "outstanding" | "overdue" | "aging90">("all");
   const [savingReceipt, setSavingReceipt] = useState(false);
+  const [chargeLines, setChargeLines] = useState<Record<string, FinanceChargeLine[]>>({});
+  const [loadingChargeOrder, setLoadingChargeOrder] = useState<string | null>(null);
   const { selectedMonth } = useSelectedMonth();
 
   const loadData = () => {
@@ -41,6 +45,7 @@ export default function Receivables() {
     ]).then(([receivableRes, settlementRes]) => {
       setData(receivableRes.data);
       setSettlements(settlementRes.data.rows ?? []);
+      setChargeLines({});
     });
   };
 
@@ -110,6 +115,33 @@ export default function Receivables() {
       )
     }
   ];
+
+  const chargeColumns: ColumnsType<FinanceChargeLine> = [
+    { title: "Excel行", dataIndex: "rowIndex", width: 80 },
+    { title: "费用类型", dataIndex: "feeType", width: 120 },
+    { title: "收付类型", dataIndex: "direction", width: 90 },
+    { title: "对应用户", dataIndex: "customerName", width: 140, render: (value) => value || "-" },
+    { title: "销售代表", dataIndex: "salespersonName", width: 100, render: (value) => value || "-" },
+    { title: "客服代表", dataIndex: "customerServiceName", width: 100, render: (value) => value || "-" },
+    { title: "供应商", dataIndex: "supplierName", width: 160, render: (value) => value || "-" },
+    { title: "原始金额", dataIndex: "originalAmount", align: "right", render: formatMoney },
+    { title: "本币费用", dataIndex: "localAmount", align: "right", render: formatMoney },
+    { title: "原始符号金额", dataIndex: "signedAmount", align: "right", render: formatMoney },
+    { title: "汇率", dataIndex: "exchangeRate", width: 90, render: (value) => value ?? "-" }
+  ];
+
+  const loadChargeLines = async (orderNo: string) => {
+    if (chargeLines[orderNo]) return;
+    setLoadingChargeOrder(orderNo);
+    try {
+      const res = await getChargeLines({ month: selectedMonth, orderNo, direction: "应收" });
+      setChargeLines((current) => ({ ...current, [orderNo]: res.data.rows ?? [] }));
+    } catch {
+      message.error("费用明细加载失败，请确认后端服务可用");
+    } finally {
+      setLoadingChargeOrder(null);
+    }
+  };
 
   const submitReceipt = async () => {
     if (!selectedRow) return;
@@ -233,6 +265,22 @@ export default function Receivables() {
           rowKey="id"
           dataSource={filteredRows}
           columns={detailColumns}
+          expandable={{
+            expandedRowRender: (row) => (
+              <Table
+                rowKey="id"
+                size="small"
+                pagination={false}
+                loading={loadingChargeOrder === row.orderNo}
+                dataSource={chargeLines[row.orderNo] ?? []}
+                columns={chargeColumns}
+                scroll={{ x: 1200 }}
+              />
+            ),
+            onExpand: (expanded, row) => {
+              if (expanded) void loadChargeLines(row.orderNo);
+            }
+          }}
           scroll={{ x: 1480 }}
         />
       </Card>

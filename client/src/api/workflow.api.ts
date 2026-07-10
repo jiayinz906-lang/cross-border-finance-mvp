@@ -159,6 +159,6 @@ export function unlockMonth(month = "2026-06", note?: string) {
   return request.post("/workflow/month-close/unlock", { month, note, operator: "主管" });
 }
 
-export function getActionLogs(filters: { month?: string; entityType?: string; entityId?: string } = {}) {
+export function getActionLogs(filters: { month?: string; entityType?: string; entityId?: string; action?: string; operator?: string } = {}) {
   return request.get("/workflow/actions", { params: filters });
 }

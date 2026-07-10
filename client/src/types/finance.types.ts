@@ -215,6 +215,32 @@ export type RawLedgerLine = {
   canonical: Record<string, unknown>;
 };
 
+export type FinanceChargeLine = {
+  id: number;
+  importBatchId: number;
+  financeOrderId?: number | null;
+  rawLedgerLineId?: number | null;
+  month: string;
+  orderNo: string;
+  customerOrderNo?: string | null;
+  customerName?: string | null;
+  salespersonName?: string | null;
+  customerServiceName?: string | null;
+  direction: string;
+  feeType: string;
+  service?: string | null;
+  supplierName?: string | null;
+  currency?: string | null;
+  exchangeRate?: number | null;
+  originalAmount: number;
+  localAmount: number;
+  signedAmount: number;
+  isCompensation: boolean;
+  isServiceBusiness: boolean;
+  rowIndex: number;
+  sourceFileName?: string | null;
+};
+
 export type ParameterRule = {
   id: number;
   ruleKey: string;

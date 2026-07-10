@@ -129,11 +129,15 @@ function confirmationRows(document: {
   const payload = safeJson<Record<string, any>>(document.payloadJson, {});
   const summary = payload.summary ?? {};
   const details = Array.isArray(payload.details) ? payload.details : [];
+  const chargeLines = Array.isArray(payload.chargeLines) ? payload.chargeLines : [];
   const trace = payload.signatureTrace ?? {};
   const summaryRows = [
     { item: "title", value: payload.title ?? "Employee Commission Signature Confirmation" },
     { item: "documentCode", value: payload.documentCode ?? `DOC-${document.id}` },
     { item: "version", value: document.version },
+    { item: "sourceFileName", value: payload.sourceFileName ?? "-" },
+    { item: "importBatchNo", value: payload.importBatchNo ?? "-" },
+    { item: "snapshotCreatedAt", value: payload.snapshotCreatedAt ?? "-" },
     { item: "month", value: payload.monthLabel ?? document.month },
     { item: "employeeOrOwner", value: document.ownerName },
     { item: "businessType", value: summary.businessType ?? document.businessType ?? "-" },
@@ -176,7 +180,26 @@ function confirmationRows(document: {
     { item: "adjustReason", value: document.adjustReason ?? "-" },
     { item: "voidReason", value: document.voidReason ?? "-" }
   ];
-  return { payload, summaryRows, detailRows, evidenceRows };
+  const chargeLineRows = chargeLines.map((item: any) => ({
+    sourceFileName: item.sourceFileName,
+    importBatchNo: item.importBatchNo,
+    excelRow: item.excelRow,
+    systemOrderNo: item.systemOrderNo,
+    originalOrderNo: item.originalOrderNo,
+    customerName: item.customerName,
+    salespersonName: item.salespersonName,
+    customerServiceName: item.customerServiceName,
+    direction: item.direction,
+    feeType: item.feeType,
+    service: item.service,
+    supplierName: item.supplierName,
+    exchangeRate: item.exchangeRate,
+    originalAmount: money(item.originalAmount),
+    localAmount: money(item.localAmount),
+    signedAmount: money(item.signedAmount),
+    isCompensation: Boolean(item.isCompensation)
+  }));
+  return { payload, summaryRows, detailRows, evidenceRows, chargeLineRows };
 }
 
 function pdfBuffer(document: { ownerName: string; month: string; version: number; documentType: string; payloadJson: string | null } & any) {
@@ -273,6 +296,53 @@ function workflowStep(key: string, count: number, ownerRole: string, nextAction:
   };
 }
 
+function blockingIssueCountFromBatch(batch: { previewJson: string | null } | null) {
+  const preview = safeJson<Record<string, any>>(batch?.previewJson, {});
+  if (Array.isArray(preview.blockingIssues)) return preview.blockingIssues.length;
+  return Number(preview.qualityReport?.blockingCount ?? 0);
+}
+
+async function latestActiveImportBatch(month: string) {
+  return prisma.importBatch.findFirst({
+    where: { month, status: "active" },
+    orderBy: { id: "desc" }
+  });
+}
+
+async function chargeLineSnapshot(month: string, orderNos: string[]) {
+  if (!orderNos.length) return [];
+  const activeBatch = await latestActiveImportBatch(month);
+  if (!activeBatch) return [];
+  const rows = await prisma.financeChargeLine.findMany({
+    where: {
+      month,
+      importBatchId: activeBatch.id,
+      orderNo: { in: Array.from(new Set(orderNos)) }
+    },
+    orderBy: [{ orderNo: "asc" }, { rowIndex: "asc" }, { id: "asc" }]
+  });
+  return rows.map((row) => ({
+    sourceFileName: row.sourceFileName,
+    importBatchNo: activeBatch.batchNo,
+    excelRow: row.rowIndex,
+    systemOrderNo: row.orderNo,
+    originalOrderNo: row.customerOrderNo,
+    customerName: row.customerName,
+    salespersonName: row.salespersonName,
+    customerServiceName: row.customerServiceName,
+    direction: row.direction,
+    feeType: row.feeType,
+    service: row.service,
+    supplierName: row.supplierName,
+    currency: row.currency,
+    exchangeRate: row.exchangeRate,
+    originalAmount: row.originalAmount,
+    localAmount: row.localAmount,
+    signedAmount: row.signedAmount,
+    isCompensation: row.isCompensation
+  }));
+}
+
 async function logAction(input: {
   month?: string;
   entityType: string;
@@ -367,12 +437,14 @@ export const workflowService = {
       activeBatch,
       openRisks,
       pendingServices,
-      pendingCommissionDocs,
+      pendingLogisticsDocs,
+      pendingServiceDocs,
+      pendingOperatorDocs,
       pendingReceivableOrders,
       pendingPayableOrders,
       close
     ] = await Promise.all([
-      prisma.importBatch.count({ where: { month: selectedMonth, status: "active" } }),
+      latestActiveImportBatch(selectedMonth),
       prisma.riskRecord.count({
         where: { status: { not: "reviewed" }, financeOrder: { month: selectedMonth } }
       }),
@@ -382,6 +454,23 @@ export const workflowService = {
       prisma.confirmationDocument.count({
         where: {
           month: selectedMonth,
+          documentType: "logistics_commission",
+          documentStatus: { not: "voided" },
+          OR: [{ signatureStatus: { not: "signed" } }, { supervisorStatus: { not: "confirmed" } }]
+        }
+      }),
+      prisma.confirmationDocument.count({
+        where: {
+          month: selectedMonth,
+          documentType: "service_commission",
+          documentStatus: { not: "voided" },
+          OR: [{ signatureStatus: { not: "signed" } }, { supervisorStatus: { not: "confirmed" } }]
+        }
+      }),
+      prisma.confirmationDocument.count({
+        where: {
+          month: selectedMonth,
+          documentType: "operator_performance",
           documentStatus: { not: "voided" },
           OR: [{ signatureStatus: { not: "signed" } }, { supervisorStatus: { not: "confirmed" } }]
         }
@@ -395,12 +484,17 @@ export const workflowService = {
       prisma.monthClose.findUnique({ where: { month: selectedMonth } })
     ]);
 
-    const hasImport = activeBatch > 0;
+    const hasImport = Boolean(activeBatch);
+    const importAuditBlockingCount = blockingIssueCountFromBatch(activeBatch);
     const receivablePayablePending = pendingReceivableOrders + pendingPayableOrders;
     const blockers = [
+      !hasImport ? "Excel import not completed" : null,
+      importAuditBlockingCount > 0 ? `import audit blocked: ${importAuditBlockingCount}` : null,
       openRisks > 0 ? `risk review pending: ${openRisks}` : null,
       pendingServices > 0 ? `service confirmation pending: ${pendingServices}` : null,
-      pendingCommissionDocs > 0 ? `commission signature/supervisor confirmation pending: ${pendingCommissionDocs}` : null,
+      pendingLogisticsDocs > 0 ? `logistics commission signature/supervisor confirmation pending: ${pendingLogisticsDocs}` : null,
+      pendingServiceDocs > 0 ? `service signature/supervisor confirmation pending: ${pendingServiceDocs}` : null,
+      pendingOperatorDocs > 0 ? `operator performance signature/supervisor confirmation pending: ${pendingOperatorDocs}` : null,
       receivablePayablePending > 0 ? `receivable/payable pending: ${receivablePayablePending}` : null
     ].filter(Boolean) as string[];
     const locked = close?.status === "locked";
@@ -415,13 +509,21 @@ export const workflowService = {
         {
           key: "excel_imported",
           status: hasImport ? "done" : "active",
-          count: activeBatch,
+          count: hasImport ? 1 : 0,
           ownerRole: "finance",
           nextAction: hasImport ? "Excel imported" : "Upload and confirm Excel import"
         },
+        {
+          key: "import_audit_passed",
+          status: !hasImport ? "blocked" : importAuditBlockingCount > 0 ? "active" : "done",
+          count: importAuditBlockingCount,
+          ownerRole: "finance",
+          nextAction: importAuditBlockingCount > 0 ? "Fix blocking import audit issues and re-import" : "Import audit passed"
+        },
         workflowStep("risk_review_pending", openRisks, "supervisor", "Review low-margin and abnormal-profit orders"),
         workflowStep("service_confirm_pending", pendingServices, "supervisor", "Confirm service commission"),
-        workflowStep("commission_signature_pending", pendingCommissionDocs, "sales", "Send and complete commission signature forms"),
+        workflowStep("commission_signature_pending", pendingLogisticsDocs + pendingServiceDocs, "sales", "Send and complete commission signature forms"),
+        workflowStep("operator_signature_pending", pendingOperatorDocs, "finance", "Send and complete operator performance signature forms"),
         workflowStep("receivable_payable_pending", receivablePayablePending, "finance", "Reconcile receivables and payables"),
         {
           key: "cfo_ready",
@@ -456,11 +558,14 @@ export const workflowService = {
     const documents = [];
     const sortedGroups = Array.from(groups.entries()).sort(([left], [right]) => left.localeCompare(right, "zh-Hans-CN"));
     for (const [index, [ownerName, items]] of sortedGroups.entries()) {
+      const activeBatch = await latestActiveImportBatch(selectedMonth);
       const grossProfit = items.reduce((sum, item) => sum + item.grossProfit, 0);
       const commissionAmount = items.reduce((sum, item) => sum + (item.manualCommissionAmount ?? item.commissionAmount), 0);
       const totalReceivable = items.reduce((sum, item) => sum + item.financeOrder.adjustedReceivable, 0);
       const totalPayable = items.reduce((sum, item) => sum + item.financeOrder.adjustedPayable, 0);
       const highRiskCount = items.filter((item) => item.needSupervisorConfirm || (item.financeOrder.adjustedGrossProfitRate ?? 1) < 0.1).length;
+      const orderNos = items.map((item) => item.financeOrder.orderNo);
+      const chargeLines = await chargeLineSnapshot(selectedMonth, orderNos);
       const detailRows = items
         .slice()
         .sort((left, right) => left.financeOrder.orderNo.localeCompare(right.financeOrder.orderNo))
@@ -482,6 +587,9 @@ export const workflowService = {
         title: "Employee Commission Signature Confirmation",
         fileType: "electronic_signature_confirmation",
         documentCode: documentCode(selectedMonth, index, "logistics_commission"),
+        sourceFileName: activeBatch?.fileName ?? "-",
+        importBatchNo: activeBatch?.batchNo ?? "-",
+        snapshotCreatedAt: new Date().toISOString(),
         monthLabel: formatMonthLabel(selectedMonth),
         generatedAt: new Date().toISOString(),
         summary: {
@@ -499,6 +607,7 @@ export const workflowService = {
           status: "pending employee signature"
         },
         details: detailRows,
+        chargeLines,
         statement: "The employee confirms the order count, gross profit, commission rate, adjustment and final commission.",
         signatureTrace: {
           employeeSignature: "pending employee signature",
@@ -541,12 +650,17 @@ export const workflowService = {
 
     const documents = [];
     for (const [index, item] of records.entries()) {
+      const activeBatch = await latestActiveImportBatch(selectedMonth);
       const ownerName = item.financeOrder.orderNo;
       const commissionAmount = item.supervisorFinalCommission ?? item.suggestedCommissionMin ?? 0;
+      const chargeLines = await chargeLineSnapshot(selectedMonth, [item.financeOrder.orderNo]);
       const payload = {
         title: "Service Commission Confirmation",
         fileType: "service_commission_confirmation",
         documentCode: documentCode(selectedMonth, index, "service_commission"),
+        sourceFileName: activeBatch?.fileName ?? "-",
+        importBatchNo: activeBatch?.batchNo ?? "-",
+        snapshotCreatedAt: new Date().toISOString(),
         monthLabel: formatMonthLabel(selectedMonth),
         generatedAt: new Date().toISOString(),
         summary: {
@@ -571,7 +685,8 @@ export const workflowService = {
           commissionRate: item.grossProfit ? commissionAmount / item.grossProfit : null,
           commissionAmount: roundMoney(commissionAmount),
           source: "raw ledger"
-        }]
+        }],
+        chargeLines
       };
 
       const document = await writeConfirmationDocument({
@@ -603,10 +718,14 @@ export const workflowService = {
     const documents = [];
 
     for (const [index, group] of groups.entries()) {
+      const activeBatch = await latestActiveImportBatch(selectedMonth);
       const payload = {
         title: "Operator Performance Signature Confirmation",
         fileType: "operator_performance_confirmation",
         documentCode: documentCode(selectedMonth, index, "operator_performance"),
+        sourceFileName: activeBatch?.fileName ?? "-",
+        importBatchNo: activeBatch?.batchNo ?? "-",
+        snapshotCreatedAt: new Date().toISOString(),
         monthLabel: formatMonthLabel(selectedMonth),
         generatedAt: new Date().toISOString(),
         summary: {
@@ -884,7 +1003,7 @@ startxref
 
   async downloadConfirmationDocument(id: number, format: "xlsx" | "pdf" | "png" = "xlsx") {
     const document = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
-    const { summaryRows, detailRows, evidenceRows } = confirmationRows(document);
+    const { summaryRows, detailRows, evidenceRows, chargeLineRows } = confirmationRows(document);
 
     if (format === "pdf") {
       const buffer = await pdfBuffer(document);
@@ -922,6 +1041,7 @@ startxref
 
     appendSheet(workbook, summaryRows, "summary");
     appendSheet(workbook, detailRows, "details");
+    appendSheet(workbook, chargeLineRows, "charge_lines");
     appendSheet(workbook, evidenceRows, "signature_evidence");
 
     await logAction({
@@ -1160,12 +1280,14 @@ startxref
     return { salespersonName, rows: updates };
   },
 
-  async actionLogs(input: { month?: string; entityType?: string; entityId?: string } = {}) {
+  async actionLogs(input: { month?: string; entityType?: string; entityId?: string; action?: string; operator?: string } = {}) {
     return prisma.actionLog.findMany({
       where: {
         ...(input.month ? { month: input.month } : {}),
         ...(input.entityType ? { entityType: input.entityType } : {}),
-        ...(input.entityId ? { entityId: input.entityId } : {})
+        ...(input.entityId ? { entityId: input.entityId } : {}),
+        ...(input.action ? { action: { contains: input.action } } : {}),
+        ...(input.operator ? { operator: { contains: input.operator } } : {})
       },
       orderBy: { id: "desc" },
       take: 100

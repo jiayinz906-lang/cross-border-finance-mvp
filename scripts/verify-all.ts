@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import http from "node:http";
 import https from "node:https";
-import path from "node:path";
 
 type Step = {
   name: string;
@@ -12,7 +11,7 @@ type Step = {
 
 const isWindows = process.platform === "win32";
 const pnpm = isWindows ? "pnpm.cmd" : "pnpm";
-const defaultDatabaseUrl = `file:${path.resolve(process.cwd(), "prisma/dev.db").replace(/\\/g, "/")}`;
+const defaultDatabaseUrl = "postgresql://xjd:xjd_local_2026@localhost:54329/xjd_finance?schema=public";
 const clientUrl = process.env.UI_SMOKE_CLIENT_URL || "http://localhost:5173/";
 const apiUrl = process.env.UI_SMOKE_API_URL || "http://localhost:4000/api";
 

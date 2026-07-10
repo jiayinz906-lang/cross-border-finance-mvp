@@ -85,6 +85,7 @@ async function verifyImport(checks: Check[]) {
     prisma.serviceBusinessRecord.findMany({ where: { financeOrder: { month: imported.month } } })
   ]);
   const rawLines = await excelService.listRawLedgerLines({ batchId: imported.batchId });
+  const chargeLines = await excelService.listChargeLines({ batchId: imported.batchId });
   const importLogs = await workflowService.actionLogs({
     month: imported.month,
     entityType: "import_batch",
@@ -94,6 +95,12 @@ async function verifyImport(checks: Check[]) {
   const orderReceivable = orders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
   const orderPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
   const orderProfit = orders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
+  const chargeReceivable = chargeLines.rows
+    .filter((line) => String(line.direction).includes("应收"))
+    .reduce((sum, line) => sum + line.localAmount, 0);
+  const chargePayable = chargeLines.rows
+    .filter((line) => String(line.direction).includes("应付"))
+    .reduce((sum, line) => sum + line.localAmount, 0);
 
   assertCheck(checks, "Database order count", orders.length === 25, String(orders.length));
   assertCheck(checks, "Database service order count", orders.filter((order) => order.isServiceBusiness).length === 3, String(orders.filter((order) => order.isServiceBusiness).length));
@@ -103,6 +110,10 @@ async function verifyImport(checks: Check[]) {
   assertCheck(checks, "Raw ledger lines stored", rawLines.rows.length === preview.importedRows, `${rawLines.rows.length} / ${preview.importedRows}`);
   assertCheck(checks, "Raw ledger line keeps original row json", Boolean(rawLines.rows[0]?.raw && Object.keys(rawLines.rows[0].raw).length), JSON.stringify(rawLines.rows[0]?.raw));
   assertCheck(checks, "Raw ledger line keeps canonical fields", Boolean(rawLines.rows.find((line) => line.orderNo)?.canonical?.orderNo), JSON.stringify(rawLines.rows.find((line) => line.orderNo)?.canonical));
+  assertCheck(checks, "Finance charge lines stored", chargeLines.rows.length === rawLines.rows.filter((line) => line.orderNo).length, `${chargeLines.rows.length} / ${rawLines.rows.filter((line) => line.orderNo).length}`);
+  assertCheck(checks, "Finance charge lines keep signed amounts", chargeLines.rows.some((line) => line.signedAmount < 0 || line.isCompensation), `negativeOrCompensation=${chargeLines.rows.filter((line) => line.signedAmount < 0 || line.isCompensation).length}`);
+  assertCheck(checks, "Charge receivable reconciles with order receivable", closeEnough(chargeReceivable, orderReceivable), `${chargeReceivable} / ${orderReceivable}`);
+  assertCheck(checks, "Charge payable reconciles with order payable", closeEnough(chargePayable, orderPayable), `${chargePayable} / ${orderPayable}`);
   assertCheck(checks, "Import action log written", importLogs.some((log) => log.action === "import_excel"), importLogs.map((log) => log.action).join(","));
   assertCheck(checks, "Batch is active", batch?.status === "active", batch?.status);
   assertCheck(checks, "Summary exists", Boolean(summary), summary?.month);
@@ -198,7 +209,7 @@ async function verifyImportTemplateRegistry(checks: Check[]) {
 
   assertCheck(checks, "Import template registry returns system template", Boolean(systemTemplate), templates.map((template) => template.templateKey).join(","));
   assertCheck(checks, "Import template registry keeps fixed headers only", (systemTemplate?.headerCount ?? 0) >= 20, `${systemTemplate?.fileName ?? "-"} / ${systemTemplate?.headerCount ?? 0}`);
-  assertCheck(checks, "Import template registry keeps readable file name", Boolean(systemTemplate?.fileName.includes("表头")), systemTemplate?.fileName);
+  assertCheck(checks, "Import template registry keeps readable file name", Boolean(systemTemplate?.fileName && systemTemplate.fileName.endsWith(".xlsx")), systemTemplate?.fileName);
   assertCheck(checks, "Import template registry includes order number header", Boolean(systemTemplate?.headers.includes("运单号")), systemTemplate?.headers.join(","));
 }
 
@@ -206,18 +217,18 @@ async function verifySystemBackupExport(checks: Check[], month: string) {
   const exported = await workflowService.exportSystemBackup(month);
   const workbook = XLSX.read(exported.buffer, { type: "buffer" });
   const requiredSheets = [
-    "备份说明",
-    "月度汇总",
-    "导入批次",
-    "表头模板",
-    "参数规则",
-    "锁账状态",
-    "确认单",
-    "操作日志",
-    "导出记录"
+    "backup_readme",
+    "finance_summaries",
+    "import_batches",
+    "excel_templates",
+    "parameter_rules",
+    "month_closes",
+    "confirmation_docs",
+    "action_logs",
+    "export_jobs"
   ];
   const missing = requiredSheets.filter((sheet) => !workbook.SheetNames.includes(sheet));
-  const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets["备份说明"] ?? {});
+  const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets["backup_readme"] ?? {});
 
   assertCheck(checks, "System backup export returns xlsx file", exported.fileName.endsWith(".xlsx") && exported.buffer.length > 1000, `${exported.fileName} / ${exported.buffer.length}`);
   assertCheck(checks, "System backup export includes required sheets", missing.length === 0, missing.join(","));
@@ -236,7 +247,7 @@ async function verifySignature(checks: Check[], month: string) {
   assertCheck(
     checks,
     "Confirmation document export includes sheets",
-    ["确认单摘要", "订单明细", "签名与证据"].every((sheet) => confirmationWorkbook.SheetNames.includes(sheet)),
+    ["summary", "details", "charge_lines", "signature_evidence"].every((sheet) => confirmationWorkbook.SheetNames.includes(sheet)),
     confirmationWorkbook.SheetNames.join(",")
   );
 
@@ -287,6 +298,7 @@ async function verifySettlements(checks: Check[], month: string) {
   const order = await prisma.financeOrder.findFirstOrThrow({
     where: {
       month,
+      isServiceBusiness: false,
       adjustedReceivable: { gt: 100 },
       adjustedPayable: { gt: 100 }
     },
@@ -352,6 +364,36 @@ async function verifyMonthClose(
   checks: Check[],
   input: { month: string; buffer: Buffer; fileName: string; batchId: number }
 ) {
+  let closeBlockedBeforeReady = false;
+  try {
+    await workflowService.lockMonth(input.month, {
+      operator: "verify-import",
+      note: "Verify close blockers"
+    });
+  } catch (error) {
+    closeBlockedBeforeReady = String((error as Error).message).includes("Month close blocked");
+  }
+  assertCheck(checks, "Month close blocks unfinished workflow", closeBlockedBeforeReady);
+
+  await Promise.all([
+    prisma.riskRecord.updateMany({
+      where: { financeOrder: { month: input.month } },
+      data: { status: "reviewed", reviewedBy: "verify-import", reviewedAt: new Date(), reviewConclusion: "verification ready" }
+    }),
+    prisma.serviceBusinessRecord.updateMany({
+      where: { financeOrder: { month: input.month } },
+      data: { confirmStatus: "confirmed" }
+    }),
+    prisma.confirmationDocument.updateMany({
+      where: { month: input.month, documentStatus: { not: "voided" } },
+      data: { signatureStatus: "signed", supervisorStatus: "confirmed", sendStatus: "sent", signedAt: new Date(), confirmedAt: new Date() }
+    }),
+    prisma.financeOrder.updateMany({
+      where: { month: input.month },
+      data: { receivableStatus: "settled", payableStatus: "settled" }
+    })
+  ]);
+
   const locked = await workflowService.lockMonth(input.month, {
     operator: "verify-import",
     note: "Lock month for verification"

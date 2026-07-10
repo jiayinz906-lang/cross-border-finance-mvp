@@ -70,7 +70,7 @@ async function main() {
   const systemTemplate = templates.rows?.find((row) => row.templateKey === "system_waybill_detail");
   push(checks, "Import template is stored", Boolean(systemTemplate), templates.rows?.map((row) => row.templateKey).join(","));
   push(checks, "Import template has fixed headers", (systemTemplate?.headerCount ?? 0) >= 20 && Boolean(systemTemplate?.headers.includes("运单号")), `${systemTemplate?.fileName ?? "-"} / ${systemTemplate?.headerCount ?? 0}`);
-  push(checks, "Import template file name is readable", Boolean(systemTemplate?.fileName.includes("表头")), systemTemplate?.fileName);
+  push(checks, "Import template file name is readable", Boolean(systemTemplate?.fileName && systemTemplate.fileName.endsWith(".xlsx")), systemTemplate?.fileName);
 
   const dashboard = await retry(
     () => requestJson<{ summary?: { totalReceivable?: number; totalPayable?: number }; businessSummary?: unknown[] }>(`${apiUrl}/finance/dashboard?month=2026-06`),

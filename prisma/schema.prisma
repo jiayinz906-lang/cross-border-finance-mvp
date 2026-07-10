@@ -64,6 +64,7 @@ model FinanceOrder {
   remark                      String?
   createdAt                   DateTime                @default(now())
   updatedAt                   DateTime                @updatedAt
+  chargeLines                 FinanceChargeLine[]
   commissionRecords           CommissionRecord[]
   riskRecords                 RiskRecord[]
   costAdjustments             CostAdjustment[]
@@ -108,10 +109,47 @@ model RawLedgerLine {
   parseStatus     String      @default("parsed")
   parseMessage    String?
   createdAt       DateTime    @default(now())
+  chargeLines     FinanceChargeLine[]
 
   @@index([month, orderNo])
   @@index([importBatchId, rowIndex])
   @@unique([importBatchId, rowIndex])
+}
+
+model FinanceChargeLine {
+  id                  Int             @id @default(autoincrement())
+  importBatchId       Int
+  importBatch         ImportBatch     @relation(fields: [importBatchId], references: [id])
+  financeOrderId      Int?
+  financeOrder        FinanceOrder?   @relation(fields: [financeOrderId], references: [id])
+  rawLedgerLineId     Int?
+  rawLedgerLine       RawLedgerLine?  @relation(fields: [rawLedgerLineId], references: [id])
+  month               String
+  orderNo             String
+  customerOrderNo     String?
+  customerName        String?
+  salespersonName     String?
+  customerServiceName String?
+  direction           String
+  feeType             String
+  service             String?
+  supplierName        String?
+  currency            String?
+  exchangeRate        Float?
+  originalAmount      Float           @default(0)
+  localAmount         Float           @default(0)
+  signedAmount        Float           @default(0)
+  isCompensation      Boolean         @default(false)
+  isServiceBusiness   Boolean         @default(false)
+  rowIndex            Int
+  sourceFileName      String?
+  createdAt           DateTime        @default(now())
+
+  @@index([month, orderNo])
+  @@index([importBatchId, rowIndex])
+  @@index([financeOrderId])
+  @@index([rawLedgerLineId])
+  @@index([month, direction, feeType])
 }
 
 model ImportBatch {
@@ -139,6 +177,7 @@ model ImportBatch {
   revertedAt              DateTime?
   financeOrders           FinanceOrder[]
   rawLedgerLines          RawLedgerLine[]
+  chargeLines             FinanceChargeLine[]
 
   @@index([month, status])
 }

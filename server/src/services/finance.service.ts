@@ -150,6 +150,10 @@ export const financeService = {
 
   async updateParameterRule(ruleKey: string, payload: { valueJson?: string; description?: string; updatedBy?: string }) {
     await ensureDefaultParameterRules();
+    const lockedMonth = await prisma.monthClose.findFirst({ where: { status: "locked" }, orderBy: { updatedAt: "desc" } });
+    if (lockedMonth) {
+      throw new Error(`${lockedMonth.month} 已锁账，不能修改会影响财务口径的参数规则。请先由主管解锁并记录原因。`);
+    }
     const valueJson = payload.valueJson ?? "";
     try {
       JSON.parse(valueJson);

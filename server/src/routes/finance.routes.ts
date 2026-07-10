@@ -4,6 +4,7 @@ import { requirePermission } from "../middleware/rbac.middleware.js";
 import {
   agentRulesController,
   authContextController,
+  chargeLinesController,
   dashboardController,
   importBatchesController,
   importExcelController,
@@ -32,6 +33,7 @@ financeRoutes.put("/parameter-rules/:ruleKey", requirePermission("rules:write"),
 financeRoutes.get("/import-templates", importTemplatesController);
 financeRoutes.get("/import-batches", importBatchesController);
 financeRoutes.get("/raw-ledger-lines", rawLedgerLinesController);
+financeRoutes.get("/charge-lines", chargeLinesController);
 financeRoutes.post("/import-preview", upload.single("file"), importPreviewController);
 financeRoutes.post("/import", requirePermission("finance:import"), upload.single("file"), importExcelController);
 financeRoutes.post("/import-template", requirePermission("finance:import"), upload.single("file"), importTemplateController);

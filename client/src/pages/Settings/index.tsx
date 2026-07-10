@@ -82,6 +82,7 @@ export default function Settings() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [closeLoading, setCloseLoading] = useState(false);
   const [closeNote, setCloseNote] = useState("");
+  const [logFilters, setLogFilters] = useState({ entityType: "", entityId: "", action: "", operator: "" });
   const [savingRuleKey, setSavingRuleKey] = useState<string | null>(null);
   const [rollingBackId, setRollingBackId] = useState<number | null>(null);
   const [selectedBatch, setSelectedBatch] = useState<ImportBatch | null>(null);
@@ -165,14 +166,20 @@ export default function Settings() {
   const loadActionLogs = useCallback(async () => {
     setLogsLoading(true);
     try {
-      const res = await getActionLogs({ month: selectedMonth });
+      const res = await getActionLogs({
+        month: selectedMonth,
+        entityType: logFilters.entityType || undefined,
+        entityId: logFilters.entityId || undefined,
+        action: logFilters.action || undefined,
+        operator: logFilters.operator || undefined
+      });
       setActionLogs(res.data.rows ?? []);
     } catch {
       message.error("操作审计日志加载失败，请确认后端服务可用");
     } finally {
       setLogsLoading(false);
     }
-  }, [selectedMonth]);
+  }, [logFilters, selectedMonth]);
 
   useEffect(() => {
     loadAuth().catch(() => message.error("角色权限加载失败"));
@@ -666,6 +673,37 @@ export default function Settings() {
             message="关键财务动作会写入数据库审计日志"
             description="当前已记录 Excel 导入、批次回滚、锁账/解锁、确认单生成、发送签名、员工签名、主管确认、风险复核和提成确认等操作。"
           />
+          <Space wrap style={{ marginBottom: 12 }}>
+            <Input
+              allowClear
+              style={{ width: 180 }}
+              placeholder="动作，如 import"
+              value={logFilters.action}
+              onChange={(event) => setLogFilters((current) => ({ ...current, action: event.target.value }))}
+            />
+            <Input
+              allowClear
+              style={{ width: 180 }}
+              placeholder="对象类型"
+              value={logFilters.entityType}
+              onChange={(event) => setLogFilters((current) => ({ ...current, entityType: event.target.value }))}
+            />
+            <Input
+              allowClear
+              style={{ width: 180 }}
+              placeholder="对象 ID"
+              value={logFilters.entityId}
+              onChange={(event) => setLogFilters((current) => ({ ...current, entityId: event.target.value }))}
+            />
+            <Input
+              allowClear
+              style={{ width: 180 }}
+              placeholder="操作人"
+              value={logFilters.operator}
+              onChange={(event) => setLogFilters((current) => ({ ...current, operator: event.target.value }))}
+            />
+            <Button onClick={loadActionLogs} loading={logsLoading}>按条件筛选</Button>
+          </Space>
           <Table
             rowKey="id"
             size="small"

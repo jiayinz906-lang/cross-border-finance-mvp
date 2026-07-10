@@ -81,6 +81,22 @@ export async function rawLedgerLinesController(req: Request, res: Response) {
   }));
 }
 
+export async function chargeLinesController(req: Request, res: Response) {
+  const batchId = req.query.batchId ? Number(req.query.batchId) : undefined;
+  if (batchId !== undefined && !Number.isInteger(batchId)) {
+    res.status(400).json({ message: "导入批次 ID 无效" });
+    return;
+  }
+
+  res.json(await excelService.listChargeLines({
+    month: req.query.month as string | undefined,
+    orderNo: req.query.orderNo as string | undefined,
+    direction: req.query.direction as string | undefined,
+    feeType: req.query.feeType as string | undefined,
+    batchId
+  }));
+}
+
 export async function rollbackImportBatchController(req: Request, res: Response) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {

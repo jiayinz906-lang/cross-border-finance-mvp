@@ -93,6 +93,26 @@ type ParsedRawLine = {
   parseMessage?: string;
 };
 
+type FinanceChargeDraft = {
+  rowIndex: number;
+  orderNo: string;
+  customerOrderNo?: string | null;
+  customerName?: string | null;
+  salespersonName?: string | null;
+  customerServiceName?: string | null;
+  direction: string;
+  feeType: string;
+  service?: string | null;
+  supplierName?: string | null;
+  currency: string;
+  exchangeRate: number;
+  originalAmount: number;
+  localAmount: number;
+  signedAmount: number;
+  isCompensation: boolean;
+  isServiceBusiness: boolean;
+};
+
 type ImportQualityIssue = {
   key: string;
   level: "error" | "warning" | "info";
@@ -376,6 +396,64 @@ function applyAmount(order: DraftOrder, direction: string, feeType: string, amou
   if (isPayable && target === "Delivery") order.payableDelivery += amount;
   if (isPayable && target === "Compensation") order.payableCompensation += amount;
   if (isPayable && target === "Other") order.otherCost += amount;
+}
+
+function chargeAmount(row: CanonicalRow, direction: string, feeType: string, rules: ImportRules) {
+  const convertedAmount = number(row.convertedAmount);
+  const localAmount = number(row.localAmount);
+  const originalAmount = number(row.amount);
+  const exchange = markedExchangeRate(row, rules);
+  const hasConvertedAmount = convertedAmount !== 0;
+  const rawAmount = hasConvertedAmount
+    ? convertedAmount
+    : localAmount !== 0
+      ? localAmount * exchange.rate
+      : originalAmount * exchange.rate;
+  const signedAmount = hasConvertedAmount
+    ? isPayableDirection(direction) ? -rawAmount : rawAmount
+    : isCompensationFee(feeType)
+      ? isPayableDirection(direction) ? -rawAmount : rawAmount
+      : rawAmount;
+  const aggregateAmount = hasConvertedAmount || isCompensationFee(feeType)
+    ? signedAmount
+    : Math.abs(rawAmount);
+
+  return {
+    exchange,
+    originalAmount,
+    localAmount: aggregateAmount,
+    signedAmount,
+    aggregateAmount
+  };
+}
+
+function chargeDraftFromLine(line: ParsedRawLine, rules: ImportRules): FinanceChargeDraft | null {
+  if (!line.orderNo || line.parseStatus === "skipped") return null;
+  const canonical = line.canonical;
+  const direction = text(canonical.direction);
+  const feeType = text(canonical.feeType);
+  const service = text(canonical.service) || null;
+  const amounts = chargeAmount(canonical, direction, feeType, rules);
+
+  return {
+    rowIndex: line.rowIndex,
+    orderNo: line.orderNo,
+    customerOrderNo: line.customerOrderNo ?? (text(canonical.customerOrderNo) || null),
+    customerName: text(canonical.customerName) || null,
+    salespersonName: text(canonical.salespersonName) || null,
+    customerServiceName: text(canonical.customerServiceName) || null,
+    direction,
+    feeType,
+    service,
+    supplierName: text(canonical.supplier) || null,
+    currency: amounts.exchange.rate === 1 ? "CNY" : "CNY",
+    exchangeRate: amounts.exchange.rate,
+    originalAmount: amounts.originalAmount,
+    localAmount: amounts.localAmount,
+    signedAmount: amounts.signedAmount,
+    isCompensation: isCompensationFee(feeType),
+    isServiceBusiness: isServiceBusiness(service ?? "", feeType, rules)
+  };
 }
 
 function makeDraft(row: CanonicalRow, rules: ImportRules): DraftOrder {
@@ -687,6 +765,143 @@ function buildQualityReport(input: { orders: DraftOrder[]; rawLines: ParsedRawLi
   };
 }
 
+function buildChargeLineSummary(rawLines: ParsedRawLine[], rules: ImportRules) {
+  const chargeLines = rawLines
+    .map((line) => chargeDraftFromLine(line, rules))
+    .filter(Boolean) as FinanceChargeDraft[];
+  const receivableLines = chargeLines.filter((line) => isReceivableDirection(line.direction));
+  const payableLines = chargeLines.filter((line) => isPayableDirection(line.direction));
+  const compensationLines = chargeLines.filter((line) => line.isCompensation);
+  const negativeLines = chargeLines.filter((line) => line.signedAmount < 0);
+
+  return {
+    totalLines: chargeLines.length,
+    receivableLineCount: receivableLines.length,
+    payableLineCount: payableLines.length,
+    compensationLineCount: compensationLines.length,
+    negativeAmountCount: negativeLines.length,
+    serviceLineCount: chargeLines.filter((line) => line.isServiceBusiness).length,
+    totalReceivable: receivableLines.reduce((sum, line) => sum + line.localAmount, 0),
+    totalPayable: payableLines.reduce((sum, line) => sum + line.localAmount, 0),
+    totalCompensation: compensationLines.reduce((sum, line) => sum + line.signedAmount, 0),
+    totalSignedAmount: chargeLines.reduce((sum, line) => sum + line.signedAmount, 0),
+    feeTypeSummary: Array.from(chargeLines.reduce((map, line) => {
+      const item = map.get(line.feeType) ?? { feeType: line.feeType, count: 0, amount: 0 };
+      item.count += 1;
+      item.amount += line.localAmount;
+      map.set(line.feeType, item);
+      return map;
+    }, new Map<string, { feeType: string; count: number; amount: number }>()).values())
+  };
+}
+
+function buildImportAuditReport(parsed: {
+  fileName: string;
+  sheetName: string;
+  month: string;
+  importedRows: number;
+  importedOrders: number;
+  logisticsOrders: number;
+  serviceOrders: number;
+  totalReceivable: number;
+  totalPayable: number;
+  totalGrossProfit: number;
+  grossProfitRate: number | null;
+  audit: ReturnType<typeof importAudit>;
+  qualityReport: ReturnType<typeof buildQualityReport>;
+  rawLines: ParsedRawLine[];
+  rules: ImportRules;
+}) {
+  const chargeLineSummary = buildChargeLineSummary(parsed.rawLines, parsed.rules);
+  const blockingIssues = parsed.qualityReport.issues.filter((item) => item.level === "error");
+  const warningIssues = parsed.qualityReport.issues.filter((item) => item.level === "warning");
+  const infoIssues = parsed.qualityReport.issues.filter((item) => item.level === "info");
+
+  return {
+    auditSummary: {
+      fileName: parsed.fileName,
+      sheetName: parsed.sheetName,
+      month: parsed.month,
+      importedRows: parsed.importedRows,
+      importedOrders: parsed.importedOrders,
+      logisticsOrders: parsed.logisticsOrders,
+      serviceOrders: parsed.serviceOrders,
+      totalReceivable: parsed.totalReceivable,
+      totalPayable: parsed.totalPayable,
+      totalGrossProfit: parsed.totalGrossProfit,
+      grossProfitRate: parsed.grossProfitRate,
+      generatedAt: new Date().toISOString(),
+      status: blockingIssues.length ? "blocked" : "passed"
+    },
+    chargeLineSummary,
+    blockingIssues,
+    warningIssues,
+    infoIssues,
+    reconciliation: {
+      orderReceivable: parsed.totalReceivable,
+      chargeReceivable: chargeLineSummary.totalReceivable,
+      receivableDifference: parsed.totalReceivable - chargeLineSummary.totalReceivable,
+      orderPayable: parsed.totalPayable,
+      chargePayable: chargeLineSummary.totalPayable,
+      payableDifference: parsed.totalPayable - chargeLineSummary.totalPayable,
+      source: "FinanceOrder 聚合与 FinanceChargeLine 费用明细账同源计算"
+    }
+  };
+}
+
+async function writeChargeLinesForBatch(input: {
+  batchId: number;
+  month: string;
+  fileName: string;
+  rawLines: ParsedRawLine[];
+  rules: ImportRules;
+}) {
+  const rawRows = await prisma.rawLedgerLine.findMany({
+    where: { importBatchId: input.batchId },
+    select: { id: true, rowIndex: true }
+  });
+  const rawIdByRow = new Map(rawRows.map((row) => [row.rowIndex, row.id]));
+  const orders = await prisma.financeOrder.findMany({
+    where: { importBatchId: input.batchId },
+    select: { id: true, orderNo: true }
+  });
+  const orderIdByNo = new Map(orders.map((order) => [order.orderNo, order.id]));
+  const drafts = input.rawLines
+    .map((line) => chargeDraftFromLine(line, input.rules))
+    .filter(Boolean) as FinanceChargeDraft[];
+
+  if (!drafts.length) return 0;
+
+  await prisma.financeChargeLine.createMany({
+    data: drafts.map((line) => ({
+      importBatchId: input.batchId,
+      financeOrderId: orderIdByNo.get(line.orderNo),
+      rawLedgerLineId: rawIdByRow.get(line.rowIndex),
+      month: input.month,
+      orderNo: line.orderNo,
+      customerOrderNo: line.customerOrderNo,
+      customerName: line.customerName,
+      salespersonName: line.salespersonName,
+      customerServiceName: line.customerServiceName,
+      direction: line.direction,
+      feeType: line.feeType,
+      service: line.service,
+      supplierName: line.supplierName,
+      currency: line.currency,
+      exchangeRate: line.exchangeRate,
+      originalAmount: line.originalAmount,
+      localAmount: line.localAmount,
+      signedAmount: line.signedAmount,
+      isCompensation: line.isCompensation,
+      isServiceBusiness: line.isServiceBusiness,
+      rowIndex: line.rowIndex,
+      sourceFileName: input.fileName
+    }))
+  });
+
+  return drafts.length;
+}
+
 async function parseWorkbook(buffer: Buffer, originalName: string) {
   const rules = await loadImportRules();
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
@@ -716,21 +931,7 @@ async function parseWorkbook(buffer: Buffer, originalName: string) {
     const draft = orders.get(orderNo) ?? makeDraft(row, rules);
     const feeType = text(row.feeType);
     const direction = text(row.direction);
-    const convertedAmount = number(row.convertedAmount);
-    const localAmount = number(row.localAmount);
-    const originalAmount = number(row.amount);
-    const exchange = markedExchangeRate(row, rules);
-    const hasConvertedAmount = convertedAmount !== 0;
-    const rawAmount = hasConvertedAmount
-      ? convertedAmount
-      : localAmount !== 0
-        ? localAmount * exchange.rate
-        : originalAmount * exchange.rate;
-    const amount = hasConvertedAmount
-      ? isPayableDirection(direction) ? -rawAmount : rawAmount
-      : isCompensationFee(feeType)
-        ? isPayableDirection(direction) ? -rawAmount : rawAmount
-        : Math.abs(rawAmount);
+    const amount = chargeAmount(row, direction, feeType, rules).aggregateAmount;
     draft.supplierName = draft.supplierName || text(row.supplier) || undefined;
     draft.customerOrderNo = text(row.customerOrderNo) || draft.customerOrderNo || text(row.customerName) || orderNo;
     draft.isServiceBusiness = draft.isServiceBusiness || isServiceBusiness(text(row.service), feeType, rules);
@@ -947,6 +1148,7 @@ export const excelService = {
 
   async previewWorkbook(buffer: Buffer, originalName: string) {
     const parsed = await parseWorkbook(buffer, originalName);
+    const auditReport = buildImportAuditReport(parsed);
     const sampleOrders = parsed.orders.slice(0, 5).map((order) => ({
       orderNo: order.orderNo,
       customerOrderNo: order.customerOrderNo,
@@ -978,12 +1180,17 @@ export const excelService = {
       sampleOrders,
       audit: parsed.audit,
       qualityReport: parsed.qualityReport,
+      ...auditReport,
       writeMode: "确认后将保留每一行原始台账，并按月份重建订单、应收应付、毛利、风险和提成派生数据。"
     };
   },
 
   async importWorkbook(buffer: Buffer, originalName: string) {
     const parsed = await parseWorkbook(buffer, originalName);
+    const auditReport = buildImportAuditReport(parsed);
+    if (auditReport.blockingIssues.length) {
+      throw new Error("导入审计存在阻断项，请先修正 Excel 后重新导入。");
+    }
     await assertMonthOpen(parsed.month, "重新导入 Excel");
     const batchNumber = batchNo(parsed.month);
 
@@ -1009,7 +1216,8 @@ export const excelService = {
           totalGrossProfit: parsed.totalGrossProfit,
           grossProfitRate: parsed.grossProfitRate,
           qualityReport: parsed.qualityReport,
-          activeRules: parsed.rules
+          activeRules: parsed.rules,
+          ...auditReport
         })
       }
     });
@@ -1020,6 +1228,20 @@ export const excelService = {
     await prisma.riskRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
     await prisma.commissionRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
     await prisma.financeSummary.deleteMany({ where: { month: parsed.month } });
+    await prisma.confirmationDocument.updateMany({
+      where: { month: parsed.month, documentStatus: { not: "voided" } },
+      data: {
+        documentStatus: "voided",
+        signatureStatus: "pending",
+        supervisorStatus: "pending",
+        signatureToken: null,
+        signatureUrl: null,
+        signatureTokenExpiresAt: null,
+        voidReason: "Excel 重新导入并重建月度数据，旧确认单自动作废",
+        voidedAt: new Date()
+      }
+    });
+    await prisma.financeChargeLine.deleteMany({ where: { month: parsed.month } });
     await prisma.financeOrder.deleteMany({ where: { month: parsed.month } });
     await prisma.importBatch.updateMany({
       where: { month: parsed.month, id: { not: batch.id }, status: "active" },
@@ -1049,6 +1271,14 @@ export const excelService = {
         }))
       });
     }
+
+    const chargeLineCount = await writeChargeLinesForBatch({
+      batchId: batch.id,
+      month: parsed.month,
+      fileName: parsed.fileName,
+      rawLines: parsed.rawLines,
+      rules: parsed.rules
+    });
 
     const logisticsProfitBySalesperson = new Map<string, number>();
     for (const order of createdOrders) {
@@ -1080,7 +1310,11 @@ export const excelService = {
         serviceOrders: createdOrders.filter((order) => order.isServiceBusiness).length,
         totalReceivable: parsed.totalReceivable,
         totalPayable: parsed.totalPayable,
-        totalGrossProfit: parsed.totalGrossProfit
+        totalGrossProfit: parsed.totalGrossProfit,
+        chargeLineCount,
+        auditSummary: auditReport.auditSummary,
+        chargeLineSummary: auditReport.chargeLineSummary,
+        warningIssues: auditReport.warningIssues
       }
     });
 
@@ -1095,7 +1329,9 @@ export const excelService = {
       serviceOrders: createdOrders.filter((order) => order.isServiceBusiness).length,
       logisticsOrders: createdOrders.filter((order) => !order.isServiceBusiness).length,
       audit: parsed.audit,
-      qualityReport: parsed.qualityReport
+      qualityReport: parsed.qualityReport,
+      chargeLineCount,
+      ...auditReport
     };
   },
 
@@ -1149,6 +1385,60 @@ export const excelService = {
     };
   },
 
+  async listChargeLines(params: { month?: string; orderNo?: string; batchId?: number; direction?: string; feeType?: string }) {
+    const activeBatch = !params.batchId && params.month
+      ? await prisma.importBatch.findFirst({
+        where: { month: params.month, status: "active" },
+        orderBy: { id: "desc" }
+      })
+      : null;
+    const effectiveBatchId = params.batchId ?? activeBatch?.id;
+
+    if (!params.batchId && params.month && !effectiveBatchId) {
+      return { rows: [] };
+    }
+
+    const rows = await prisma.financeChargeLine.findMany({
+      where: {
+        month: params.month,
+        orderNo: params.orderNo,
+        importBatchId: effectiveBatchId,
+        direction: params.direction ? { contains: params.direction } : undefined,
+        feeType: params.feeType ? { contains: params.feeType } : undefined
+      },
+      orderBy: [{ rowIndex: "asc" }, { id: "asc" }],
+      take: 1000
+    });
+
+    return {
+      rows: rows.map((row) => ({
+        id: row.id,
+        importBatchId: row.importBatchId,
+        financeOrderId: row.financeOrderId,
+        rawLedgerLineId: row.rawLedgerLineId,
+        month: row.month,
+        orderNo: row.orderNo,
+        customerOrderNo: row.customerOrderNo,
+        customerName: row.customerName,
+        salespersonName: row.salespersonName,
+        customerServiceName: row.customerServiceName,
+        direction: row.direction,
+        feeType: row.feeType,
+        service: row.service,
+        supplierName: row.supplierName,
+        currency: row.currency,
+        exchangeRate: row.exchangeRate,
+        originalAmount: row.originalAmount,
+        localAmount: row.localAmount,
+        signedAmount: row.signedAmount,
+        isCompensation: row.isCompensation,
+        isServiceBusiness: row.isServiceBusiness,
+        rowIndex: row.rowIndex,
+        sourceFileName: row.sourceFileName
+      }))
+    };
+  },
+
   async rollbackImportBatch(id: number) {
     const batch = await prisma.importBatch.findUnique({ where: { id } });
     if (!batch) throw new Error("导入批次不存在。");
@@ -1160,6 +1450,7 @@ export const excelService = {
     await prisma.costAdjustment.deleteMany({ where: { financeOrder: { importBatchId: id } } });
     await prisma.riskRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
     await prisma.commissionRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
+    await prisma.financeChargeLine.deleteMany({ where: { importBatchId: id } });
     await prisma.financeOrder.deleteMany({ where: { importBatchId: id } });
     await prisma.importBatch.update({ where: { id }, data: { status: "reverted", revertedAt: new Date() } });
     await rebuildFinanceSummary(batch.month);
