@@ -80,8 +80,38 @@ export function sendSignatureLink(id: number) {
   return request.post(`/workflow/documents/${id}/send-signature`);
 }
 
-export function signDocumentByToken(token: string) {
-  return request.post(`/workflow/signature/${encodeURIComponent(token)}/sign`);
+export type PublicSignatureDocument = {
+  document: {
+    id: number;
+    month: string;
+    ownerName: string;
+    version: number;
+    documentType: string;
+    orderCount: number;
+    grossProfit: number;
+    commissionAmount: number;
+    expiresAt: string;
+  };
+  payload: {
+    title: string;
+    documentCode: string;
+    monthLabel: string;
+    generatedAt: string;
+    summary: Record<string, unknown>;
+    details: Array<Record<string, unknown>>;
+    statement: string;
+  };
+};
+
+export function getPublicSignatureDocument(token: string) {
+  return request.get<PublicSignatureDocument>(`/workflow/signature/${encodeURIComponent(token)}`);
+}
+
+export function signDocumentByToken(token: string, signedName: string) {
+  return request.post(`/workflow/signature/${encodeURIComponent(token)}/sign`, {
+    signedName,
+    acceptedStatement: true
+  });
 }
 
 export function supervisorConfirmDocument(id: number, adjustReason?: string) {

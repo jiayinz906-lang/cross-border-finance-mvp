@@ -15,6 +15,7 @@ import {
   markRiskReviewedController,
   monthCloseStatusController,
   monthStatusController,
+  publicSignatureDocumentController,
   sendSignatureLinkController,
   signByTokenController,
   supervisorConfirmController,
@@ -30,6 +31,7 @@ workflowRoutes.post("/documents/logistics/generate", requirePermission("confirma
 workflowRoutes.post("/documents/service/generate", requirePermission("confirmation:approve"), generateServiceDocumentsController);
 workflowRoutes.post("/documents/operator/generate", requirePermission("confirmation:approve"), generateOperatorDocumentsController);
 workflowRoutes.post("/documents/:id/send-signature", requirePermission("confirmation:approve"), sendSignatureLinkController);
+workflowRoutes.get("/signature/:token", publicSignatureDocumentController);
 workflowRoutes.post("/signature/:token/sign", signByTokenController);
 workflowRoutes.post("/documents/:id/supervisor-confirm", requirePermission("confirmation:approve"), supervisorConfirmController);
 workflowRoutes.post("/documents/:id/void", requirePermission("confirmation:approve"), voidDocumentController);

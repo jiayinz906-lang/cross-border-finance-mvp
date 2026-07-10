@@ -21,6 +21,7 @@ import {
   type MonthCloseStatus
 } from "../../api/workflow.api";
 import { PageHeader } from "../../components/PageHeader";
+import { MonthWorkflowStatus } from "../../components/MonthWorkflowStatus";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import { apiBaseUrl } from "../../api/request";
 import type { AuthContext, ImportBatch, ImportTemplate, ParameterRule, ReadinessStatus } from "../../types/finance.types";
@@ -472,6 +473,8 @@ export default function Settings() {
       />
 
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
+        <MonthWorkflowStatus month={selectedMonth} />
+
         <Card title="登录与角色权限">
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Space wrap>

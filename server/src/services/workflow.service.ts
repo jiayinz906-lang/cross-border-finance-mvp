@@ -12,6 +12,8 @@ type SignatureEvidenceInput = {
   userAgent?: string;
   role?: string;
   action?: string;
+  signedName?: string;
+  acceptedStatement?: boolean;
 };
 
 function monthOrDefault(month?: string) {
@@ -821,6 +823,40 @@ export const workflowService = {
     return document;
   },
 
+  async publicSignatureDocument(signatureToken: string) {
+    const current = await prisma.confirmationDocument.findUnique({ where: { signatureToken } });
+    if (!current || current.documentStatus === "voided") {
+      throw new Error("Signature link is invalid. Ask the supervisor to resend it.");
+    }
+    if (!current.signatureTokenExpiresAt || current.signatureTokenExpiresAt < new Date()) {
+      throw new Error("Signature link has expired. Ask the supervisor to resend it.");
+    }
+
+    const payload = safeJson<Record<string, any>>(current.payloadJson, {});
+    return {
+      document: {
+        id: current.id,
+        month: current.month,
+        ownerName: current.ownerName,
+        version: current.version,
+        documentType: current.documentType,
+        orderCount: current.orderCount,
+        grossProfit: current.grossProfit,
+        commissionAmount: current.commissionAmount,
+        expiresAt: current.signatureTokenExpiresAt.toISOString()
+      },
+      payload: {
+        title: payload.title ?? "个人确认单",
+        documentCode: payload.documentCode ?? `DOC-${current.id}`,
+        monthLabel: payload.monthLabel ?? current.month,
+        generatedAt: payload.generatedAt ?? current.createdAt.toISOString(),
+        summary: payload.summary ?? {},
+        details: Array.isArray(payload.details) ? payload.details : [],
+        statement: payload.statement ?? "本人已核对确认单内容。"
+      }
+    };
+  },
+
   async signByToken(signatureToken: string, evidence: SignatureEvidenceInput = {}) {
     const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { signatureToken } });
     if (current.documentStatus === "voided") {
@@ -828,6 +864,12 @@ export const workflowService = {
     }
     if (!current.signatureTokenExpiresAt || current.signatureTokenExpiresAt < new Date()) {
       throw new Error("Signature link has expired. Ask supervisor to resend it.");
+    }
+    if (!evidence.acceptedStatement) {
+      throw new Error("You must confirm the statement before signing.");
+    }
+    if (!evidence.signedName || evidence.signedName !== current.ownerName) {
+      throw new Error("The signature name must match the confirmation document owner.");
     }
 
     const signedAt = new Date();

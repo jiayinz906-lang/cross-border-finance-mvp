@@ -13,7 +13,6 @@ import { useNavigate } from "react-router-dom";
 import { getFinanceDashboard, getFinanceMonths } from "../../api/finance.api";
 import { monthlyReportExportUrl } from "../../api/workflow.api";
 import { ImportButton } from "../../components/ImportButton";
-import { MonthWorkflowStatus } from "../../components/MonthWorkflowStatus";
 import { TemplateImportButton } from "../../components/TemplateImportButton";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { BusinessSummary, DashboardData, MonthlyTrend } from "../../types/finance.types";
@@ -293,8 +292,6 @@ export default function Dashboard() {
         </div>
         <div className="overview-refresh"><ReloadOutlined /> 最后更新：导入或切换月份后实时刷新</div>
       </header>
-
-      <MonthWorkflowStatus month={selectedMonth} />
 
       <section className="overview-kpi-grid">
         {kpis.map((item) => <MetricCard key={item.title} item={item} />)}

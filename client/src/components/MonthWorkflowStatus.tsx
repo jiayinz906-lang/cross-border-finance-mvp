@@ -4,9 +4,11 @@ import { getMonthWorkflowStatus, type MonthWorkflowStatus as MonthWorkflowStatus
 
 const labels: Record<string, string> = {
   excel_imported: "Excel导入",
+  import_audit_passed: "导入审计",
   risk_review_pending: "风险复核",
   service_confirm_pending: "注册确认",
   commission_signature_pending: "提成签名",
+  operator_signature_pending: "操作员签名",
   receivable_payable_pending: "应收应付",
   cfo_ready: "CFO就绪",
   locked: "锁账"

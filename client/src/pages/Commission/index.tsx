@@ -180,9 +180,10 @@ export default function Commission() {
 
   const handleSendDocument = async (row: ConfirmationDocument) => {
     const res = await sendSignatureLink(row.id);
-    const url = `${location.origin}${res.data.signatureUrl ?? ""}`;
+    const route = String(res.data.signatureUrl ?? "").startsWith("/") ? res.data.signatureUrl : `/${res.data.signatureUrl ?? ""}`;
+    const url = `${window.location.origin}${window.location.pathname}#${route}`;
     await navigator.clipboard?.writeText(url);
-    message.success(`${row.ownerName} 签名链接已生成并复制`);
+    message.success(`${row.ownerName} 的个人确认单链接已生成并复制，可直接发送签名`);
     await loadDocuments();
   };
 
@@ -363,8 +364,8 @@ export default function Commission() {
     { title: "销售代表", dataIndex: "ownerName", fixed: "left", width: 120 },
     { title: "月份", dataIndex: "month", width: 100 },
     { title: "订单数", dataIndex: "orderCount", width: 90 },
-    { title: "确认毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
-    { title: "确认提成", dataIndex: "commissionAmount", align: "right", render: toPlainMoney },
+    { title: "确认毛利", dataIndex: "grossProfit", align: "right", width: 140, className: "commission-money-cell", render: toPlainMoney },
+    { title: "确认提成", dataIndex: "commissionAmount", align: "right", width: 140, className: "commission-money-cell", render: toPlainMoney },
     { title: "单据状态", dataIndex: "documentStatus", width: 100, render: (value) => statusTag(value, "已生成") },
     { title: "发送状态", dataIndex: "sendStatus", width: 100, render: (value) => statusTag(value, "已发送", "未发送") },
     { title: "签名状态", dataIndex: "signatureStatus", width: 100, render: (value) => statusTag(value, "已签名", "待签名") },
@@ -373,7 +374,7 @@ export default function Commission() {
       title: "操作",
       key: "actions",
       fixed: "right",
-      width: 250,
+      width: 270,
       render: (_, row) => (
         <Space size={6}>
           <Button size="small" onClick={() => handleSendDocument(row)}>发送链接</Button>
@@ -459,8 +460,15 @@ export default function Commission() {
         title={`${selectedMonth} 个人确认单数据库记录`}
         footer={<Button type="primary" onClick={() => setDocumentsOpen(false)}>关闭</Button>}
         width={1180}
+        className="commission-documents-modal"
         onCancel={() => setDocumentsOpen(false)}
       >
+        <div className="commission-documents-intro">
+          <div><span>确认单数量</span><strong>{documents.length}</strong></div>
+          <div><span>已发送</span><strong>{documents.filter((row) => row.sendStatus === "sent").length}</strong></div>
+          <div><span>已签名</span><strong>{documents.filter((row) => row.signatureStatus === "signed").length}</strong></div>
+          <div><span>待主管确认</span><strong>{documents.filter((row) => row.supervisorStatus !== "confirmed").length}</strong></div>
+        </div>
         <Table
           rowKey="id"
           loading={documentsLoading}
@@ -468,7 +476,8 @@ export default function Commission() {
           pagination={false}
           dataSource={documents}
           columns={documentColumns}
-          scroll={{ x: 1100 }}
+          className="commission-documents-table"
+          scroll={{ x: 1320 }}
         />
       </Modal>
     </div>

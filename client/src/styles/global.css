@@ -1419,6 +1419,77 @@ body {
   border-bottom: 1px solid #edf1f7;
 }
 
+.commission-documents-modal .ant-modal-content {
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.commission-documents-modal .ant-modal-header {
+  padding: 20px 24px 14px;
+  margin-bottom: 0;
+  border-bottom: 1px solid #e9eef6;
+}
+
+.commission-documents-modal .ant-modal-title {
+  color: #071737;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.commission-documents-modal .ant-modal-body {
+  padding: 18px 24px;
+}
+
+.commission-documents-intro {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.commission-documents-intro > div {
+  min-height: 68px;
+  padding: 12px 14px;
+  border: 1px solid #e4ebf5;
+  border-radius: 6px;
+  background: #f8fbff;
+}
+
+.commission-documents-intro span {
+  display: block;
+  color: #74839d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.commission-documents-intro strong {
+  display: block;
+  margin-top: 6px;
+  color: #0a1b3c;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.commission-documents-table .ant-table-thead > tr > th {
+  white-space: nowrap;
+  background: #f3f6fb;
+  color: #71809a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.commission-documents-table .ant-table-tbody > tr > td {
+  white-space: nowrap;
+  color: #1d2d4b;
+  font-weight: 700;
+}
+
+.commission-documents-table .commission-money-cell {
+  color: #071737;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
 .service-order-cell {
   display: flex;
   min-width: 0;
@@ -1595,6 +1666,61 @@ body {
 
 .public-signature-card .ant-card-body {
   padding: 32px;
+}
+
+.public-signature-card {
+  width: min(1040px, 100%);
+}
+
+.public-signature-heading .ant-typography {
+  margin: 10px 0 6px;
+  color: #071737;
+}
+
+.public-signature-summary .ant-descriptions-item-label {
+  color: #6e7d97;
+  font-weight: 800;
+}
+
+.public-signature-summary .ant-descriptions-item-content {
+  color: #071737;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.public-signature-details h4,
+.public-signature-statement h4 {
+  margin: 0 0 10px;
+  color: #071737;
+}
+
+.public-signature-details .ant-table-thead > tr > th {
+  background: #f3f6fb;
+  color: #71809a;
+  font-weight: 850;
+}
+
+.public-signature-statement {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid #dfe9f7;
+  border-radius: 6px;
+  background: #f8fbff;
+}
+
+@media (max-width: 760px) {
+  .commission-documents-intro {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .public-signature-page {
+    padding: 12px;
+  }
+
+  .public-signature-card .ant-card-body {
+    padding: 20px 16px;
+  }
 }
 
 .operator-board {

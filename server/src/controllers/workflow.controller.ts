@@ -28,12 +28,18 @@ export async function sendSignatureLinkController(req: Request, res: Response) {
   res.json(await workflowService.sendSignatureLink(Number(req.params.id)));
 }
 
+export async function publicSignatureDocumentController(req: Request, res: Response) {
+  res.json(await workflowService.publicSignatureDocument(req.params.token));
+}
+
 function evidence(req: Request, action: string) {
   return {
     action,
     ip: req.ip || req.socket.remoteAddress,
     userAgent: req.header("user-agent"),
-    role: currentRole(req)
+    role: currentRole(req),
+    signedName: typeof req.body?.signedName === "string" ? req.body.signedName.trim() : undefined,
+    acceptedStatement: req.body?.acceptedStatement === true
   };
 }
 
