@@ -1108,13 +1108,25 @@ export const excelService = {
   },
 
   async listRawLedgerLines(params: { month?: string; orderNo?: string; batchId?: number }) {
+    const activeBatch = !params.batchId && params.month
+      ? await prisma.importBatch.findFirst({
+        where: { month: params.month, status: "active" },
+        orderBy: { id: "desc" }
+      })
+      : null;
+    const effectiveBatchId = params.batchId ?? activeBatch?.id;
+
+    if (!params.batchId && params.month && !effectiveBatchId) {
+      return { rows: [] };
+    }
+
     const rows = await prisma.rawLedgerLine.findMany({
       where: {
         month: params.month,
         orderNo: params.orderNo,
-        importBatchId: params.batchId
+        importBatchId: effectiveBatchId
       },
-      orderBy: [{ importBatchId: "desc" }, { rowIndex: "asc" }],
+      orderBy: [{ rowIndex: "asc" }],
       take: 500
     });
 
