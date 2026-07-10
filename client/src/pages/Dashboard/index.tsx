@@ -245,7 +245,8 @@ export default function Dashboard() {
   const summary = data?.summary;
   const businessRows = data?.businessSummary ?? [];
   const rankingRows: RankingRow[] = (data?.salespersonSummary ?? []).slice(0, 5);
-  const supplierRows = (data?.supplierPayableSummary ?? []).slice(0, 3);
+  const allSupplierRows = data?.supplierPayableSummary ?? [];
+  const supplierRows = allSupplierRows.slice(0, 3);
   const customerRows = data?.customerProfitSummary ?? [];
   const topReceivableCustomer = [...customerRows].sort((a, b) => b.receivable - a.receivable)[0];
   const topProfitCustomer = customerRows[0];
@@ -261,7 +262,9 @@ export default function Dashboard() {
   const logisticsCustomerProfit = customerRows.reduce((sum, item) => sum + item.grossProfit, 0);
   const topCustomerProfit = topProfitCustomer?.grossProfit ?? 0;
   const otherCustomerProfit = Math.max(logisticsCustomerProfit - topCustomerProfit, 0);
-  const unassignedSupplierPayable = supplierRows.find((item) => item.supplierName === "未指定供应商")?.payable ?? 0;
+  const supplierPayableTotal = allSupplierRows.reduce((sum, item) => sum + item.payable, 0);
+  const unassignedSupplierPayable = allSupplierRows.find((item) => item.supplierName === "未指定供应商")?.payable ?? 0;
+  const averageLogisticsPayable = supplierPayableTotal / Math.max(data?.logisticsOrderCount ?? data?.orderCount ?? 1, 1);
 
   const kpis: Kpi[] = [
     { title: "总应收", value: toMoney(totalReceivable), color: "#4c7ee8", icon: "¥", mom: pct(data?.comparison?.momReceivable), yoy: pct(data?.comparison?.yoyReceivable) },
@@ -339,7 +342,7 @@ export default function Dashboard() {
           />
           <div className="supplier-foot">
             <span>未指定供应商应付 <b>{toMoney(unassignedSupplierPayable)}</b></span>
-            <span>单票平均应付成本 <b>{toMoney(totalPayable / Math.max(data?.orderCount ?? 1, 1))}</b></span>
+            <span>单票平均应付成本 <b>{toMoney(averageLogisticsPayable)}</b></span>
           </div>
         </Card>
       </section>

@@ -2,6 +2,7 @@ import { agencyRuntimeProfile } from "../config/agent.registry.js";
 import { selfHostedStack } from "../config/selfhosted-stack.js";
 import { prisma } from "../prisma/client.js";
 import { financeRepository } from "../repositories/finance.repository.js";
+import { payableService } from "./payable.service.js";
 
 const defaultParameterRules = [
   {
@@ -201,7 +202,8 @@ export const financeService = {
 
     const logisticsOrders = orders.filter((order) => !order.isServiceBusiness);
     const serviceOrders = orders.filter((order) => order.isServiceBusiness);
-    const totalPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
+    const payableDashboard = await payableService.listPayables(selectedMonth);
+    const logisticsPayableTotal = payableDashboard.totals.totalPayable;
     const businessMap = new Map<string, {
       businessType: string;
       orderCount: number;
@@ -218,14 +220,6 @@ export const financeService = {
       commission: number;
       highRiskOrderCount: number;
       signatureStatus: string;
-    }>();
-    const supplierMap = new Map<string, {
-      supplierName: string;
-      orderCount: number;
-      payable: number;
-      paid: number;
-      outstanding: number;
-      ratio: number;
     }>();
     const customerMap = new Map<string, {
       customerName: string;
@@ -297,21 +291,6 @@ export const financeService = {
         customer.grossProfitRate = safeRate(customer.grossProfit, customer.receivable);
         customerMap.set(customerName, customer);
       }
-
-      const supplierName = order.supplierName || "未指定供应商";
-      const supplier = supplierMap.get(supplierName) ?? {
-        supplierName,
-        orderCount: 0,
-        payable: 0,
-        paid: 0,
-        outstanding: 0,
-        ratio: 0
-      };
-      supplier.orderCount += 1;
-      supplier.payable += order.adjustedPayable;
-      supplier.paid += order.paidAmount;
-      supplier.outstanding += Math.max(0, order.adjustedPayable - order.paidAmount);
-      supplierMap.set(supplierName, supplier);
     }
 
     for (const salesperson of salespersonMap.values()) {
@@ -378,10 +357,10 @@ export const financeService = {
       salespersonSummary: Array.from(salespersonMap.values())
         .sort((a, b) => b.grossProfit - a.grossProfit)
         .map((item, index) => ({ ...item, rank: index + 1 })),
-      supplierPayableSummary: Array.from(supplierMap.values())
+      supplierPayableSummary: payableDashboard.supplierAging
         .map((item) => ({
           ...item,
-          ratio: safeRate(item.payable, totalPayable) ?? 0
+          ratio: safeRate(item.payable, logisticsPayableTotal) ?? 0
         }))
         .sort((a, b) => b.payable - a.payable),
       customerProfitSummary,
