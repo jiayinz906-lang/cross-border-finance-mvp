@@ -100,6 +100,24 @@ export function confirmationDocumentDownloadUrl(id: number, format: "xlsx" | "pd
   return `${request.defaults.baseURL}/workflow/documents/${id}/download?format=${encodeURIComponent(format)}`;
 }
 
+export async function downloadConfirmationDocumentFile(id: number, format: "xlsx" | "pdf" | "png" = "xlsx") {
+  const response = await request.get(`/workflow/documents/${id}/download`, {
+    params: { format },
+    responseType: "blob"
+  });
+  const disposition = response.headers["content-disposition"] as string | undefined;
+  const matched = disposition?.match(/filename="?(?:UTF-8'')?([^";]+)"?/i);
+  const fileName = matched?.[1] ? decodeURIComponent(matched[1]) : `confirmation-${id}.${format}`;
+  const url = URL.createObjectURL(response.data);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function monthlyReportExportUrl(month = "2026-06") {
   return `${request.defaults.baseURL}/reports/monthly/export?month=${encodeURIComponent(month)}`;
 }

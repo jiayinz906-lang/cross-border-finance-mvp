@@ -3,8 +3,8 @@ import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useState } from "react";
 import {
   type ConfirmationDocument,
-  confirmationDocumentDownloadUrl,
   createExportJob,
+  downloadConfirmationDocumentFile,
   exportDownloadUrl,
   generateLogisticsDocuments,
   getDocuments,
@@ -124,8 +124,8 @@ export default function SignatureConfirm() {
     window.open(exportDownloadUrl(res.data.id), "_blank");
   };
 
-  const handleDownload = async (row: ConfirmationDocument, fileFormat: "pdf" | "png") => {
-    window.open(confirmationDocumentDownloadUrl(row.id, fileFormat), "_blank");
+  const handleDownload = async (row: ConfirmationDocument, fileFormat: "xlsx" | "pdf" | "png") => {
+    await downloadConfirmationDocumentFile(row.id, fileFormat);
   };
 
   const handleSend = async (row: ConfirmationDocument) => {
@@ -181,7 +181,7 @@ export default function SignatureConfirm() {
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看个人确认单</Button>
           <Button size="small" onClick={() => handleSend(row)}>发送签名链接</Button>
           <Button size="small" disabled={!row.signatureUrl} onClick={() => navigator.clipboard?.writeText(externalSignatureUrl(row.signatureUrl))}>复制链接</Button>
-          <Button size="small" onClick={() => window.open(confirmationDocumentDownloadUrl(row.id, "xlsx"), "_blank")}>下载确认单</Button>
+          <Button size="small" onClick={() => handleDownload(row, "xlsx")}>下载确认单</Button>
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>下载 PDF</Button>
           <Button size="small" onClick={() => handleDownload(row, "png")}>下载 PNG</Button>
           <Button size="small" disabled={row.supervisorStatus === "confirmed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
