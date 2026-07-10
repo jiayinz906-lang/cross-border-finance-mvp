@@ -2,19 +2,17 @@ import { Button, Card, Input, InputNumber, Space, Table, Tag, message } from "an
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getOperatorPerformanceAnalysis } from "../../api/analytics.api";
-import { getFinanceDashboard } from "../../api/finance.api";
+import {
+  type ConfirmationDocument,
+  downloadConfirmationDocumentFile,
+  generateOperatorDocuments,
+  getDocuments,
+  sendSignatureLink,
+  supervisorConfirmDocument,
+  voidDocument
+} from "../../api/workflow.api";
 import { useSelectedMonth } from "../../contexts/MonthContext";
-import type { DashboardData, FinanceOrder } from "../../types/finance.types";
-import { formatMoney } from "../../utils/formatMoney";
-import { formatPercent } from "../../utils/formatPercent";
-
-type MetricCard = {
-  title: string;
-  value: string;
-  accent: "blue" | "green" | "orange" | "red";
-  tag: string;
-  note: string;
-};
+import type { FinanceOrder } from "../../types/finance.types";
 
 type PerformanceCategory = "white" | "grey" | "company" | "eac" | "trademark";
 
@@ -87,8 +85,20 @@ const rules: PerformanceRule[] = [
   }
 ];
 
-function toPlainMoney(value?: number | null) {
-  return formatMoney(value).replace("CN¥", "¥").replace(/\s/g, "");
+function externalSignatureUrl(signatureUrl?: string | null) {
+  if (!signatureUrl) return "";
+  const route = signatureUrl.startsWith("/") ? signatureUrl : `/${signatureUrl}`;
+  return `${window.location.origin}${window.location.pathname}#${route}`;
+}
+
+function signedAtText(value?: string | null) {
+  return value ? value.replace("T", " ").slice(0, 19) : "-";
+}
+
+function statusTag(value: string, positiveText: string, pendingText: string) {
+  if (value === "confirmed" || value === "signed" || value === "sent") return <Tag color="green">{positiveText}</Tag>;
+  if (value === "voided") return <Tag color="red">已作废</Tag>;
+  return <Tag color="gold">{pendingText}</Tag>;
 }
 
 function classifyOrder(order: FinanceOrder): PerformanceCategory | null {
@@ -168,18 +178,18 @@ function recalculateGroup(group: OperatorGroup): OperatorGroup {
 export default function OperatorPerformance() {
   const { selectedMonth } = useSelectedMonth();
   const [operatorGroups, setOperatorGroups] = useState<OperatorGroup[]>([]);
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
   const [loading, setLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [ledgerRes, dashboardRes] = await Promise.all([
+      const [ledgerRes, documentRes] = await Promise.all([
         getOperatorPerformanceAnalysis(selectedMonth),
-        getFinanceDashboard(selectedMonth)
+        getDocuments(selectedMonth, "operator_performance")
       ]);
       setOperatorGroups(ledgerRes.data.rows ?? []);
-      setDashboard(dashboardRes.data);
+      setDocuments(documentRes.data.rows ?? []);
     } catch {
       message.error("操作员绩效数据加载失败，请确认后端服务可用。");
     } finally {
@@ -209,56 +219,46 @@ export default function OperatorPerformance() {
     })));
   };
 
-  const summary = dashboard?.summary;
+  const handleGenerateDocuments = async () => {
+    const res = await generateOperatorDocuments(selectedMonth);
+    message.success(`已生成 ${res.data.rows?.length ?? 0} 份操作员绩效确认单`);
+    await loadData();
+  };
+
+  const handleSend = async (row: ConfirmationDocument) => {
+    const res = await sendSignatureLink(row.id);
+    const url = externalSignatureUrl(res.data.signatureUrl);
+    await navigator.clipboard?.writeText(url);
+    message.success("绩效签名链接已生成并复制，可直接发送给客服代表");
+    await loadData();
+  };
+
+  const handleDownload = async (row: ConfirmationDocument, fileFormat: "xlsx" | "pdf" | "png") => {
+    await downloadConfirmationDocumentFile(row.id, fileFormat);
+  };
+
+  const handleSupervisorConfirm = async (row: ConfirmationDocument) => {
+    const adjustReason = window.prompt("如本次绩效确认涉及调整，请填写原因；无调整可直接确定：") ?? undefined;
+    await supervisorConfirmDocument(row.id, adjustReason?.trim() || undefined);
+    message.success(`${row.ownerName} 绩效单已主管确认`);
+    await loadData();
+  };
+
+  const handleVoid = async (row: ConfirmationDocument) => {
+    const voidReason = window.prompt("请输入作废/重签原因：");
+    if (!voidReason?.trim()) {
+      message.warning("作废绩效确认单必须填写原因");
+      return;
+    }
+    await voidDocument(row.id, voidReason.trim());
+    message.success(`${row.ownerName} 绩效单已作废，等待重签`);
+    await loadData();
+  };
+
   const totalPayablePerformance = useMemo(
     () => operatorGroups.reduce((sum, group) => sum + group.payablePerformance, 0),
     [operatorGroups]
   );
-
-  const metrics: MetricCard[] = useMemo(() => [
-    {
-      title: "总应收",
-      value: toPlainMoney(summary?.totalReceivable),
-      accent: "blue",
-      tag: "优化后",
-      note: "汇率缺失统一按 6.85 修正"
-    },
-    {
-      title: "调整后毛利",
-      value: toPlainMoney(summary?.totalGrossProfit),
-      accent: "green",
-      tag: formatPercent(summary?.grossProfitRate),
-      note: "可用于经营分析口径"
-    },
-    {
-      title: "物流提成",
-      value: toPlainMoney(summary?.totalCommission),
-      accent: "orange",
-      tag: "15%",
-      note: "统一按物流毛利计提"
-    },
-    {
-      title: "高风险票",
-      value: `${summary?.riskOrderCount ?? 0}票`,
-      accent: "red",
-      tag: "需复核",
-      note: "汇率、负毛利、缺应付"
-    },
-    {
-      title: "总票数",
-      value: `${dashboard?.orderCount ?? 0}`,
-      accent: "blue",
-      tag: "Excel",
-      note: "按运单口径去重"
-    },
-    {
-      title: "调整后应付",
-      value: toPlainMoney(summary?.totalPayable),
-      accent: "green",
-      tag: "含暂估",
-      note: "清关/派送缺应付补齐"
-    }
-  ], [dashboard?.orderCount, summary]);
 
   const columns: ColumnsType<PerformanceRow> = [
     {
@@ -317,35 +317,35 @@ export default function OperatorPerformance() {
     }
   ];
 
+  const documentColumns: ColumnsType<ConfirmationDocument> = [
+    { title: "客服代表", dataIndex: "ownerName", fixed: "left", width: 120 },
+    { title: "绩效票数", dataIndex: "orderCount", width: 100 },
+    { title: "绩效金额", dataIndex: "commissionAmount", align: "right", width: 120 },
+    { title: "确认单状态", dataIndex: "documentStatus", width: 120, render: (value) => statusTag(value, "已生成", "待生成") },
+    { title: "发送状态", dataIndex: "sendStatus", width: 110, render: (value) => statusTag(value, "已发送", "未发送") },
+    { title: "员工签名", dataIndex: "signatureStatus", width: 110, render: (value) => statusTag(value, "已签名", "待签名") },
+    { title: "签名时间", dataIndex: "signedAt", width: 170, render: signedAtText },
+    { title: "主管确认", dataIndex: "supervisorStatus", width: 120, render: (value) => statusTag(value, "已确认", "待确认") },
+    {
+      title: "操作",
+      fixed: "right",
+      width: 470,
+      render: (_, row) => (
+        <Space size={6} wrap>
+          <Button size="small" onClick={() => handleSend(row)}>发送签名链接</Button>
+          <Button size="small" disabled={!row.signatureUrl} onClick={() => navigator.clipboard?.writeText(externalSignatureUrl(row.signatureUrl))}>复制链接</Button>
+          <Button size="small" onClick={() => handleDownload(row, "xlsx")}>下载确认单</Button>
+          <Button size="small" onClick={() => handleDownload(row, "pdf")}>下载 PDF</Button>
+          <Button size="small" onClick={() => handleDownload(row, "png")}>下载 PNG</Button>
+          <Button size="small" disabled={row.supervisorStatus === "confirmed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
+          <Button size="small" onClick={() => handleVoid(row)}>作废重签</Button>
+        </Space>
+      )
+    }
+  ];
+
   return (
     <div className="operator-board">
-      <header className="profit-hero">
-        <div>
-          <h1>2026年6月跨境电商经营与提成测试台</h1>
-          <p>基于 6月数据 Excel 汇总，统一汇率、倒推成本、物流提成和风险复核口径。</p>
-        </div>
-        <Space size={12} wrap>
-          <div className="profit-source">数据源：<b>6月数据 Excel</b></div>
-          <Button type="primary" className="profit-month-btn">{selectedMonth}</Button>
-          <Button className="profit-print-btn" onClick={() => window.print()}>打印 / 导出 PDF</Button>
-          <Button onClick={loadData}>刷新</Button>
-        </Space>
-      </header>
-
-      <section className="profit-metric-grid">
-        {metrics.map((item) => (
-          <Card key={item.title} className={`profit-metric-card profit-accent-${item.accent}`} loading={loading}>
-            <span className="profit-metric-icon" />
-            <span className="profit-metric-title">{item.title}</span>
-            <strong>{item.value}</strong>
-            <div className="profit-metric-note">
-              <Tag bordered={false}>{item.tag}</Tag>
-              <span>{item.note}</span>
-            </div>
-          </Card>
-        ))}
-      </section>
-
       <Card
         className="operator-performance-card"
         title="操作员绩效计算"
@@ -417,6 +417,35 @@ export default function OperatorPerformance() {
             </div>
           ))}
         </div>
+      </Card>
+
+      <Card
+        className="operator-signature-card"
+        title={<div className="signature-title-block"><strong>操作员绩效签名确认</strong><span>按客服代表生成个人绩效确认单，员工在线签名后回传状态，最终由主管确认发放。</span></div>}
+        extra={(
+          <Space size={10} wrap>
+            <Button type="primary" onClick={handleGenerateDocuments}>批量生成绩效确认单</Button>
+            <Button onClick={loadData}>刷新状态</Button>
+          </Space>
+        )}
+      >
+        <div className="signature-stat-grid">
+          <div><span>本月需确认人数</span><strong>{documents.length}</strong></div>
+          <div><span>已发送人数</span><strong>{documents.filter((row) => row.sendStatus === "sent").length}</strong></div>
+          <div><span>已签名人数</span><strong>{documents.filter((row) => row.signatureStatus === "signed").length}</strong></div>
+          <div><span>待签名人数</span><strong>{documents.filter((row) => row.signatureStatus !== "signed").length}</strong></div>
+          <div><span>已主管确认人数</span><strong>{documents.filter((row) => row.supervisorStatus === "confirmed").length}</strong></div>
+        </div>
+
+        <Table
+          rowKey="id"
+          className="signature-summary-table"
+          loading={loading}
+          columns={documentColumns}
+          dataSource={documents}
+          pagination={false}
+          scroll={{ x: 1500 }}
+        />
       </Card>
     </div>
   );

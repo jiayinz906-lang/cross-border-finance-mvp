@@ -8,6 +8,7 @@ import {
   downloadExportJobController,
   exportSystemBackupController,
   generateLogisticsDocumentsController,
+  generateOperatorDocumentsController,
   generateServiceDocumentsController,
   lockMonthController,
   listDocumentsController,
@@ -27,6 +28,7 @@ export const workflowRoutes = Router();
 workflowRoutes.get("/documents", listDocumentsController);
 workflowRoutes.post("/documents/logistics/generate", requirePermission("confirmation:approve"), generateLogisticsDocumentsController);
 workflowRoutes.post("/documents/service/generate", requirePermission("confirmation:approve"), generateServiceDocumentsController);
+workflowRoutes.post("/documents/operator/generate", requirePermission("confirmation:approve"), generateOperatorDocumentsController);
 workflowRoutes.post("/documents/:id/send-signature", requirePermission("confirmation:approve"), sendSignatureLinkController);
 workflowRoutes.post("/signature/:token/sign", signByTokenController);
 workflowRoutes.post("/documents/:id/supervisor-confirm", requirePermission("confirmation:approve"), supervisorConfirmController);

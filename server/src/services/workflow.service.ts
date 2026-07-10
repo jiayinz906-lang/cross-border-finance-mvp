@@ -3,8 +3,9 @@ import crypto from "node:crypto";
 import PDFDocument from "pdfkit";
 import sharp from "sharp";
 import { prisma } from "../prisma/client.js";
+import { analyticsService } from "./analytics.service.js";
 
-type DocumentType = "logistics_commission" | "service_commission";
+type DocumentType = "logistics_commission" | "service_commission" | "operator_performance";
 
 type SignatureEvidenceInput = {
   ip?: string;
@@ -27,7 +28,7 @@ function roundMoney(value: number) {
 }
 
 function documentCode(month: string, index: number, documentType: DocumentType) {
-  const prefix = documentType === "service_commission" ? "SC" : "LC";
+  const prefix = documentType === "service_commission" ? "SC" : documentType === "operator_performance" ? "OP" : "LC";
   return `SIG-${month.replace("-", "")}-${prefix}-${String(index + 1).padStart(3, "0")}`;
 }
 
@@ -590,6 +591,78 @@ export const workflowService = {
       month: selectedMonth,
       entityType: "confirmation_document",
       entityId: "service_commission",
+      action: "batch_generate",
+      payload: { count: documents.length }
+    });
+    return documents;
+  },
+
+  async generateOperatorDocuments(month?: string) {
+    const selectedMonth = monthOrDefault(month);
+    const groups = await analyticsService.operatorPerformance(selectedMonth);
+    const documents = [];
+
+    for (const [index, group] of groups.entries()) {
+      const payload = {
+        title: "Operator Performance Signature Confirmation",
+        fileType: "operator_performance_confirmation",
+        documentCode: documentCode(selectedMonth, index, "operator_performance"),
+        monthLabel: formatMonthLabel(selectedMonth),
+        generatedAt: new Date().toISOString(),
+        summary: {
+          ownerName: group.operatorName,
+          businessType: "operator_performance",
+          orderCount: group.rows.reduce((sum, row) => sum + row.orderCount, 0),
+          receivable: 0,
+          payable: 0,
+          grossProfit: group.totalCommission,
+          commissionRate: null,
+          accruedCommission: roundMoney(group.totalCommission),
+          supervisorAdjustmentAmount: roundMoney(group.totalCommission - group.payablePerformance),
+          finalCommission: roundMoney(group.payablePerformance),
+          abnormalNote: "operator performance amount equals category commission total after 80% salary payout rule",
+          status: "pending operator signature"
+        },
+        details: group.rows.map((row) => ({
+          orderNo: row.orderType,
+          originalOrderNo: "-",
+          customerName: group.operatorName,
+          businessType: "operator_performance",
+          receivable: row.orderCount,
+          payable: row.baseCount,
+          grossProfit: row.commissionAmount,
+          grossProfitRate: null,
+          commissionRate: row.rate,
+          commissionAmount: roundMoney(row.commissionAmount),
+          source: row.note
+        })),
+        statement: "The operator confirms the performance categories, order count, base count, payable count, rate and final payable performance amount.",
+        signatureTrace: {
+          employeeSignature: "pending operator signature",
+          signedAt: null,
+          confirmIp: "system captured",
+          deviceInfo: "system captured",
+          supervisorConfirm: "pending supervisor confirmation"
+        }
+      };
+
+      const document = await writeConfirmationDocument({
+        month: selectedMonth,
+        documentType: "operator_performance",
+        ownerName: group.operatorName,
+        businessType: "operator_performance",
+        orderCount: payload.summary.orderCount,
+        grossProfit: group.totalCommission,
+        commissionAmount: group.payablePerformance,
+        payloadJson: JSON.stringify(payload)
+      });
+      documents.push(document);
+    }
+
+    await logAction({
+      month: selectedMonth,
+      entityType: "confirmation_document",
+      entityId: "operator_performance",
       action: "batch_generate",
       payload: { count: documents.length }
     });

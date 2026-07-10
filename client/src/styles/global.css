@@ -1607,6 +1607,7 @@ body {
 .operator-performance-card {
   border: none;
   border-radius: 7px;
+  margin-bottom: 18px;
   box-shadow: 0 20px 40px rgba(31, 45, 78, 0.08);
 }
 
@@ -1758,6 +1759,39 @@ body {
   justify-self: start;
   font-style: normal;
   font-weight: 850;
+}
+
+.operator-signature-card {
+  border: none;
+  border-radius: 7px;
+  box-shadow: 0 20px 40px rgba(31, 45, 78, 0.08);
+}
+
+.operator-signature-card .ant-card-head {
+  min-height: 82px;
+  padding: 0 24px;
+  border-bottom: none;
+}
+
+.operator-signature-card .ant-card-head-title {
+  padding: 18px 0 12px;
+}
+
+.operator-signature-card .ant-card-body {
+  padding: 0 24px 22px;
+}
+
+.operator-signature-card .ant-card-extra .ant-btn {
+  height: 40px;
+  border-radius: 6px;
+  color: #071737;
+  font-weight: 900;
+}
+
+.operator-signature-card .ant-card-extra .ant-btn-primary {
+  color: #ffffff;
+  background: #142244;
+  border-color: #142244;
 }
 
 .customer-board {

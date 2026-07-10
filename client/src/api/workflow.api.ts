@@ -72,6 +72,10 @@ export function generateServiceDocuments(month = "2026-06") {
   return request.post("/workflow/documents/service/generate", { month });
 }
 
+export function generateOperatorDocuments(month = "2026-06") {
+  return request.post("/workflow/documents/operator/generate", { month });
+}
+
 export function sendSignatureLink(id: number) {
   return request.post(`/workflow/documents/${id}/send-signature`);
 }
