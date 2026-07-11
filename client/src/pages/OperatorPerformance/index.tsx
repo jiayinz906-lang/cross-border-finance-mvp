@@ -15,7 +15,7 @@ import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { FinanceOrder } from "../../types/finance.types";
 import { ReasonActionModal } from "../../components/ReasonActionModal";
 import { copyText } from "../../utils/copyText";
-import { externalSignatureUrl } from "../../utils/externalSignatureUrl";
+import { externalSignatureUrl, productionAppUrl, usesLocalSignatureBackend } from "../../utils/externalSignatureUrl";
 
 type PerformanceCategory = "white" | "grey" | "company" | "eac" | "trademark";
 
@@ -226,6 +226,13 @@ export default function OperatorPerformance() {
   };
 
   const handleSend = async (row: ConfirmationDocument) => {
+    if (usesLocalSignatureBackend()) {
+      Modal.warning({
+        title: "本地确认单不能外发",
+        content: <Typography.Paragraph>当前链接对应本机数据库，仅能在本机使用。请在线上系统生成可发送给员工的链接：<Typography.Link href={`${productionAppUrl}#/operator-performance`} target="_blank">打开线上操作员绩效</Typography.Link></Typography.Paragraph>
+      });
+      return;
+    }
     const res = await sendSignatureLink(row.id);
     const url = externalSignatureUrl(res.data.signatureUrl);
     const copied = await copyText(url);
@@ -321,6 +328,10 @@ export default function OperatorPerformance() {
         <Space size={6} wrap>
           <Button size="small" onClick={() => handleSend(row)}>发送签名链接</Button>
           <Button size="small" disabled={!row.signatureUrl} onClick={async () => {
+            if (usesLocalSignatureBackend()) {
+              Modal.warning({ title: "这是本机调试链接", content: <Typography.Paragraph>本机数据库生成的链接无法在外部设备使用。请在线上系统重新生成。</Typography.Paragraph> });
+              return;
+            }
             const url = externalSignatureUrl(row.signatureUrl);
             if (await copyText(url)) message.success("签名链接已复制");
             else Modal.info({ title: "请手动复制签名链接", content: <Typography.Paragraph copyable>{url}</Typography.Paragraph> });

@@ -17,7 +17,7 @@ import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
 import { ReasonActionModal } from "../../components/ReasonActionModal";
 import { copyText } from "../../utils/copyText";
-import { externalSignatureUrl } from "../../utils/externalSignatureUrl";
+import { externalSignatureUrl, productionAppUrl, usesLocalSignatureBackend } from "../../utils/externalSignatureUrl";
 
 type ConfirmationPayloadDetail = {
   orderNo: string;
@@ -135,6 +135,13 @@ export default function SignatureConfirm() {
   };
 
   const handleSend = async (row: ConfirmationDocument) => {
+    if (usesLocalSignatureBackend()) {
+      Modal.warning({
+        title: "本地确认单不能外发",
+        content: <Space direction="vertical"><Typography.Paragraph>当前确认单和签名 Token 保存于本机数据库，复制出的 localhost 链接只能在本机打开，不能发给手机或其他员工。</Typography.Paragraph><Typography.Link href={`${productionAppUrl}#/signature-confirm`} target="_blank">打开线上 XJD Finance 生成可外发链接</Typography.Link></Space>
+      });
+      return;
+    }
     const res = await sendSignatureLink(row.id);
     const url = externalSignatureUrl(res.data.signatureUrl);
     const copied = await copyText(url);
@@ -174,6 +181,13 @@ export default function SignatureConfirm() {
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看个人确认单</Button>
           <Button size="small" onClick={() => handleSend(row)}>发送签名链接</Button>
           <Button size="small" disabled={!row.signatureUrl} onClick={async () => {
+            if (usesLocalSignatureBackend()) {
+              Modal.warning({
+                title: "这是本机调试链接",
+                content: <Space direction="vertical"><Typography.Paragraph>本机数据库生成的链接不能在外部设备打开。请在线上系统生成后再复制发送。</Typography.Paragraph><Typography.Link href={`${productionAppUrl}#/signature-confirm`} target="_blank">打开线上签名管理</Typography.Link></Space>
+              });
+              return;
+            }
             const url = externalSignatureUrl(row.signatureUrl);
             if (await copyText(url)) message.success("签名链接已复制");
             else Modal.info({ title: "请手动复制签名链接", content: <Typography.Paragraph copyable>{url}</Typography.Paragraph> });

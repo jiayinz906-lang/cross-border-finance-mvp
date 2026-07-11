@@ -1,4 +1,4 @@
-import { Button, Card, Input, InputNumber, Modal, Space, Table, Tag, message } from "antd";
+import { Button, Card, Input, InputNumber, Modal, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCommissions, updateCommissionRate } from "../../api/commissions.api";
@@ -18,7 +18,7 @@ import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
 import { ReasonActionModal } from "../../components/ReasonActionModal";
 import { copyText } from "../../utils/copyText";
-import { externalSignatureUrl } from "../../utils/externalSignatureUrl";
+import { externalSignatureUrl, productionAppUrl, usesLocalSignatureBackend } from "../../utils/externalSignatureUrl";
 
 type CommissionOrder = {
   orderNo: string;
@@ -180,6 +180,13 @@ export default function Commission() {
   };
 
   const handleSendDocument = async (row: ConfirmationDocument) => {
+    if (usesLocalSignatureBackend()) {
+      Modal.warning({
+        title: "本地确认单不能外发",
+        content: <Typography.Paragraph>当前链接对应本机数据库，仅能在本机使用。请使用线上系统生成外部签名链接：<Typography.Link href={`${productionAppUrl}#/commission`} target="_blank">打开线上物流提成</Typography.Link></Typography.Paragraph>
+      });
+      return;
+    }
     const res = await sendSignatureLink(row.id);
     const url = externalSignatureUrl(res.data.signatureUrl);
     const copied = await copyText(url);
