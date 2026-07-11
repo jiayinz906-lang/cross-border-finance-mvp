@@ -13,7 +13,7 @@ export const app = express();
 
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || env.corsAllowedOrigins.includes(origin)) return callback(null, true);
+    if (!origin || env.corsAllowedOrigins.includes("*") || env.corsAllowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error("Origin is not allowed by CORS policy."));
   },
   credentials: false

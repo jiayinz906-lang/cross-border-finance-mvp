@@ -241,6 +241,18 @@ async function verifySignature(checks: Check[], month: string) {
   assertCheck(checks, "Signature documents generated", Boolean(first), String(docs.length));
   if (!first) return;
 
+  let supervisorBlockedBeforeEmployeeSign = false;
+  try {
+    await workflowService.supervisorConfirm(first.id, {
+      ip: "127.0.0.1",
+      userAgent: "verify-import-supervisor",
+      role: "supervisor"
+    });
+  } catch (error) {
+    supervisorBlockedBeforeEmployeeSign = String((error as Error).message).includes("employee must sign");
+  }
+  assertCheck(checks, "Supervisor confirmation requires employee signature", supervisorBlockedBeforeEmployeeSign);
+
   const confirmationFile = await workflowService.downloadConfirmationDocument(first.id);
   const confirmationWorkbook = XLSX.read(confirmationFile.buffer, { type: "buffer" });
   assertCheck(checks, "Confirmation document export returns xlsx", confirmationFile.fileName.endsWith(".xlsx") && confirmationFile.buffer.length > 1000, `${confirmationFile.fileName} / ${confirmationFile.buffer.length}`);
@@ -268,6 +280,15 @@ async function verifySignature(checks: Check[], month: string) {
   });
   assertCheck(checks, "Employee signed by token", signed.signatureStatus === "signed", signed.signatureStatus);
   assertCheck(checks, "Employee evidence stored", Boolean(signed.signatureEvidenceJson), signed.signatureEvidenceJson ?? undefined);
+
+  const regenerated = await workflowService.generateLogisticsDocuments(month);
+  const preserved = regenerated.find((document) => document.id === signed.id);
+  assertCheck(
+    checks,
+    "Regeneration preserves signed confirmation snapshot",
+    preserved?.signatureStatus === "signed" && preserved?.signatureToken === null,
+    JSON.stringify({ id: preserved?.id, signatureStatus: preserved?.signatureStatus, signatureToken: preserved?.signatureToken })
+  );
 
   const confirmed = await workflowService.supervisorConfirm(first.id, {
     ip: "127.0.0.1",

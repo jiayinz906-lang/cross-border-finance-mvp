@@ -18,6 +18,7 @@ import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
 import { ReasonActionModal } from "../../components/ReasonActionModal";
 import { copyText } from "../../utils/copyText";
+import { externalSignatureUrl } from "../../utils/externalSignatureUrl";
 
 type CommissionOrder = {
   orderNo: string;
@@ -180,8 +181,7 @@ export default function Commission() {
 
   const handleSendDocument = async (row: ConfirmationDocument) => {
     const res = await sendSignatureLink(row.id);
-    const route = String(res.data.signatureUrl ?? "").startsWith("/") ? res.data.signatureUrl : `/${res.data.signatureUrl ?? ""}`;
-    const url = `${window.location.origin}${window.location.pathname}#${route}`;
+    const url = externalSignatureUrl(res.data.signatureUrl);
     const copied = await copyText(url);
     if (copied) message.success(`${row.ownerName} 的个人确认单链接已生成并复制，可直接发送签名`);
     else Modal.info({ title: "签名链接已生成，请手动复制", content: <Input.TextArea value={url} readOnly autoSize={{ minRows: 2, maxRows: 4 }} /> });

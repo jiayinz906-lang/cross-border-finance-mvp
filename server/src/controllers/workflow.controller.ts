@@ -8,7 +8,11 @@ function month(req: Request) {
 
 export async function listDocumentsController(req: Request, res: Response) {
   res.json({
-    rows: await workflowService.listDocuments(month(req), req.query.documentType as "logistics_commission" | "service_commission" | "operator_performance" | undefined)
+    rows: await workflowService.listDocuments(
+      month(req),
+      req.query.documentType as "logistics_commission" | "service_commission" | "operator_performance" | undefined,
+      req.query.history === "true"
+    )
   });
 }
 

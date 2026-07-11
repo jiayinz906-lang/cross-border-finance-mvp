@@ -17,6 +17,7 @@ import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
 import { ReasonActionModal } from "../../components/ReasonActionModal";
 import { copyText } from "../../utils/copyText";
+import { externalSignatureUrl } from "../../utils/externalSignatureUrl";
 
 type ConfirmationPayloadDetail = {
   orderNo: string;
@@ -82,12 +83,6 @@ function parsePayload(row?: ConfirmationDocument | null): ConfirmationPayload | 
 
 function dateTimeText(value?: string | null) {
   return value ? value.replace("T", " ").slice(0, 19) : "____ 年 ____ 月 ____ 日 ____:____";
-}
-
-function externalSignatureUrl(signatureUrl?: string | null) {
-  if (!signatureUrl) return "";
-  const route = signatureUrl.startsWith("/") ? signatureUrl : `/${signatureUrl}`;
-  return `${window.location.origin}${window.location.pathname}#${route}`;
 }
 
 export default function SignatureConfirm() {
@@ -178,11 +173,15 @@ export default function SignatureConfirm() {
         <Space size={6} wrap>
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看个人确认单</Button>
           <Button size="small" onClick={() => handleSend(row)}>发送签名链接</Button>
-          <Button size="small" disabled={!row.signatureUrl} onClick={() => navigator.clipboard?.writeText(externalSignatureUrl(row.signatureUrl))}>复制链接</Button>
+          <Button size="small" disabled={!row.signatureUrl} onClick={async () => {
+            const url = externalSignatureUrl(row.signatureUrl);
+            if (await copyText(url)) message.success("签名链接已复制");
+            else Modal.info({ title: "请手动复制签名链接", content: <Typography.Paragraph copyable>{url}</Typography.Paragraph> });
+          }}>复制链接</Button>
           <Button size="small" onClick={() => handleDownload(row, "xlsx")}>下载确认单</Button>
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>下载 PDF</Button>
           <Button size="small" onClick={() => handleDownload(row, "png")}>下载 PNG</Button>
-          <Button size="small" disabled={row.supervisorStatus === "confirmed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
+          <Button size="small" disabled={row.supervisorStatus === "confirmed" || row.signatureStatus !== "signed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
           <Button size="small" onClick={() => handleVoid(row)}>作废重签</Button>
         </Space>
       )

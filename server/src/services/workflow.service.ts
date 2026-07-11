@@ -381,7 +381,9 @@ async function writeConfirmationDocument(input: {
   payloadJson: string;
 }) {
   const latest = await latestDocument(input.month, input.documentType, input.ownerName);
-  if (latest?.supervisorStatus === "confirmed" && latest.documentStatus !== "voided") {
+  // A generated confirmation is an auditable snapshot. Re-generating must not
+  // erase a link, signature, or evidence. Create a new version only after void.
+  if (latest && latest.documentStatus !== "voided") {
     return latest;
   }
 
@@ -394,42 +396,29 @@ async function writeConfirmationDocument(input: {
     });
   }
 
-  return prisma.confirmationDocument.update({
-    where: { id: latest.id },
-    data: {
-      businessType: input.businessType,
-      orderCount: input.orderCount,
-      grossProfit: input.grossProfit,
-      commissionAmount: input.commissionAmount,
-      payloadJson: input.payloadJson,
-      documentStatus: "generated",
-      sendStatus: "unsent",
-      signatureStatus: "pending",
-      supervisorStatus: "pending",
-      signatureToken: null,
-      signatureUrl: null,
-      signatureTokenExpiresAt: null,
-      signerIp: null,
-      signerUserAgent: null,
-      signerRole: null,
-      signatureEvidenceJson: null,
-      adjustReason: null,
-      voidReason: null,
-      signedAt: null,
-      confirmedAt: null,
-      voidedAt: null
-    }
-  });
+  return latest;
 }
 
 export const workflowService = {
-  async listDocuments(month?: string, documentType?: DocumentType) {
-    return prisma.confirmationDocument.findMany({
+  async listDocuments(month?: string, documentType?: DocumentType, includeHistory = false) {
+    const documents = await prisma.confirmationDocument.findMany({
       where: {
         month: monthOrDefault(month),
-        ...(documentType ? { documentType } : {})
+        ...(documentType ? { documentType } : {}),
+        ...(includeHistory ? {} : { documentStatus: { not: "voided" } })
       },
-      orderBy: [{ documentType: "asc" }, { commissionAmount: "desc" }]
+      orderBy: [{ documentType: "asc" }, { ownerName: "asc" }, { version: "desc" }, { id: "desc" }]
+    });
+    if (includeHistory) return documents;
+
+    const current = new Map<string, typeof documents[number]>();
+    for (const document of documents) {
+      const key = `${document.documentType}:${document.ownerName}`;
+      if (!current.has(key)) current.set(key, document);
+    }
+    return Array.from(current.values()).sort((left, right) => {
+      const byType = left.documentType.localeCompare(right.documentType);
+      return byType || left.ownerName.localeCompare(right.ownerName, "zh-Hans-CN");
     });
   },
 
@@ -798,6 +787,9 @@ export const workflowService = {
     if (current.supervisorStatus === "confirmed") {
       throw new Error("Confirmed documents cannot be overwritten. Void and regenerate a new version first.");
     }
+    if (current.signatureStatus === "signed") {
+      throw new Error("This document has already been signed and is waiting for supervisor confirmation.");
+    }
 
     const signatureToken = token(String(id), "signature");
     const signatureUrl = `/signature/${signatureToken}`;
@@ -909,6 +901,9 @@ export const workflowService = {
     const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
     if (current.documentStatus === "voided") {
       throw new Error("Voided documents cannot be confirmed.");
+    }
+    if (current.signatureStatus !== "signed") {
+      throw new Error("The employee must sign this document before supervisor confirmation.");
     }
     const confirmedAt = new Date();
     const proof = signatureEvidence({ ...evidence, action: "supervisor_confirm" });

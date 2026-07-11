@@ -18,7 +18,7 @@ services:
       - key: ALLOW_HEADER_ROLE
         value: false
       - key: CORS_ALLOWED_ORIGINS
-        value: https://jiayinz906-lang.github.io
+        value: "*"
       - key: AUTH_TOKEN_SECRET
         generateValue: true
 

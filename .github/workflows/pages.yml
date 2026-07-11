@@ -61,6 +61,7 @@ jobs:
         run: pnpm --filter cross-border-finance-client build
         env:
           VITE_API_BASE_URL: https://cross-border-finance-server.onrender.com/api
+          VITE_PUBLIC_APP_URL: https://jiayinz906-lang.github.io/cross-border-finance-mvp/
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
