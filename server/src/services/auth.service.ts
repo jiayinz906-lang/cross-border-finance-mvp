@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { authContext, resolveRole, type UserRole } from "../config/rbac.js";
 import { env } from "../config/env.js";
 import { prisma } from "../prisma/client.js";
+import { AppError } from "../errors/app-error.js";
 
 const tokenSecret = env.authTokenSecret;
 const tokenTtlMs = 1000 * 60 * 60 * 12;
@@ -75,8 +76,8 @@ export const authService = {
   async login(username: string, password: string) {
     await ensureDefaultUsers();
     const user = await prisma.appUser.findUnique({ where: { username } });
-    if (!user || !user.isActive) throw new Error("账号或密码错误。");
-    if (hashPassword(password, user.passwordSalt) !== user.passwordHash) throw new Error("账号或密码错误。");
+    if (!user || !user.isActive) throw new AppError(401, "INVALID_CREDENTIALS", "账号或密码错误。");
+    if (hashPassword(password, user.passwordSalt) !== user.passwordHash) throw new AppError(401, "INVALID_CREDENTIALS", "账号或密码错误。");
 
     await prisma.appUser.update({
       where: { id: user.id },

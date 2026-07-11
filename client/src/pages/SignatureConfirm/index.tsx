@@ -5,7 +5,7 @@ import {
   type ConfirmationDocument,
   createExportJob,
   downloadConfirmationDocumentFile,
-  exportDownloadUrl,
+  downloadExportJobFile,
   generateLogisticsDocuments,
   getDocuments,
   sendSignatureLink,
@@ -15,6 +15,8 @@ import {
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
+import { ReasonActionModal } from "../../components/ReasonActionModal";
+import { copyText } from "../../utils/copyText";
 
 type ConfirmationPayloadDetail = {
   orderNo: string;
@@ -92,6 +94,10 @@ export default function SignatureConfirm() {
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<ConfirmationDocument | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [supervisorDocument, setSupervisorDocument] = useState<ConfirmationDocument | null>(null);
+  const [voidingDocument, setVoidingDocument] = useState<ConfirmationDocument | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
   const { selectedMonth } = useSelectedMonth();
 
   const selectedPayload = parsePayload(selectedDocument);
@@ -119,9 +125,14 @@ export default function SignatureConfirm() {
   };
 
   const handleExport = async () => {
-    const res = await createExportJob("signature_summary", "xlsx", selectedMonth, { documentCount: documents.length });
-    message.success(`签名汇总表已生成：${res.data.fileName}`);
-    window.open(exportDownloadUrl(res.data.id), "_blank");
+    setExporting(true);
+    try {
+      const res = await createExportJob("signature_summary", "xlsx", selectedMonth, { documentCount: documents.length });
+      await downloadExportJobFile(res.data.id, res.data.fileName);
+      message.success(`签名汇总表已下载：${res.data.fileName}`);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleDownload = async (row: ConfirmationDocument, fileFormat: "xlsx" | "pdf" | "png") => {
@@ -131,28 +142,15 @@ export default function SignatureConfirm() {
   const handleSend = async (row: ConfirmationDocument) => {
     const res = await sendSignatureLink(row.id);
     const url = externalSignatureUrl(res.data.signatureUrl);
-    await navigator.clipboard?.writeText(url);
-    message.success("外部签名链接已生成并复制，可直接发送给员工");
+    const copied = await copyText(url);
+    if (copied) message.success("外部签名链接已生成并复制，可直接发送给员工");
+    else Modal.info({ title: "签名链接已生成，请手动复制", content: <Typography.Paragraph copyable>{url}</Typography.Paragraph> });
     await loadData();
   };
 
-  const handleSupervisorConfirm = async (row: ConfirmationDocument) => {
-    const adjustReason = window.prompt("如本次主管确认涉及调整，请填写原因；无调整可直接确定：") ?? undefined;
-    await supervisorConfirmDocument(row.id, adjustReason?.trim() || undefined);
-    message.success(`${row.ownerName} 已主管确认`);
-    await loadData();
-  };
+  const handleSupervisorConfirm = (row: ConfirmationDocument) => setSupervisorDocument(row);
 
-  const handleVoid = async (row: ConfirmationDocument) => {
-    const voidReason = window.prompt("请输入作废/重签原因：");
-    if (!voidReason?.trim()) {
-      message.warning("作废确认单必须填写原因");
-      return;
-    }
-    await voidDocument(row.id, voidReason.trim());
-    message.success(`${row.ownerName} 已作废，等待重签`);
-    await loadData();
-  };
+  const handleVoid = (row: ConfirmationDocument) => setVoidingDocument(row);
 
   const needConfirmCount = documents.length;
   const sentCount = documents.filter((row) => row.sendStatus === "sent").length;
@@ -208,7 +206,7 @@ export default function SignatureConfirm() {
       <Card
         className="signature-confirm-card"
         title={<div className="signature-title-block"><strong>员工电子签名确认中心</strong><span>主管生成个人提成确认单，员工在线签名后回传状态，最终由主管确认发放。</span></div>}
-        extra={<Space size={10} wrap><Button type="primary" onClick={handleBatchGenerate}>批量生成确认单</Button><Button onClick={handleExport}>导出签名汇总表</Button></Space>}
+        extra={<Space size={10} wrap><Button type="primary" onClick={handleBatchGenerate}>批量生成确认单</Button><Button loading={exporting} onClick={handleExport}>导出签名汇总表</Button></Space>}
       >
         <div className="signature-stat-grid">
           <div><span>本月需确认人数</span><strong>{needConfirmCount}</strong></div>
@@ -291,6 +289,44 @@ export default function SignatureConfirm() {
           </Descriptions>
         )}
       </Modal>
+      <ReasonActionModal
+        open={Boolean(supervisorDocument)}
+        title={`主管确认：${supervisorDocument?.ownerName ?? ""}`}
+        description={`确认后该版本不可覆盖，最终提成为 ${toPlainMoney(supervisorDocument?.commissionAmount)}。`}
+        confirmText="主管确认"
+        reasonRequired={false}
+        loading={actionLoading}
+        onCancel={() => setSupervisorDocument(null)}
+        onConfirm={async (reason) => {
+          if (!supervisorDocument) return;
+          setActionLoading(true);
+          try {
+            await supervisorConfirmDocument(supervisorDocument.id, reason || undefined);
+            message.success(`${supervisorDocument.ownerName} 已主管确认`);
+            setSupervisorDocument(null);
+            await loadData();
+          } finally { setActionLoading(false); }
+        }}
+      />
+      <ReasonActionModal
+        open={Boolean(voidingDocument)}
+        title={`作废并重签：${voidingDocument?.ownerName ?? ""}`}
+        description="原确认单会保留审计记录，需要重新生成新版本。"
+        confirmText="确认作废"
+        danger
+        loading={actionLoading}
+        onCancel={() => setVoidingDocument(null)}
+        onConfirm={async (reason) => {
+          if (!voidingDocument) return;
+          setActionLoading(true);
+          try {
+            await voidDocument(voidingDocument.id, reason);
+            message.success(`${voidingDocument.ownerName} 已作废，等待重签`);
+            setVoidingDocument(null);
+            await loadData();
+          } finally { setActionLoading(false); }
+        }}
+      />
     </div>
   );
 }

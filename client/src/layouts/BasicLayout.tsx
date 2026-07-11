@@ -1,6 +1,10 @@
-import { Layout, Menu, Typography } from "antd";
+import { LogoutOutlined, MenuOutlined, UserOutlined } from "@ant-design/icons";
+import { Button, Drawer, Grid, Layout, Menu, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
+import { useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import { useSelectedMonth } from "../contexts/MonthContext";
 
 const { Sider, Content } = Layout;
 
@@ -17,38 +21,74 @@ const menuItems: MenuProps["items"] = [
   { key: "/operator-performance", icon: <MenuMark />, label: "操作员绩效" },
   { key: "/customer-profit", icon: <MenuMark />, label: "客户利润分析" },
   { key: "/risks", icon: <MenuMark />, label: "风险复查" },
+  { key: "/receivables", icon: <MenuMark />, label: "应收管理" },
   { key: "/payables", icon: <MenuMark />, label: "上游应付" },
   { key: "/settings", icon: <MenuMark />, label: "参数规则" }
 ];
 
+function Brand() {
+  const { selectedMonth } = useSelectedMonth();
+  return (
+    <div className="brand">
+      <Typography.Title level={3}>XJD Finance</Typography.Title>
+      <Typography.Text>跨境物流财务管理</Typography.Text>
+      <Typography.Text>当前账期：{selectedMonth}</Typography.Text>
+    </div>
+  );
+}
+
 export function BasicLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.md;
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const { user, logout } = useAuth();
+
+  const handleNavigate: MenuProps["onClick"] = ({ key }) => {
+    navigate(key);
+    setDrawerOpen(false);
+  };
+
+  const account = (
+    <div className="sider-account">
+      <div><UserOutlined /><span>{user?.displayName || user?.username || "当前用户"}</span></div>
+      <Tag bordered={false}>{user?.auth?.label || user?.role || "-"}</Tag>
+      <Button
+        type="text"
+        icon={<LogoutOutlined />}
+        onClick={() => {
+          logout();
+          navigate("/login", { replace: true });
+        }}
+      >退出登录</Button>
+    </div>
+  );
+
+  const navigation = (
+    <>
+      <Brand />
+      <Menu mode="inline" selectedKeys={[location.pathname]} items={menuItems} onClick={handleNavigate} />
+      {account}
+    </>
+  );
 
   return (
     <Layout className="app-shell">
-      <Sider width={202} className="app-sider">
-        <div className="brand">
-          <Typography.Title level={3}>XJD Finance UI</Typography.Title>
-          <Typography.Text>6月物流 / 注册业务</Typography.Text>
-          <Typography.Text>提成测试界面</Typography.Text>
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[location.pathname]}
-          items={menuItems}
-          onClick={({ key }) => navigate(key)}
-        />
-        <div className="sider-note">
-          <strong>界面定位</strong>
-          <span>用于财务和主管测试数据口径、提成确认、异常票据复核，不替代最终财务凭证。</span>
-        </div>
-      </Sider>
+      {!isMobile ? <Sider width={202} className="app-sider">{navigation}</Sider> : null}
       <Layout>
-        <Content className="app-content">
-          <Outlet />
-        </Content>
+        {isMobile ? (
+          <header className="mobile-app-header">
+            <Button type="text" icon={<MenuOutlined />} aria-label="打开导航" onClick={() => setDrawerOpen(true)} />
+            <strong>XJD Finance</strong>
+            <span>{user?.displayName || user?.username || ""}</span>
+          </header>
+        ) : null}
+        <Content className="app-content"><Outlet /></Content>
       </Layout>
+      <Drawer className="mobile-nav-drawer" placement="left" width={280} open={drawerOpen} onClose={() => setDrawerOpen(false)} closable>
+        {navigation}
+      </Drawer>
     </Layout>
   );
 }

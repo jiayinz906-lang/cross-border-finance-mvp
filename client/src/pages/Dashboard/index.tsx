@@ -6,12 +6,12 @@ import {
   ReloadOutlined,
   SafetyOutlined
 } from "@ant-design/icons";
-import { Button, Card, Input, Modal, Space, Table, Tag, message } from "antd";
+import { Alert, Button, Card, Input, Modal, Space, Spin, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getFinanceDashboard, getFinanceMonths } from "../../api/finance.api";
-import { monthlyReportExportUrl } from "../../api/workflow.api";
+import { downloadMonthlyReport } from "../../api/workflow.api";
 import { ImportButton } from "../../components/ImportButton";
 import { TemplateImportButton } from "../../components/TemplateImportButton";
 import { useSelectedMonth } from "../../contexts/MonthContext";
@@ -206,9 +206,22 @@ export default function Dashboard() {
   const [monthModalOpen, setMonthModalOpen] = useState(false);
   const [monthOptions, setMonthOptions] = useState<MonthOption[]>([]);
   const [draftMonth, setDraftMonth] = useState(selectedMonth);
+  const [reportDownloading, setReportDownloading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
-  const loadMonth = useCallback((month: string) => {
-    return getFinanceDashboard(month).then((res) => setData(res.data));
+  const loadMonth = useCallback(async (month: string) => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const response = await getFinanceDashboard(month);
+      setData(response.data);
+    } catch {
+      setData(null);
+      setLoadError("经营总览加载失败，请检查登录状态或后端服务。");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const load = useCallback(() => {
@@ -288,12 +301,25 @@ export default function Dashboard() {
           <Button className="overview-select" onClick={openMonthModal}>月份：<b>{selectedMonth}</b><CalendarOutlined /></Button>
           <TemplateImportButton />
           <ImportButton onImported={handleImported} />
-          <Button type="primary" icon={<DownloadOutlined />} onClick={() => window.open(monthlyReportExportUrl(selectedMonth), "_blank")}>导出月报</Button>
+          <Button type="primary" loading={reportDownloading} icon={<DownloadOutlined />} onClick={async () => {
+            setReportDownloading(true);
+            try {
+              await downloadMonthlyReport(selectedMonth);
+              message.success("月报已下载");
+            } catch {
+              message.error("月报下载失败，请检查登录状态或后端服务");
+            } finally {
+              setReportDownloading(false);
+            }
+          }}>导出月报</Button>
         </div>
         <div className="overview-refresh"><ReloadOutlined /> 最后更新：导入或切换月份后实时刷新</div>
       </header>
 
-      <section className="overview-kpi-grid">
+      {loadError ? <Alert className="overview-load-alert" type="error" showIcon message={loadError} action={<Button onClick={load}>重试</Button>} /> : null}
+      {loading && !data ? <div className="page-state"><Spin size="large" tip="正在加载经营数据" /></div> : null}
+
+      {data ? <><section className="overview-kpi-grid">
         {kpis.map((item) => <MetricCard key={item.title} item={item} />)}
       </section>
 
@@ -363,6 +389,8 @@ export default function Dashboard() {
       </section>
 
       <footer className="overview-footer">XJD Finance UI 财务提成分析系统 © 2026 All Rights Reserved.</footer>
+
+      </> : null}
 
       <Modal
         open={monthModalOpen}

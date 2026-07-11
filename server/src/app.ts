@@ -7,10 +7,17 @@ import { errorMiddleware } from "./middleware/error.middleware.js";
 import { requestLogMiddleware } from "./middleware/request-log.middleware.js";
 import { requireAuthToken } from "./middleware/rbac.middleware.js";
 import { routes } from "./routes/index.js";
+import { env } from "./config/env.js";
 
 export const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || env.corsAllowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error("Origin is not allowed by CORS policy."));
+  },
+  credentials: false
+}));
 app.use(express.json());
 app.use(requestLogMiddleware);
 app.use("/api", requireAuthToken);

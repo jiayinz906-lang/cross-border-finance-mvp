@@ -3,6 +3,9 @@ import { useEffect } from "react";
 import { Navigate, RouterProvider, createHashRouter } from "react-router-dom";
 import { MonthProvider } from "./contexts/MonthContext";
 import SignaturePublic from "./pages/SignaturePublic";
+import Login from "./pages/Login";
+import { AuthProvider } from "./contexts/AuthContext";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 import { routes } from "./router";
 
 const router = createHashRouter([
@@ -14,7 +17,9 @@ const router = createHashRouter([
     path: "/signature/:token",
     element: <SignaturePublic />
   },
-  ...routes
+  { path: "/login", element: <Login /> },
+  { element: <ProtectedRoute />, children: routes },
+  { path: "*", element: <Navigate to="/dashboard" replace /> }
 ]);
 
 export default function App() {
@@ -28,8 +33,10 @@ export default function App() {
   }, []);
 
   return (
-    <MonthProvider>
-      <RouterProvider router={router} />
-    </MonthProvider>
+    <AuthProvider>
+      <MonthProvider>
+        <RouterProvider router={router} />
+      </MonthProvider>
+    </AuthProvider>
   );
 }

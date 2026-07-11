@@ -99,7 +99,7 @@ export default function SignaturePublic() {
 
             <div className="public-signature-details">
               <Typography.Title level={4}>订单明细</Typography.Title>
-              <Table rowKey={(row) => String(row.orderNo ?? row.originalOrderNo ?? Math.random())} columns={detailColumns} dataSource={details} pagination={false} size="small" scroll={{ x: 720 }} />
+              <Table rowKey={(row, index) => String(row.orderNo ?? row.originalOrderNo ?? `${document.payload.documentCode}-${index ?? 0}`)} columns={detailColumns} dataSource={details} pagination={false} size="small" scroll={{ x: 720 }} />
             </div>
 
             <div className="public-signature-statement">

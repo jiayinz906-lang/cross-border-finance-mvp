@@ -15,7 +15,7 @@ import {
   getActionLogs,
   getMonthCloseStatus,
   lockMonth,
-  systemBackupExportUrl,
+  downloadSystemBackup,
   unlockMonth,
   type ActionLogRow,
   type MonthCloseStatus
@@ -26,6 +26,7 @@ import { useSelectedMonth } from "../../contexts/MonthContext";
 import { apiBaseUrl } from "../../api/request";
 import type { AuthContext, ImportBatch, ImportTemplate, ParameterRule, ReadinessStatus } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
+import { useAuth } from "../../contexts/AuthContext";
 
 const roleStorageKey = "xjd-finance-role";
 const tokenStorageKey = "xjd-finance-token";
@@ -63,6 +64,7 @@ function readinessTag(value?: boolean) {
 
 export default function Settings() {
   const { selectedMonth } = useSelectedMonth();
+  const currentAccount = useAuth();
   const [auth, setAuth] = useState<AuthContext | null>(null);
   const [currentRole, setCurrentRole] = useState(() => localStorage.getItem(roleStorageKey) || "admin");
   const [loginUser, setLoginUser] = useState(() => localStorage.getItem("xjd-finance-user") || "");
@@ -87,6 +89,19 @@ export default function Settings() {
   const [savingRuleKey, setSavingRuleKey] = useState<string | null>(null);
   const [rollingBackId, setRollingBackId] = useState<number | null>(null);
   const [selectedBatch, setSelectedBatch] = useState<ImportBatch | null>(null);
+  const [backupLoading, setBackupLoading] = useState<"month" | "all" | null>(null);
+
+  const downloadBackup = async (scope: "month" | "all") => {
+    setBackupLoading(scope);
+    try {
+      await downloadSystemBackup(scope === "month" ? selectedMonth : undefined);
+      message.success(scope === "month" ? "本月系统备份已下载" : "全量系统备份已下载");
+    } catch {
+      message.error("系统备份下载失败，请检查登录状态或后端服务");
+    } finally {
+      setBackupLoading(null);
+    }
+  };
 
   const permissions = useMemo(() => new Set(auth?.permissions ?? []), [auth]);
   const canWriteRules = permissions.has("rules:write");
@@ -475,34 +490,18 @@ export default function Settings() {
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
         <MonthWorkflowStatus month={selectedMonth} />
 
-        <Card title="登录与角色权限">
+        <Card title="当前账号与权限">
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Space wrap>
-              <Input style={{ width: 180 }} value={username} onChange={(event) => setUsername(event.target.value)} placeholder="账号" />
-              <Input.Password style={{ width: 180 }} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" />
-              <Button type="primary" loading={loginLoading} onClick={submitLogin}>登录</Button>
-              <Button onClick={logout} disabled={!loginUser}>退出</Button>
-              {loginUser && <Tag color="green">已登录：{loginUser}</Tag>}
+              <Tag color="green">已登录</Tag>
+              <b>{currentAccount.user?.displayName || currentAccount.user?.username}</b>
+              <Tag color="blue">{currentAccount.user?.auth?.label || currentAccount.user?.role}</Tag>
+              <Button onClick={() => currentAccount.logout()}>退出登录</Button>
             </Space>
             <Space wrap>
-              <span>当前角色</span>
-              <Select
-                value={currentRole}
-                style={{ width: 220 }}
-                options={(auth?.roles ?? []).map((role) => ({ label: role.label, value: role.role }))}
-                onChange={changeRole}
-              />
-              <Tag color="blue">{auth?.label ?? currentRole}</Tag>
+              {(currentAccount.user?.auth?.permissions ?? auth?.permissions ?? []).map((permission) => <Tag key={permission}>{permission}</Tag>)}
             </Space>
-            <Space wrap>
-              {(auth?.permissions ?? []).map((permission) => <Tag key={permission}>{permission}</Tag>)}
-            </Space>
-            <Alert
-              type="info"
-              showIcon
-              message="已支持正式登录 token，同时保留本地测试角色模式"
-              description="默认测试账号：admin/admin123、finance/finance123、supervisor/supervisor123、boss/boss123、sales/sales123。登录后后端优先按 token 中的用户角色鉴权；未登录时才使用本地测试角色。"
-            />
+            <Alert type="info" showIcon message="账号登录统一在登录页完成" description="当前页面用于查看权限和管理财务参数；退出后再次访问业务页面会自动进入登录页。" />
           </Space>
         </Card>
 
@@ -522,10 +521,10 @@ export default function Settings() {
               description="系统备份会导出表头模板、参数规则、导入批次、锁账状态、确认单、操作日志和导出记录，便于审计和迁移。"
             />
             <Space wrap>
-              <Button onClick={() => window.open(systemBackupExportUrl(selectedMonth), "_blank")}>
+              <Button loading={backupLoading === "month"} onClick={() => downloadBackup("month")}>
                 导出本月系统备份 Excel
               </Button>
-              <Button onClick={() => window.open(systemBackupExportUrl(), "_blank")}>
+              <Button loading={backupLoading === "all"} onClick={() => downloadBackup("all")}>
                 导出全量系统备份 Excel
               </Button>
             </Space>

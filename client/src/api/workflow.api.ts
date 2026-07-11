@@ -1,4 +1,5 @@
 import { request } from "./request";
+import { downloadAuthenticatedFile } from "./download";
 
 export type ConfirmationDocument = {
   id: number;
@@ -135,21 +136,19 @@ export function confirmationDocumentDownloadUrl(id: number, format: "xlsx" | "pd
 }
 
 export async function downloadConfirmationDocumentFile(id: number, format: "xlsx" | "pdf" | "png" = "xlsx") {
-  const response = await request.get(`/workflow/documents/${id}/download`, {
-    params: { format },
-    responseType: "blob"
-  });
-  const disposition = response.headers["content-disposition"] as string | undefined;
-  const matched = disposition?.match(/filename="?(?:UTF-8'')?([^";]+)"?/i);
-  const fileName = matched?.[1] ? decodeURIComponent(matched[1]) : `confirmation-${id}.${format}`;
-  const url = URL.createObjectURL(response.data);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  return downloadAuthenticatedFile(`/workflow/documents/${id}/download`, `confirmation-${id}.${format}`, { format });
+}
+
+export function downloadExportJobFile(id: number, fallbackFileName = `export-${id}.xlsx`) {
+  return downloadAuthenticatedFile(`/workflow/exports/${id}/download`, fallbackFileName);
+}
+
+export function downloadMonthlyReport(month: string) {
+  return downloadAuthenticatedFile("/reports/monthly/export", `${month}-finance-report.xlsx`, { month });
+}
+
+export function downloadSystemBackup(month?: string) {
+  return downloadAuthenticatedFile("/workflow/backup/export", month ? `${month}-system-backup.xlsx` : "xjd-finance-system-backup.xlsx", month ? { month } : undefined);
 }
 
 export function monthlyReportExportUrl(month = "2026-06") {

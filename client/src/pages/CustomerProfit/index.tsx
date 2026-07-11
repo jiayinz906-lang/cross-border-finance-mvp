@@ -305,7 +305,7 @@ export default function CustomerProfit() {
     <div className="customer-board">
       <header className="profit-hero">
         <div>
-          <h1>2026年6月跨境电商经营与提成测试台</h1>
+          <h1>{selectedMonth} 跨境物流财务管理</h1>
           <p>基于 6月数据 Excel 汇总，统一汇率、倒推成本、物流提成和风险复核口径。</p>
         </div>
         <Space size={12} wrap>

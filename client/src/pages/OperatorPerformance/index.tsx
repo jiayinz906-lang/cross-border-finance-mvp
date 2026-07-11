@@ -1,4 +1,4 @@
-import { Button, Card, Input, InputNumber, Space, Table, Tag, message } from "antd";
+import { Button, Card, Input, InputNumber, Modal, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getOperatorPerformanceAnalysis } from "../../api/analytics.api";
@@ -13,6 +13,8 @@ import {
 } from "../../api/workflow.api";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { FinanceOrder } from "../../types/finance.types";
+import { ReasonActionModal } from "../../components/ReasonActionModal";
+import { copyText } from "../../utils/copyText";
 
 type PerformanceCategory = "white" | "grey" | "company" | "eac" | "trademark";
 
@@ -180,6 +182,9 @@ export default function OperatorPerformance() {
   const [operatorGroups, setOperatorGroups] = useState<OperatorGroup[]>([]);
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
   const [loading, setLoading] = useState(false);
+  const [supervisorDocument, setSupervisorDocument] = useState<ConfirmationDocument | null>(null);
+  const [voidingDocument, setVoidingDocument] = useState<ConfirmationDocument | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -228,8 +233,9 @@ export default function OperatorPerformance() {
   const handleSend = async (row: ConfirmationDocument) => {
     const res = await sendSignatureLink(row.id);
     const url = externalSignatureUrl(res.data.signatureUrl);
-    await navigator.clipboard?.writeText(url);
-    message.success("绩效签名链接已生成并复制，可直接发送给客服代表");
+    const copied = await copyText(url);
+    if (copied) message.success("绩效签名链接已生成并复制，可直接发送给客服代表");
+    else Modal.info({ title: "签名链接已生成，请手动复制", content: <Typography.Paragraph copyable>{url}</Typography.Paragraph> });
     await loadData();
   };
 
@@ -237,23 +243,9 @@ export default function OperatorPerformance() {
     await downloadConfirmationDocumentFile(row.id, fileFormat);
   };
 
-  const handleSupervisorConfirm = async (row: ConfirmationDocument) => {
-    const adjustReason = window.prompt("如本次绩效确认涉及调整，请填写原因；无调整可直接确定：") ?? undefined;
-    await supervisorConfirmDocument(row.id, adjustReason?.trim() || undefined);
-    message.success(`${row.ownerName} 绩效单已主管确认`);
-    await loadData();
-  };
+  const handleSupervisorConfirm = (row: ConfirmationDocument) => setSupervisorDocument(row);
 
-  const handleVoid = async (row: ConfirmationDocument) => {
-    const voidReason = window.prompt("请输入作废/重签原因：");
-    if (!voidReason?.trim()) {
-      message.warning("作废绩效确认单必须填写原因");
-      return;
-    }
-    await voidDocument(row.id, voidReason.trim());
-    message.success(`${row.ownerName} 绩效单已作废，等待重签`);
-    await loadData();
-  };
+  const handleVoid = (row: ConfirmationDocument) => setVoidingDocument(row);
 
   const totalPayablePerformance = useMemo(
     () => operatorGroups.reduce((sum, group) => sum + group.payablePerformance, 0),
@@ -447,6 +439,44 @@ export default function OperatorPerformance() {
           scroll={{ x: 1500 }}
         />
       </Card>
+      <ReasonActionModal
+        open={Boolean(supervisorDocument)}
+        title={`主管确认绩效：${supervisorDocument?.ownerName ?? ""}`}
+        description={`确认金额：${supervisorDocument?.commissionAmount ?? 0} 元。确认后该版本不可覆盖。`}
+        confirmText="主管确认"
+        reasonRequired={false}
+        loading={actionLoading}
+        onCancel={() => setSupervisorDocument(null)}
+        onConfirm={async (reason) => {
+          if (!supervisorDocument) return;
+          setActionLoading(true);
+          try {
+            await supervisorConfirmDocument(supervisorDocument.id, reason || undefined);
+            message.success(`${supervisorDocument.ownerName} 绩效单已主管确认`);
+            setSupervisorDocument(null);
+            await loadData();
+          } finally { setActionLoading(false); }
+        }}
+      />
+      <ReasonActionModal
+        open={Boolean(voidingDocument)}
+        title={`作废绩效确认单：${voidingDocument?.ownerName ?? ""}`}
+        description="作废后原单保留审计记录，需要重新生成并发送签名。"
+        confirmText="确认作废"
+        danger
+        loading={actionLoading}
+        onCancel={() => setVoidingDocument(null)}
+        onConfirm={async (reason) => {
+          if (!voidingDocument) return;
+          setActionLoading(true);
+          try {
+            await voidDocument(voidingDocument.id, reason);
+            message.success(`${voidingDocument.ownerName} 绩效单已作废，等待重签`);
+            setVoidingDocument(null);
+            await loadData();
+          } finally { setActionLoading(false); }
+        }}
+      />
     </div>
   );
 }

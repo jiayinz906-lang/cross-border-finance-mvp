@@ -2422,3 +2422,207 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+.route-loading,
+.page-state {
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #eef3f9;
+}
+
+.login-card {
+  width: min(430px, 100%);
+  border: 1px solid #e1e8f2;
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(23, 35, 67, 0.14);
+}
+
+.login-card .ant-card-body {
+  padding: 34px;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.login-brand-mark {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: #ffffff;
+  background: #2563eb;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.login-brand h2 {
+  margin: 0 0 3px !important;
+  color: #071737;
+}
+
+.login-intro {
+  margin-bottom: 22px !important;
+  color: #6f7f98;
+  line-height: 1.7;
+}
+
+.login-card .ant-alert {
+  margin-bottom: 18px;
+}
+
+.sider-account {
+  margin-top: auto;
+  padding: 14px;
+  border-radius: 6px;
+  background: #263a6b;
+  color: #d8e5ff;
+}
+
+.sider-account > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-weight: 800;
+}
+
+.sider-account .ant-tag {
+  margin-bottom: 8px;
+  color: #dce6ff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sider-account .ant-btn {
+  width: 100%;
+  color: #ffffff;
+  text-align: left;
+}
+
+.mobile-app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 56px;
+  padding: 0 12px;
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  color: #ffffff;
+  background: #172343;
+}
+
+.mobile-app-header .ant-btn {
+  color: #ffffff;
+}
+
+.mobile-app-header span {
+  max-width: 92px;
+  overflow: hidden;
+  color: #c9d7f5;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-nav-drawer .ant-drawer-body {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 15px 24px;
+  background: #172343;
+}
+
+.mobile-nav-drawer .brand {
+  margin-bottom: 20px;
+}
+
+.mobile-nav-drawer .ant-menu {
+  flex: 1;
+  color: #d8e5ff;
+  background: transparent;
+  border: 0;
+}
+
+.mobile-nav-drawer .ant-menu-item {
+  color: #d8e5ff;
+}
+
+.mobile-nav-drawer .ant-menu-item-selected {
+  color: #ffffff;
+  background: #3b4f87;
+}
+
+.action-impact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.action-impact-grid > span {
+  min-height: 72px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid #e2e9f3;
+  border-radius: 6px;
+  color: #6f7f98;
+  background: #f8fbff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.action-impact-grid b {
+  color: #071737;
+  font-size: 17px;
+}
+
+@media (max-width: 760px) {
+  .app-content {
+    padding: 18px 12px 40px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .page-header h3 {
+    font-size: 24px !important;
+  }
+
+  .page-header-extra,
+  .page-header-extra .ant-space {
+    width: 100%;
+  }
+
+  .ant-modal {
+    max-width: calc(100vw - 20px);
+    margin: 10px auto;
+  }
+
+  .login-page {
+    padding: 12px;
+  }
+
+  .login-card .ant-card-body {
+    padding: 24px 18px;
+  }
+
+  .action-impact-grid {
+    grid-template-columns: 1fr;
+  }
+}

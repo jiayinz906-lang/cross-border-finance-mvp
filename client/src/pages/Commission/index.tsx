@@ -1,4 +1,4 @@
-import { Button, Card, InputNumber, Modal, Space, Table, Tag, message } from "antd";
+import { Button, Card, Input, InputNumber, Modal, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCommissions, updateCommissionRate } from "../../api/commissions.api";
@@ -16,6 +16,8 @@ import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
+import { ReasonActionModal } from "../../components/ReasonActionModal";
+import { copyText } from "../../utils/copyText";
 
 type CommissionOrder = {
   orderNo: string;
@@ -93,6 +95,11 @@ export default function Commission() {
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [selectedSalesperson, setSelectedSalesperson] = useState<string | null>(null);
   const [documentsOpen, setDocumentsOpen] = useState(false);
+  const [adjustingSalesperson, setAdjustingSalesperson] = useState<SalespersonCommission | null>(null);
+  const [adjustmentPercent, setAdjustmentPercent] = useState<number>(15);
+  const [supervisorDocument, setSupervisorDocument] = useState<ConfirmationDocument | null>(null);
+  const [voidingDocument, setVoidingDocument] = useState<ConfirmationDocument | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -151,16 +158,9 @@ export default function Commission() {
     await loadData();
   };
 
-  const handleAdjustSalesperson = async (row: SalespersonCommission) => {
-    const nextRate = row.commissionRate > 0 ? row.commissionRate : 0.15;
-    const adjustReason = window.prompt("请输入主管调整提成比例原因：");
-    if (!adjustReason?.trim()) {
-      message.warning("调整提成比例必须填写原因");
-      return;
-    }
-    await confirmSalespersonCommission(row.salespersonName, selectedMonth, nextRate, adjustReason.trim());
-    message.success(`${row.salespersonName} 已按 ${(nextRate * 100).toFixed(0)}% 调整并确认`);
-    await loadData();
+  const handleAdjustSalesperson = (row: SalespersonCommission) => {
+    setAdjustingSalesperson(row);
+    setAdjustmentPercent(Number(((row.commissionRate > 0 ? row.commissionRate : 0.15) * 100).toFixed(2)));
   };
 
   const handleGenerateOne = async (row: SalespersonCommission) => {
@@ -182,28 +182,15 @@ export default function Commission() {
     const res = await sendSignatureLink(row.id);
     const route = String(res.data.signatureUrl ?? "").startsWith("/") ? res.data.signatureUrl : `/${res.data.signatureUrl ?? ""}`;
     const url = `${window.location.origin}${window.location.pathname}#${route}`;
-    await navigator.clipboard?.writeText(url);
-    message.success(`${row.ownerName} 的个人确认单链接已生成并复制，可直接发送签名`);
+    const copied = await copyText(url);
+    if (copied) message.success(`${row.ownerName} 的个人确认单链接已生成并复制，可直接发送签名`);
+    else Modal.info({ title: "签名链接已生成，请手动复制", content: <Input.TextArea value={url} readOnly autoSize={{ minRows: 2, maxRows: 4 }} /> });
     await loadDocuments();
   };
 
-  const handleSupervisorConfirm = async (row: ConfirmationDocument) => {
-    const adjustReason = window.prompt("如本次主管确认涉及调整，请填写原因；无调整可直接确定。") ?? undefined;
-    await supervisorConfirmDocument(row.id, adjustReason?.trim() || undefined);
-    message.success(`${row.ownerName} 已主管确认`);
-    await loadDocuments();
-  };
+  const handleSupervisorConfirm = (row: ConfirmationDocument) => setSupervisorDocument(row);
 
-  const handleVoidDocument = async (row: ConfirmationDocument) => {
-    const voidReason = window.prompt("请输入作废/重签原因：");
-    if (!voidReason?.trim()) {
-      message.warning("作废确认单必须填写原因");
-      return;
-    }
-    await voidDocument(row.id, voidReason.trim());
-    message.success(`${row.ownerName} 已作废，可重新生成确认单`);
-    await loadDocuments();
-  };
+  const handleVoidDocument = (row: ConfirmationDocument) => setVoidingDocument(row);
 
   const summary = dashboard?.summary;
 
@@ -480,6 +467,77 @@ export default function Commission() {
           scroll={{ x: 1320 }}
         />
       </Modal>
+
+      <ReasonActionModal
+        open={Boolean(adjustingSalesperson)}
+        title={`调整 ${adjustingSalesperson?.salespersonName ?? ""} 的提成比例`}
+        description="调整会影响本月应计提成，并写入操作审计记录。"
+        confirmText="保存并确认"
+        loading={actionLoading}
+        onCancel={() => setAdjustingSalesperson(null)}
+        onConfirm={async (reason) => {
+          if (!adjustingSalesperson) return;
+          setActionLoading(true);
+          try {
+            await confirmSalespersonCommission(adjustingSalesperson.salespersonName, selectedMonth, adjustmentPercent / 100, reason);
+            message.success(`${adjustingSalesperson.salespersonName} 已按 ${adjustmentPercent.toFixed(2)}% 调整并确认`);
+            setAdjustingSalesperson(null);
+            await loadData();
+          } finally {
+            setActionLoading(false);
+          }
+        }}
+      >
+        <div className="action-impact-grid">
+          <span>当前比例<b>{rateText(adjustingSalesperson?.commissionRate)}</b></span>
+          <span>调整后比例<InputNumber min={0} max={100} precision={2} value={adjustmentPercent} addonAfter="%" onChange={(value) => setAdjustmentPercent(value ?? 0)} /></span>
+          <span>预计提成<b>{toPlainMoney((adjustingSalesperson?.grossProfit ?? 0) * adjustmentPercent / 100)}</b></span>
+        </div>
+      </ReasonActionModal>
+
+      <ReasonActionModal
+        open={Boolean(supervisorDocument)}
+        title={`主管确认：${supervisorDocument?.ownerName ?? ""}`}
+        description={`确认后该版本不可覆盖，最终提成为 ${toPlainMoney(supervisorDocument?.commissionAmount)}。`}
+        confirmText="主管确认"
+        reasonRequired={false}
+        loading={actionLoading}
+        onCancel={() => setSupervisorDocument(null)}
+        onConfirm={async (reason) => {
+          if (!supervisorDocument) return;
+          setActionLoading(true);
+          try {
+            await supervisorConfirmDocument(supervisorDocument.id, reason || undefined);
+            message.success(`${supervisorDocument.ownerName} 已主管确认`);
+            setSupervisorDocument(null);
+            await loadDocuments();
+          } finally {
+            setActionLoading(false);
+          }
+        }}
+      />
+
+      <ReasonActionModal
+        open={Boolean(voidingDocument)}
+        title={`作废并重签：${voidingDocument?.ownerName ?? ""}`}
+        description="作废后原确认单保留审计记录，需要重新生成新版本并发送签名。"
+        confirmText="确认作废"
+        danger
+        loading={actionLoading}
+        onCancel={() => setVoidingDocument(null)}
+        onConfirm={async (reason) => {
+          if (!voidingDocument) return;
+          setActionLoading(true);
+          try {
+            await voidDocument(voidingDocument.id, reason);
+            message.success(`${voidingDocument.ownerName} 已作废，可重新生成确认单`);
+            setVoidingDocument(null);
+            await loadDocuments();
+          } finally {
+            setActionLoading(false);
+          }
+        }}
+      />
     </div>
   );
 }

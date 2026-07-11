@@ -19,5 +19,6 @@ export const env = {
     : isProduction,
   allowHeaderRole: process.env.ALLOW_HEADER_ROLE
     ? process.env.ALLOW_HEADER_ROLE === "true"
-    : !isProduction
+    : !isProduction,
+  corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS || "http://localhost:5173").split(",").map((value) => value.trim()).filter(Boolean)
 };
