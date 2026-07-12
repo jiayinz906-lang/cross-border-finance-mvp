@@ -22,6 +22,7 @@
     "doctor": "tsx scripts/doctor.ts",
     "backup:system": "tsx scripts/export-system-backup.ts",
     "backup:db": "tsx scripts/backup-sqlite-db.ts",
+    "reset:business-data": "tsx scripts/reset-business-data.ts",
     "prisma:generate": "prisma generate",
     "prisma:deploy": "prisma generate && prisma db push",
     "prisma:migrate": "prisma migrate dev --name init",

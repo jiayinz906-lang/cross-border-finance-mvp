@@ -15,6 +15,7 @@ import {
   monthsController,
   parameterRulesController,
   rawLedgerLinesController,
+  resetBusinessDataController,
   rollbackImportBatchController,
   summaryController,
   updateParameterRuleController
@@ -37,5 +38,6 @@ financeRoutes.get("/charge-lines", chargeLinesController);
 financeRoutes.post("/import-preview", upload.single("file"), importPreviewController);
 financeRoutes.post("/import", requirePermission("finance:import"), upload.single("file"), importExcelController);
 financeRoutes.post("/import-template", requirePermission("finance:import"), upload.single("file"), importTemplateController);
+financeRoutes.post("/reset-business-data", requirePermission("finance:reset"), resetBusinessDataController);
 financeRoutes.post("/import-batches/:id/rollback", requirePermission("finance:rollback"), rollbackImportBatchController);
 financeRoutes.get("/agent/rules", agentRulesController);

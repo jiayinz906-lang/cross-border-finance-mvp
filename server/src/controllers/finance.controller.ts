@@ -3,6 +3,8 @@ import { authContext } from "../config/rbac.js";
 import { currentRole } from "../middleware/rbac.middleware.js";
 import { excelService } from "../services/excel.service.js";
 import { financeService } from "../services/finance.service.js";
+import { resetBusinessData, resetConfirmationPhrase } from "../services/business-reset.service.js";
+import { currentUser } from "../middleware/rbac.middleware.js";
 
 export async function listLedgerController(req: Request, res: Response) {
   res.json(await financeService.listLedger(req.query.month as string | undefined));
@@ -109,4 +111,20 @@ export async function rollbackImportBatchController(req: Request, res: Response)
 
 export function agentRulesController(_req: Request, res: Response) {
   res.json(financeService.getAgentRules());
+}
+
+export async function resetBusinessDataController(req: Request, res: Response) {
+  if (req.body?.confirmation !== resetConfirmationPhrase) {
+    res.status(400).json({
+      code: "RESET_CONFIRMATION_REQUIRED",
+      message: `请输入确认口令 ${resetConfirmationPhrase} 后再清空业务数据。`
+    });
+    return;
+  }
+
+  const operator = currentUser(req)?.displayName ?? currentRole(req);
+  const reason = typeof req.body?.reason === "string" && req.body.reason.trim()
+    ? req.body.reason.trim()
+    : "管理员初始化全新业务数据库";
+  res.json(await resetBusinessData(operator, reason));
 }
