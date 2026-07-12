@@ -18,7 +18,8 @@ export function currentUser(req: Request) {
     id: payload.sub,
     username: payload.username,
     displayName: payload.displayName,
-    role: payload.role
+    role: payload.role,
+    mustChangePassword: payload.mustChangePassword
   };
 }
 

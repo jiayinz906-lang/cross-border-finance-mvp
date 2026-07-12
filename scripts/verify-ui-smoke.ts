@@ -14,11 +14,12 @@ type ResponsePayload = {
 
 const clientUrl = process.env.UI_SMOKE_CLIENT_URL || "http://localhost:5173/";
 const apiUrl = process.env.UI_SMOKE_API_URL || "http://localhost:4000/api";
+let authToken = "";
 
 function requestText(url: string): Promise<ResponsePayload> {
   return new Promise((resolve, reject) => {
     const client = url.startsWith("https:") ? https : http;
-    const req = client.get(url, { timeout: 10000, headers: { "x-finance-role": "admin" } }, (res) => {
+    const req = client.get(url, { timeout: 10000, headers: authToken ? { authorization: `Bearer ${authToken}` } : {} }, (res) => {
       let body = "";
       res.setEncoding("utf8");
       res.on("data", (chunk) => { body += chunk; });
@@ -28,6 +29,22 @@ function requestText(url: string): Promise<ResponsePayload> {
       req.destroy(new Error(`Request timeout: ${url}`));
     });
     req.on("error", reject);
+  });
+}
+
+function requestPost(url: string, body: unknown): Promise<ResponsePayload> {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith("https:") ? https : http;
+    const payload = JSON.stringify(body);
+    const req = client.request(url, { method: "POST", timeout: 10000, headers: { "content-type": "application/json", "content-length": Buffer.byteLength(payload) } }, (res) => {
+      let responseBody = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { responseBody += chunk; });
+      res.on("end", () => resolve({ statusCode: res.statusCode ?? 0, body: responseBody }));
+    });
+    req.on("timeout", () => req.destroy(new Error(`Request timeout: ${url}`)));
+    req.on("error", reject);
+    req.end(payload);
   });
 }
 
@@ -61,6 +78,11 @@ async function main() {
 
   const health = await requestJson<{ status?: string; service?: string }>(`${apiUrl}/health`);
   push(checks, "Backend health is ok", health.status === "ok", JSON.stringify(health));
+
+  const login = await requestPost(`${apiUrl}/auth/login`, { username: process.env.UI_SMOKE_USERNAME || "admin", password: process.env.UI_SMOKE_PASSWORD || "admin123" });
+  if (login.statusCode < 200 || login.statusCode >= 300) throw new Error(`Smoke-test login failed: ${login.statusCode} ${login.body.slice(0, 200)}`);
+  authToken = JSON.parse(login.body).token as string;
+  push(checks, "Authenticated admin session established", Boolean(authToken));
 
   const readiness = await requestJson<{ status?: string; checks?: Record<string, boolean>; details?: { latestImportBatch?: { batchNo?: string; importedOrders?: number } | null; version?: string } }>(`${apiUrl}/health/ready?month=2026-06`);
   push(checks, "Backend readiness is ok", readiness.status === "ready" && Object.values(readiness.checks ?? {}).every(Boolean), JSON.stringify(readiness.checks));

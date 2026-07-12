@@ -10,7 +10,7 @@ import {
   updateParameterRule
 } from "../../api/finance.api";
 import { getReadiness } from "../../api/health.api";
-import { login } from "../../api/auth.api";
+import { changePassword, createUser, getNotificationStatus, getUsers, login, updateUser, type ManagedUser } from "../../api/auth.api";
 import {
   getActionLogs,
   getMonthCloseStatus,
@@ -90,6 +90,14 @@ export default function Settings() {
   const [rollingBackId, setRollingBackId] = useState<number | null>(null);
   const [selectedBatch, setSelectedBatch] = useState<ImportBatch | null>(null);
   const [backupLoading, setBackupLoading] = useState<"month" | "all" | null>(null);
+  const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [newUser, setNewUser] = useState({ username: "", password: "", displayName: "", role: "sales" });
+  const [passwordDraft, setPasswordDraft] = useState({ currentPassword: "", nextPassword: "" });
+  const [accountSaving, setAccountSaving] = useState(false);
+  const [notificationConfigured, setNotificationConfigured] = useState<boolean | null>(null);
 
   const downloadBackup = async (scope: "month" | "all") => {
     setBackupLoading(scope);
@@ -107,12 +115,27 @@ export default function Settings() {
   const canWriteRules = permissions.has("rules:write");
   const canRollback = permissions.has("finance:rollback");
   const canCloseMonth = permissions.has("finance:close");
+  const canManageUsers = (currentAccount.user?.auth?.permissions ?? auth?.permissions ?? []).includes("users:manage");
   const isMonthLocked = monthClose?.status === "locked";
 
   const loadAuth = useCallback(async () => {
     const res = await getAuthContext();
     setAuth(res.data);
   }, []);
+
+  const loadManagedUsers = useCallback(async () => {
+    if (!canManageUsers) return;
+    setUsersLoading(true);
+    try {
+      const [usersResponse, notificationResponse] = await Promise.all([getUsers(), getNotificationStatus()]);
+      setManagedUsers(usersResponse.data.rows ?? []);
+      setNotificationConfigured(notificationResponse.data.configured);
+    } catch {
+      message.error("账号或通知配置加载失败，请确认管理员权限。");
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [canManageUsers]);
 
   const loadBatches = useCallback(async () => {
     setLoading(true);
@@ -224,6 +247,49 @@ export default function Settings() {
   useEffect(() => {
     loadActionLogs();
   }, [loadActionLogs]);
+
+  useEffect(() => {
+    loadManagedUsers();
+  }, [loadManagedUsers]);
+
+  const submitPasswordChange = async () => {
+    if (!passwordDraft.currentPassword || passwordDraft.nextPassword.length < 10) {
+      message.warning("请输入当前密码；新密码至少 10 位。");
+      return;
+    }
+    setAccountSaving(true);
+    try {
+      const response = await changePassword(passwordDraft.currentPassword, passwordDraft.nextPassword);
+      currentAccount.replaceSession(response.data);
+      setPasswordDraft({ currentPassword: "", nextPassword: "" });
+      setPasswordModalOpen(false);
+      message.success("密码已更新，请使用新密码登录。");
+      await loadAuth();
+    } catch (error: any) {
+      message.error(error?.response?.data?.message ?? "修改密码失败");
+    } finally {
+      setAccountSaving(false);
+    }
+  };
+
+  const submitNewUser = async () => {
+    if (!newUser.username || !newUser.displayName || newUser.password.length < 10) {
+      message.warning("请填写账号、姓名和至少 10 位的初始密码。");
+      return;
+    }
+    setAccountSaving(true);
+    try {
+      await createUser(newUser);
+      message.success("账号已创建，首次登录必须修改密码。");
+      setNewUser({ username: "", password: "", displayName: "", role: "sales" });
+      setUserModalOpen(false);
+      await loadManagedUsers();
+    } catch (error: any) {
+      message.error(error?.response?.data?.message ?? "创建账号失败");
+    } finally {
+      setAccountSaving(false);
+    }
+  };
 
   const changeRole = (role: string) => {
     localStorage.setItem(roleStorageKey, role);
@@ -502,6 +568,35 @@ export default function Settings() {
               {(currentAccount.user?.auth?.permissions ?? auth?.permissions ?? []).map((permission) => <Tag key={permission}>{permission}</Tag>)}
             </Space>
             <Alert type="info" showIcon message="账号登录统一在登录页完成" description="当前页面用于查看权限和管理财务参数；退出后再次访问业务页面会自动进入登录页。" />
+          </Space>
+        </Card>
+
+        <Card
+          title="账号与通知管理"
+          extra={<Space><Button onClick={() => setPasswordModalOpen(true)}>修改我的密码</Button>{canManageUsers ? <Button type="primary" onClick={() => setUserModalOpen(true)}>新建账号</Button> : null}</Space>}
+        >
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            {currentAccount.user?.mustChangePassword ? <Alert type="warning" showIcon message="首次登录请先修改密码" description="为保护财务数据，请将初始密码改为至少 10 位的新密码。" /> : null}
+            {canManageUsers ? <Alert type={notificationConfigured ? "success" : "warning"} showIcon message={notificationConfigured ? "企业微信机器人通知已配置" : "企业微信机器人通知尚未配置"} description={notificationConfigured ? "发送签名链接时会自动投递给配置的企业微信群机器人。" : "当前仅生成可复制的签名链接；请在 Render 环境变量中配置 WECOM_WEBHOOK_URL 后启用真实发送。"} /> : null}
+            {canManageUsers ? <Table<ManagedUser>
+              rowKey="id"
+              loading={usersLoading}
+              size="small"
+              pagination={false}
+              dataSource={managedUsers}
+              columns={[
+                { title: "账号", dataIndex: "username" },
+                { title: "姓名", dataIndex: "displayName" },
+                { title: "角色", dataIndex: "role", render: (value) => <Tag color="blue">{value}</Tag> },
+                { title: "状态", render: (_, row) => <Tag color={row.isActive ? "green" : "red"}>{row.isActive ? "启用" : "已停用"}</Tag> },
+                { title: "首次改密", render: (_, row) => row.mustChangePassword ? <Tag color="gold">待修改</Tag> : <Tag>已完成</Tag> },
+                { title: "最后登录", dataIndex: "lastLoginAt", render: (value) => value ? String(value).replace("T", " ").slice(0, 19) : "-" },
+                { title: "操作", render: (_, row) => <Space>
+                  <Button size="small" onClick={async () => { const password = window.prompt(`重置 ${row.displayName} 的密码（至少 10 位）`); if (password && password.length >= 10) { await updateUser(row.id, { resetPassword: password }); message.success("密码已重置，用户下次登录必须修改密码。"); loadManagedUsers(); } }}>重置密码</Button>
+                  <Button size="small" danger={row.isActive} disabled={row.id === currentAccount.user?.id} onClick={async () => { await updateUser(row.id, { isActive: !row.isActive }); message.success(row.isActive ? "账号已停用" : "账号已启用"); loadManagedUsers(); }}>{row.isActive ? "停用" : "启用"}</Button>
+                </Space> }
+              ]}
+            /> : <Alert type="info" showIcon message="可在此修改自己的密码" description="账号创建、停用和企业微信通知配置仅对管理员开放。" />}
           </Space>
         </Card>
 
@@ -804,6 +899,20 @@ export default function Settings() {
             </Space>
           );
         })()}
+      </Modal>
+      <Modal title="修改我的密码" open={passwordModalOpen} onCancel={() => setPasswordModalOpen(false)} onOk={submitPasswordChange} okText="保存新密码" confirmLoading={accountSaving}>
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Input.Password value={passwordDraft.currentPassword} onChange={(event) => setPasswordDraft((value) => ({ ...value, currentPassword: event.target.value }))} placeholder="当前密码" />
+          <Input.Password value={passwordDraft.nextPassword} onChange={(event) => setPasswordDraft((value) => ({ ...value, nextPassword: event.target.value }))} placeholder="新密码，至少 10 位" />
+        </Space>
+      </Modal>
+      <Modal title="新建账号" open={userModalOpen} onCancel={() => setUserModalOpen(false)} onOk={submitNewUser} okText="创建账号" confirmLoading={accountSaving}>
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Input value={newUser.username} onChange={(event) => setNewUser((value) => ({ ...value, username: event.target.value }))} placeholder="登录账号" />
+          <Input value={newUser.displayName} onChange={(event) => setNewUser((value) => ({ ...value, displayName: event.target.value }))} placeholder="姓名" />
+          <Input.Password value={newUser.password} onChange={(event) => setNewUser((value) => ({ ...value, password: event.target.value }))} placeholder="初始密码，至少 10 位" />
+          <Select value={newUser.role} onChange={(role) => setNewUser((value) => ({ ...value, role }))} options={[{ value: "sales", label: "销售" }, { value: "finance", label: "财务" }, { value: "supervisor", label: "主管" }, { value: "admin", label: "管理员" }]} />
+        </Space>
       </Modal>
     </>
   );

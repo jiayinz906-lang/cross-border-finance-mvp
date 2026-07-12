@@ -4,6 +4,7 @@ import PDFDocument from "pdfkit";
 import sharp from "sharp";
 import { prisma } from "../prisma/client.js";
 import { analyticsService } from "./analytics.service.js";
+import { env } from "../config/env.js";
 
 type DocumentType = "logistics_commission" | "service_commission" | "operator_performance";
 
@@ -85,6 +86,29 @@ function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], s
     XLSX.utils.json_to_sheet(rows.length ? rows : [{ note: "no data" }]),
     sheetName.slice(0, 31)
   );
+}
+
+async function sendWecomNotification(document: { month: string; ownerName: string; commissionAmount: number; signatureUrl: string | null }) {
+  if (!env.wecomWebhookUrl || !document.signatureUrl) return null;
+  const externalUrl = `${env.publicAppUrl}#${document.signatureUrl}`;
+  const content = [
+    "# XJD Finance 个人确认单",
+    `> 月份：${document.month}`,
+    `> 确认人：${document.ownerName}`,
+    `> 确认金额：¥${money(document.commissionAmount).toFixed(2)}`,
+    "",
+    `[打开确认单并电子签名](${externalUrl})`
+  ].join("\n");
+  const response = await fetch(env.wecomWebhookUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ msgtype: "markdown", markdown: { content } })
+  });
+  const receipt = await response.json().catch(() => ({ httpStatus: response.status }));
+  if (!response.ok || (typeof receipt?.errcode === "number" && receipt.errcode !== 0)) {
+    throw new Error(receipt?.errmsg || `企业微信通知发送失败（HTTP ${response.status}）`);
+  }
+  return receipt;
 }
 
 function textValue(value: unknown) {
@@ -800,6 +824,8 @@ export const workflowService = {
         sendStatus: "link_generated",
         notificationChannel: null,
         notifiedAt: null,
+        notificationReceiptJson: null,
+        notificationError: null,
         signatureToken,
         signatureUrl,
         signatureTokenExpiresAt: expiresAt,
@@ -814,7 +840,44 @@ export const workflowService = {
       }
     });
     await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "generate_signature_link", payload: { signatureUrl, expiresAt } });
-    return document;
+    if (!env.wecomWebhookUrl) return document;
+
+    try {
+      const receipt = await sendWecomNotification(document);
+      const notifiedAt = new Date();
+      const notified = await prisma.confirmationDocument.update({
+        where: { id },
+        data: {
+          sendStatus: "notified",
+          notificationChannel: "wecom_webhook",
+          notifiedAt,
+          notificationReceiptJson: JSON.stringify(receipt ?? {}),
+          notificationError: null,
+          payloadJson: updatePayloadJson(document.payloadJson, (payload) => ({
+            ...payload,
+            signatureTrace: { ...(payload.signatureTrace ?? {}), notificationStatus: "notified", notificationChannel: "wecom_webhook", notifiedAt: notifiedAt.toISOString() }
+          }))
+        }
+      });
+      await logAction({ month: notified.month, entityType: "confirmation_document", entityId: id, action: "send_signature_notification", payload: { notificationChannel: "wecom_webhook", notifiedAt } });
+      return notified;
+    } catch (error: any) {
+      const notificationError = String(error?.message ?? "企业微信通知发送失败").slice(0, 500);
+      const failed = await prisma.confirmationDocument.update({
+        where: { id },
+        data: {
+          sendStatus: "delivery_failed",
+          notificationChannel: "wecom_webhook",
+          notificationError,
+          payloadJson: updatePayloadJson(document.payloadJson, (payload) => ({
+            ...payload,
+            signatureTrace: { ...(payload.signatureTrace ?? {}), notificationStatus: "delivery_failed", notificationChannel: "wecom_webhook", notificationError }
+          }))
+        }
+      });
+      await logAction({ month: failed.month, entityType: "confirmation_document", entityId: id, action: "signature_notification_failed", payload: { notificationChannel: "wecom_webhook", notificationError } });
+      return failed;
+    }
   },
 
   async markSignatureLinkNotified(id: number, channel: string) {
@@ -832,6 +895,8 @@ export const workflowService = {
         sendStatus: "notified",
         notificationChannel,
         notifiedAt,
+        notificationReceiptJson: null,
+        notificationError: null,
         payloadJson: updatePayloadJson(current.payloadJson, (payload) => ({
           ...payload,
           signatureTrace: {

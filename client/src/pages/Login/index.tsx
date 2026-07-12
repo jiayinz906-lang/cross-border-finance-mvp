@@ -18,8 +18,8 @@ export default function Login() {
     setLoading(true);
     setError("");
     try {
-      await login(values.username.trim(), values.password);
-      navigate(from, { replace: true });
+      const signedInUser = await login(values.username.trim(), values.password);
+      navigate(signedInUser.mustChangePassword ? "/settings" : from, { replace: true });
     } catch (requestError: any) {
       setError(requestError?.response?.data?.message ?? requestError?.response?.data?.detail ?? "登录失败，请检查账号和密码。  ");
     } finally {

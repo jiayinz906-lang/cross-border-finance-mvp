@@ -15,6 +15,8 @@ export type ConfirmationDocument = {
   sendStatus: string;
   notificationChannel?: string | null;
   notifiedAt?: string | null;
+  notificationReceiptJson?: string | null;
+  notificationError?: string | null;
   signatureStatus: string;
   supervisorStatus: string;
   signatureUrl?: string | null;

@@ -19,5 +19,7 @@ export const env = {
   allowHeaderRole: process.env.ALLOW_HEADER_ROLE
     ? process.env.ALLOW_HEADER_ROLE === "true"
     : false,
-  corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS || "http://localhost:5173").split(",").map((value) => value.trim()).filter(Boolean)
+  corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS || "http://localhost:5173").split(",").map((value) => value.trim()).filter(Boolean),
+  publicAppUrl: (process.env.PUBLIC_APP_URL || "http://localhost:5173/").replace(/\/$/, ""),
+  wecomWebhookUrl: process.env.WECOM_WEBHOOK_URL?.trim() || ""
 };

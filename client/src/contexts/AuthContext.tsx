@@ -13,6 +13,7 @@ type AuthContextValue = {
   token: string | null;
   ready: boolean;
   login: (username: string, password: string) => Promise<AuthUser>;
+  replaceSession: (session: LoginResult) => void;
   logout: () => void;
 };
 
@@ -38,6 +39,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(userKey);
     setToken(null);
     setUser(null);
+  }, []);
+
+  const replaceSession = useCallback((session: LoginResult) => {
+    localStorage.setItem(tokenKey, session.token);
+    localStorage.setItem(userKey, session.user.username);
+    setToken(session.token);
+    setUser(session.user);
+    window.dispatchEvent(new Event(authChangedEvent));
   }, []);
 
   useEffect(() => {
@@ -80,14 +89,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (username: string, password: string) => {
     const response = await loginRequest(username, password);
-    localStorage.setItem(tokenKey, response.data.token);
-    localStorage.setItem(userKey, response.data.user.username);
-    setToken(response.data.token);
-    setUser(response.data.user);
+    replaceSession(response.data);
     return response.data.user;
-  }, []);
+  }, [replaceSession]);
 
-  const value = useMemo(() => ({ user, token, ready, login, logout }), [user, token, ready, login, logout]);
+  const value = useMemo(() => ({ user, token, ready, login, replaceSession, logout }), [user, token, ready, login, replaceSession, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
