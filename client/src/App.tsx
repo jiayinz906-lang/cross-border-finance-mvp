@@ -1,12 +1,17 @@
-import { message } from "antd";
-import { useEffect } from "react";
+import { lazy, Suspense } from "react";
+import type { ReactNode } from "react";
 import { Navigate, RouterProvider, createHashRouter } from "react-router-dom";
 import { MonthProvider } from "./contexts/MonthContext";
-import SignaturePublic from "./pages/SignaturePublic";
-import Login from "./pages/Login";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { routes } from "./router";
+
+const SignaturePublic = lazy(() => import("./pages/SignaturePublic"));
+const Login = lazy(() => import("./pages/Login"));
+
+function publicPage(element: ReactNode) {
+  return <Suspense fallback={<div className="route-loading">正在加载页面...</div>}>{element}</Suspense>;
+}
 
 const router = createHashRouter([
   {
@@ -15,23 +20,14 @@ const router = createHashRouter([
   },
   {
     path: "/signature/:token",
-    element: <SignaturePublic />
+    element: publicPage(<SignaturePublic />)
   },
-  { path: "/login", element: <Login /> },
+  { path: "/login", element: publicPage(<Login />) },
   { element: <ProtectedRoute />, children: routes },
   { path: "*", element: <Navigate to="/dashboard" replace /> }
 ]);
 
 export default function App() {
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ message?: string }>).detail;
-      message.warning(detail?.message ?? "请先在参数规则页登录。");
-    };
-    window.addEventListener("xjd-api-auth-error", handler);
-    return () => window.removeEventListener("xjd-api-auth-error", handler);
-  }, []);
-
   return (
     <AuthProvider>
       <MonthProvider>

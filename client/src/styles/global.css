@@ -2641,3 +2641,11 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+.route-loading {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  color: #64748b;
+  font-size: 14px;
+}

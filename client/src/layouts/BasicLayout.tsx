@@ -1,6 +1,14 @@
-import { LogoutOutlined, MenuOutlined, UserOutlined } from "@ant-design/icons";
-import { Button, Drawer, Grid, Layout, Menu, Tag, Typography } from "antd";
-import type { MenuProps } from "antd";
+import LogoutOutlined from "@ant-design/icons/es/icons/LogoutOutlined";
+import MenuOutlined from "@ant-design/icons/es/icons/MenuOutlined";
+import UserOutlined from "@ant-design/icons/es/icons/UserOutlined";
+import Button from "antd/es/button";
+import Drawer from "antd/es/drawer";
+import useBreakpoint from "antd/es/grid/hooks/useBreakpoint";
+import Layout from "antd/es/layout";
+import Menu from "antd/es/menu";
+import type { MenuProps } from "antd/es/menu";
+import Tag from "antd/es/tag";
+import Typography from "antd/es/typography";
 import { useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -40,7 +48,7 @@ function Brand() {
 export function BasicLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const screens = Grid.useBreakpoint();
+  const screens = useBreakpoint();
   const isMobile = !screens.md;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { user, logout } = useAuth();
