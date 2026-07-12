@@ -21,5 +21,7 @@ export const env = {
     : false,
   corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS || "http://localhost:5173").split(",").map((value) => value.trim()).filter(Boolean),
   publicAppUrl: (process.env.PUBLIC_APP_URL || "http://localhost:5173/").replace(/\/$/, ""),
-  wecomWebhookUrl: process.env.WECOM_WEBHOOK_URL?.trim() || ""
+  wecomWebhookUrl: process.env.WECOM_WEBHOOK_URL?.trim() || "",
+  dingtalkWebhookUrl: process.env.DINGTALK_WEBHOOK_URL?.trim() || "",
+  dingtalkWebhookSecret: process.env.DINGTALK_WEBHOOK_SECRET?.trim() || ""
 };

@@ -183,8 +183,8 @@ export default function SignatureConfirm() {
       dataIndex: "sendStatus",
       width: 130,
       render: (value, row) => {
-        if (value === "notified") return <Tag color="green">{row.notificationChannel === "wecom_webhook" ? "企业微信已发送" : "已通知（手工）"}</Tag>;
-        if (value === "delivery_failed") return <Tag color="red" title={row.notificationError ?? "发送失败"}>企业微信发送失败</Tag>;
+        if (value === "notified") return <Tag color="green">{row.notificationChannel === "dingtalk_webhook" ? "钉钉已发送" : row.notificationChannel === "wecom_webhook" ? "企业微信已发送" : "已通知（手工）"}</Tag>;
+        if (value === "delivery_failed") return <Tag color="red" title={row.notificationError ?? "发送失败"}>{row.notificationChannel === "dingtalk_webhook" ? "钉钉发送失败" : "企业微信发送失败"}</Tag>;
         if (value === "link_generated") return <Tag color="blue">链接已生成</Tag>;
         return <Tag color="gold">未生成链接</Tag>;
       }
@@ -318,7 +318,7 @@ export default function SignatureConfirm() {
             <Descriptions.Item label="订单数量">{selectedDocument?.orderCount ?? 0}</Descriptions.Item>
             <Descriptions.Item label="最终提成金额">{toPlainMoney(selectedDocument?.commissionAmount)}</Descriptions.Item>
             <Descriptions.Item label="确认单状态">{selectedDocument?.documentStatus}</Descriptions.Item>
-            <Descriptions.Item label="通知状态">{selectedDocument?.sendStatus === "notified" ? (selectedDocument.notificationChannel === "wecom_webhook" ? "企业微信已发送" : "已记录手工通知") : selectedDocument?.sendStatus === "delivery_failed" ? `企业微信发送失败：${selectedDocument.notificationError ?? "请复制链接后手工发送"}` : selectedDocument?.sendStatus === "link_generated" ? "链接已生成，待通知" : "未生成链接"}</Descriptions.Item>
+            <Descriptions.Item label="通知状态">{selectedDocument?.sendStatus === "notified" ? (selectedDocument.notificationChannel === "dingtalk_webhook" ? "钉钉已发送" : selectedDocument.notificationChannel === "wecom_webhook" ? "企业微信已发送" : "已记录手工通知") : selectedDocument?.sendStatus === "delivery_failed" ? `${selectedDocument.notificationChannel === "dingtalk_webhook" ? "钉钉" : "企业微信"}发送失败：${selectedDocument.notificationError ?? "请复制链接后手工发送"}` : selectedDocument?.sendStatus === "link_generated" ? "链接已生成，待通知" : "未生成链接"}</Descriptions.Item>
             <Descriptions.Item label="员工签名状态">{selectedDocument?.signatureStatus}</Descriptions.Item>
             <Descriptions.Item label="主管确认状态">{selectedDocument?.supervisorStatus}</Descriptions.Item>
           </Descriptions>

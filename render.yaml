@@ -23,6 +23,10 @@ services:
         value: https://jiayinz906-lang.github.io/cross-border-finance-mvp/
       - key: WECOM_WEBHOOK_URL
         sync: false
+      - key: DINGTALK_WEBHOOK_URL
+        sync: false
+      - key: DINGTALK_WEBHOOK_SECRET
+        sync: false
       - key: AUTH_TOKEN_SECRET
         generateValue: true
 

@@ -47,5 +47,5 @@ export function updateUser(id: number, payload: { displayName?: string; role?: s
 }
 
 export function getNotificationStatus() {
-  return request.get<{ provider: string; configured: boolean }>("/auth/notification-status");
+  return request.get<{ provider: string | null; configured: boolean; channels: { dingtalkWebhook: { configured: boolean; signingEnabled: boolean }; wecomWebhook: { configured: boolean } } }>("/auth/notification-status");
 }

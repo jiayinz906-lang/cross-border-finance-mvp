@@ -98,6 +98,7 @@ export default function Settings() {
   const [passwordDraft, setPasswordDraft] = useState({ currentPassword: "", nextPassword: "" });
   const [accountSaving, setAccountSaving] = useState(false);
   const [notificationConfigured, setNotificationConfigured] = useState<boolean | null>(null);
+  const [notificationProvider, setNotificationProvider] = useState<string | null>(null);
 
   const downloadBackup = async (scope: "month" | "all") => {
     setBackupLoading(scope);
@@ -130,6 +131,7 @@ export default function Settings() {
       const [usersResponse, notificationResponse] = await Promise.all([getUsers(), getNotificationStatus()]);
       setManagedUsers(usersResponse.data.rows ?? []);
       setNotificationConfigured(notificationResponse.data.configured);
+      setNotificationProvider(notificationResponse.data.provider);
     } catch {
       message.error("账号或通知配置加载失败，请确认管理员权限。");
     } finally {
@@ -577,7 +579,7 @@ export default function Settings() {
         >
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             {currentAccount.user?.mustChangePassword ? <Alert type="warning" showIcon message="首次登录请先修改密码" description="为保护财务数据，请将初始密码改为至少 10 位的新密码。" /> : null}
-            {canManageUsers ? <Alert type={notificationConfigured ? "success" : "warning"} showIcon message={notificationConfigured ? "企业微信机器人通知已配置" : "企业微信机器人通知尚未配置"} description={notificationConfigured ? "发送签名链接时会自动投递给配置的企业微信群机器人。" : "当前仅生成可复制的签名链接；请在 Render 环境变量中配置 WECOM_WEBHOOK_URL 后启用真实发送。"} /> : null}
+            {canManageUsers ? <Alert type={notificationConfigured ? "success" : "warning"} showIcon message={notificationConfigured ? (notificationProvider === "dingtalk_webhook" ? "钉钉群机器人通知已配置" : "企业微信机器人通知已配置") : "钉钉/企业微信通知尚未配置"} description={notificationConfigured ? `发送签名链接时会自动通过${notificationProvider === "dingtalk_webhook" ? "钉钉群机器人" : "企业微信群机器人"}投递；钉钉优先于企业微信。` : "当前仅生成可复制的签名链接；请在 Render 环境变量中配置 DINGTALK_WEBHOOK_URL 或 WECOM_WEBHOOK_URL 后启用真实发送。"} /> : null}
             {canManageUsers ? <Table<ManagedUser>
               rowKey="id"
               loading={usersLoading}
