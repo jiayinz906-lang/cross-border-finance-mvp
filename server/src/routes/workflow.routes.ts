@@ -1,3 +1,4 @@
+import cors from "cors";
 import { Router } from "express";
 import {
   actionLogsController,
@@ -15,6 +16,7 @@ import {
   markRiskReviewedController,
   monthCloseStatusController,
   monthStatusController,
+  markSignatureLinkNotifiedController,
   publicSignatureDocumentController,
   sendSignatureLinkController,
   signByTokenController,
@@ -25,12 +27,18 @@ import {
 import { requirePermission } from "../middleware/rbac.middleware.js";
 
 export const workflowRoutes = Router();
+const publicSignatureCors = cors({ origin: true });
+
+// These two token-protected endpoints are intentionally public so an employee
+// can open and sign a confirmation from an external phone browser.
+workflowRoutes.use("/signature", publicSignatureCors);
 
 workflowRoutes.get("/documents", listDocumentsController);
 workflowRoutes.post("/documents/logistics/generate", requirePermission("confirmation:approve"), generateLogisticsDocumentsController);
 workflowRoutes.post("/documents/service/generate", requirePermission("confirmation:approve"), generateServiceDocumentsController);
 workflowRoutes.post("/documents/operator/generate", requirePermission("confirmation:approve"), generateOperatorDocumentsController);
 workflowRoutes.post("/documents/:id/send-signature", requirePermission("confirmation:approve"), sendSignatureLinkController);
+workflowRoutes.post("/documents/:id/mark-notified", requirePermission("confirmation:approve"), markSignatureLinkNotifiedController);
 workflowRoutes.get("/signature/:token", publicSignatureDocumentController);
 workflowRoutes.post("/signature/:token/sign", signByTokenController);
 workflowRoutes.post("/documents/:id/supervisor-confirm", requirePermission("confirmation:approve"), supervisorConfirmController);

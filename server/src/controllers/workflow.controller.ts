@@ -32,6 +32,13 @@ export async function sendSignatureLinkController(req: Request, res: Response) {
   res.json(await workflowService.sendSignatureLink(Number(req.params.id)));
 }
 
+export async function markSignatureLinkNotifiedController(req: Request, res: Response) {
+  res.json(await workflowService.markSignatureLinkNotified(
+    Number(req.params.id),
+    typeof req.body?.channel === "string" ? req.body.channel : "manual_copy"
+  ));
+}
+
 export async function publicSignatureDocumentController(req: Request, res: Response) {
   res.json(await workflowService.publicSignatureDocument(req.params.token));
 }

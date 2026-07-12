@@ -6,7 +6,7 @@ import {
   ReloadOutlined,
   SafetyOutlined
 } from "@ant-design/icons";
-import { Alert, Button, Card, Input, Modal, Space, Spin, Table, Tag, message } from "antd";
+import { Alert, Button, Card, Empty, Input, Modal, Space, Spin, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -319,7 +319,20 @@ export default function Dashboard() {
       {loadError ? <Alert className="overview-load-alert" type="error" showIcon message={loadError} action={<Button onClick={load}>重试</Button>} /> : null}
       {loading && !data ? <div className="page-state"><Spin size="large" tip="正在加载经营数据" /></div> : null}
 
-      {data ? <><section className="overview-kpi-grid">
+      {data && !summary ? (
+        <Card className="first-import-card">
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={<Space direction="vertical" size={4}><strong>尚未导入业务数据</strong><span>请先上传符合固定表头规范的 Excel，系统会生成原始台账、应收应付、毛利、风险与提成数据。</span></Space>}
+          >
+            <Space wrap>
+              <ImportButton onImported={handleImported} />
+              <TemplateImportButton />
+              <Button onClick={() => navigate("/settings")}>查看模板与参数规则</Button>
+            </Space>
+          </Empty>
+        </Card>
+      ) : data ? <><section className="overview-kpi-grid">
         {kpis.map((item) => <MetricCard key={item.title} item={item} />)}
       </section>
 

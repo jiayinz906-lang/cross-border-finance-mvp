@@ -8,6 +8,7 @@ import {
   downloadExportJobFile,
   generateLogisticsDocuments,
   getDocuments,
+  markSignatureLinkNotified,
   sendSignatureLink,
   supervisorConfirmDocument,
   voidDocument
@@ -150,12 +151,22 @@ export default function SignatureConfirm() {
     await loadData();
   };
 
+  const handleMarkNotified = async (row: ConfirmationDocument) => {
+    try {
+      await markSignatureLinkNotified(row.id, "manual_copy");
+      message.success("已记录为手工复制通知，等待员工签名");
+      await loadData();
+    } catch (error: any) {
+      message.error(error?.response?.data?.message ?? "通知记录失败，请先生成有效签名链接");
+    }
+  };
+
   const handleSupervisorConfirm = (row: ConfirmationDocument) => setSupervisorDocument(row);
 
   const handleVoid = (row: ConfirmationDocument) => setVoidingDocument(row);
 
   const needConfirmCount = documents.length;
-  const sentCount = documents.filter((row) => row.sendStatus === "sent").length;
+  const sentCount = documents.filter((row) => row.sendStatus === "notified").length;
   const signedCount = documents.filter((row) => row.signatureStatus === "signed").length;
   const pendingSignCount = Math.max(needConfirmCount - signedCount, 0);
   const supervisorConfirmedCount = documents.filter((row) => row.supervisorStatus === "confirmed").length;
@@ -167,7 +178,16 @@ export default function SignatureConfirm() {
     { title: "订单数量", dataIndex: "orderCount", width: 100 },
     { title: "最终提成金额", dataIndex: "commissionAmount", align: "right", width: 140, render: toPlainMoney },
     { title: "个人确认单状态", dataIndex: "documentStatus", width: 130, render: (value) => <Tag color={value === "voided" ? "red" : "blue"}>{value === "voided" ? "已作废" : "已生成"}</Tag> },
-    { title: "发送状态", dataIndex: "sendStatus", width: 110, render: (value) => value === "sent" ? <Tag color="green">已发送</Tag> : <Tag color="gold">未发送</Tag> },
+    {
+      title: "通知状态",
+      dataIndex: "sendStatus",
+      width: 130,
+      render: (value, row) => {
+        if (value === "notified") return <Tag color="green">已通知{row.notificationChannel === "manual_copy" ? "（手工）" : ""}</Tag>;
+        if (value === "link_generated") return <Tag color="blue">链接已生成</Tag>;
+        return <Tag color="gold">未生成链接</Tag>;
+      }
+    },
     { title: "员工签名状态", dataIndex: "signatureStatus", width: 120, render: (value) => value === "signed" ? <Tag color="green">已签名</Tag> : <Tag color="gold">待签名</Tag> },
     { title: "签名时间", width: 190, render: (_, row) => signTime(row) },
     { title: "主管确认状态", dataIndex: "supervisorStatus", width: 130, render: (value) => value === "confirmed" ? <Tag color="green">主管已确认</Tag> : <Tag color="gold">待确认</Tag> },
@@ -179,7 +199,7 @@ export default function SignatureConfirm() {
       render: (_, row) => (
         <Space size={6} wrap>
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看个人确认单</Button>
-          <Button size="small" onClick={() => handleSend(row)}>发送签名链接</Button>
+          <Button size="small" onClick={() => handleSend(row)}>生成外发链接</Button>
           <Button size="small" disabled={!row.signatureUrl} onClick={async () => {
             if (usesLocalSignatureBackend()) {
               Modal.warning({
@@ -192,6 +212,7 @@ export default function SignatureConfirm() {
             if (await copyText(url)) message.success("签名链接已复制");
             else Modal.info({ title: "请手动复制签名链接", content: <Typography.Paragraph copyable>{url}</Typography.Paragraph> });
           }}>复制链接</Button>
+          <Button size="small" disabled={!row.signatureUrl || row.sendStatus === "notified"} onClick={() => handleMarkNotified(row)}>标记已通知</Button>
           <Button size="small" onClick={() => handleDownload(row, "xlsx")}>下载确认单</Button>
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>下载 PDF</Button>
           <Button size="small" onClick={() => handleDownload(row, "png")}>下载 PNG</Button>
@@ -223,7 +244,7 @@ export default function SignatureConfirm() {
       >
         <div className="signature-stat-grid">
           <div><span>本月需确认人数</span><strong>{needConfirmCount}</strong></div>
-          <div><span>已发送人数</span><strong>{sentCount}</strong></div>
+          <div><span>已通知人数</span><strong>{sentCount}</strong></div>
           <div><span>已签名人数</span><strong>{signedCount}</strong></div>
           <div><span>待签名人数</span><strong>{pendingSignCount}</strong></div>
           <div><span>已主管确认人数</span><strong>{supervisorConfirmedCount}</strong></div>
@@ -296,7 +317,7 @@ export default function SignatureConfirm() {
             <Descriptions.Item label="订单数量">{selectedDocument?.orderCount ?? 0}</Descriptions.Item>
             <Descriptions.Item label="最终提成金额">{toPlainMoney(selectedDocument?.commissionAmount)}</Descriptions.Item>
             <Descriptions.Item label="确认单状态">{selectedDocument?.documentStatus}</Descriptions.Item>
-            <Descriptions.Item label="发送状态">{selectedDocument?.sendStatus}</Descriptions.Item>
+            <Descriptions.Item label="通知状态">{selectedDocument?.sendStatus === "notified" ? "已通知" : selectedDocument?.sendStatus === "link_generated" ? "链接已生成，待通知" : "未生成链接"}</Descriptions.Item>
             <Descriptions.Item label="员工签名状态">{selectedDocument?.signatureStatus}</Descriptions.Item>
             <Descriptions.Item label="主管确认状态">{selectedDocument?.supervisorStatus}</Descriptions.Item>
           </Descriptions>

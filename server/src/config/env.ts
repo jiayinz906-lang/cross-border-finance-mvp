@@ -2,10 +2,9 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const isProduction = process.env.NODE_ENV === "production";
 const localDevTokenSecret = "xjd-finance-local-dev-secret";
 
-if (isProduction && !process.env.AUTH_TOKEN_SECRET) {
+if (process.env.NODE_ENV === "production" && !process.env.AUTH_TOKEN_SECRET) {
   throw new Error("AUTH_TOKEN_SECRET is required in production.");
 }
 
@@ -16,9 +15,9 @@ export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   authRequireToken: process.env.AUTH_REQUIRE_TOKEN
     ? process.env.AUTH_REQUIRE_TOKEN === "true"
-    : isProduction,
+    : true,
   allowHeaderRole: process.env.ALLOW_HEADER_ROLE
     ? process.env.ALLOW_HEADER_ROLE === "true"
-    : !isProduction,
-  corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS || "*").split(",").map((value) => value.trim()).filter(Boolean)
+    : false,
+  corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS || "http://localhost:5173").split(",").map((value) => value.trim()).filter(Boolean)
 };

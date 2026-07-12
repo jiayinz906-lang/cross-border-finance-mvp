@@ -7,15 +7,26 @@ import { errorMiddleware } from "./middleware/error.middleware.js";
 import { requestLogMiddleware } from "./middleware/request-log.middleware.js";
 import { requireAuthToken } from "./middleware/rbac.middleware.js";
 import { routes } from "./routes/index.js";
+import { env } from "./config/env.js";
 
 export const app = express();
 
-app.use(cors({
-  // Signature links are opened from employee phones, WeChat and email clients.
-  // Reflect every Origin so their browser can reach the public signing endpoint.
-  origin: true,
+const privateCors = cors({
+  // Finance APIs are available only to configured app origins. Public signing
+  // routes install their own CORS middleware in workflow.routes.
+  origin(origin, callback) {
+    callback(null, !origin || env.corsAllowedOrigins.includes(origin));
+  },
   credentials: false
-}));
+});
+
+app.use((req, res, next) => {
+  if (/^\/api\/workflow\/signature\/[^/]+(?:\/sign)?$/.test(req.path)) {
+    next();
+    return;
+  }
+  privateCors(req, res, next);
+});
 app.use(express.json());
 app.use(requestLogMiddleware);
 app.use("/api", requireAuthToken);

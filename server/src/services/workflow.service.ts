@@ -797,7 +797,9 @@ export const workflowService = {
     const document = await prisma.confirmationDocument.update({
       where: { id },
       data: {
-        sendStatus: "sent",
+        sendStatus: "link_generated",
+        notificationChannel: null,
+        notifiedAt: null,
         signatureToken,
         signatureUrl,
         signatureTokenExpiresAt: expiresAt,
@@ -805,13 +807,43 @@ export const workflowService = {
           ...payload,
           signatureTrace: {
             ...(payload.signatureTrace ?? {}),
-            employeeSignature: "signature link sent",
+            employeeSignature: "signature link generated, awaiting notification",
             tokenExpiresAt: expiresAt.toISOString()
           }
         }))
       }
     });
-    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "send_signature_link", payload: { signatureUrl, expiresAt } });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "generate_signature_link", payload: { signatureUrl, expiresAt } });
+    return document;
+  },
+
+  async markSignatureLinkNotified(id: number, channel: string) {
+    const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
+    if (current.documentStatus === "voided") throw new Error("Voided documents cannot be notified.");
+    if (!current.signatureUrl || !current.signatureToken) {
+      throw new Error("Generate a valid signature link before recording notification.");
+    }
+
+    const notificationChannel = channel.trim().slice(0, 60) || "manual_copy";
+    const notifiedAt = new Date();
+    const document = await prisma.confirmationDocument.update({
+      where: { id },
+      data: {
+        sendStatus: "notified",
+        notificationChannel,
+        notifiedAt,
+        payloadJson: updatePayloadJson(current.payloadJson, (payload) => ({
+          ...payload,
+          signatureTrace: {
+            ...(payload.signatureTrace ?? {}),
+            notificationStatus: "notified",
+            notificationChannel,
+            notifiedAt: notifiedAt.toISOString()
+          }
+        }))
+      }
+    });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "record_signature_notification", payload: { notificationChannel, notifiedAt } });
     return document;
   },
 
@@ -870,7 +902,7 @@ export const workflowService = {
       where: { id: current.id },
       data: {
         signatureStatus: "signed",
-        sendStatus: "sent",
+        sendStatus: current.sendStatus,
         signedAt,
         signerIp: proof.ip,
         signerUserAgent: proof.userAgent,
@@ -916,7 +948,7 @@ export const workflowService = {
       data: {
         supervisorStatus: "confirmed",
         signatureStatus: "signed",
-        sendStatus: "sent",
+        sendStatus: current.sendStatus,
         signedAt: current.signedAt ?? confirmedAt,
         confirmedAt,
         signerIp: current.signerIp ?? proof.ip,

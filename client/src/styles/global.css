@@ -2590,6 +2590,21 @@ body {
   font-size: 17px;
 }
 
+.first-import-card {
+  max-width: 860px;
+  margin: 56px auto;
+  border-color: #d9e5f5;
+}
+
+.first-import-card .ant-empty {
+  margin-block: 42px;
+}
+
+.first-import-card .ant-empty-description {
+  color: #5f6f86;
+  line-height: 1.8;
+}
+
 @media (max-width: 760px) {
   .app-content {
     padding: 18px 12px 40px;

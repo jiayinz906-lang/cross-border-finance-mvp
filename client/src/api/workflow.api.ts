@@ -13,6 +13,8 @@ export type ConfirmationDocument = {
   commissionAmount: number;
   documentStatus: string;
   sendStatus: string;
+  notificationChannel?: string | null;
+  notifiedAt?: string | null;
   signatureStatus: string;
   supervisorStatus: string;
   signatureUrl?: string | null;
@@ -79,6 +81,10 @@ export function generateOperatorDocuments(month = "2026-06") {
 
 export function sendSignatureLink(id: number) {
   return request.post(`/workflow/documents/${id}/send-signature`);
+}
+
+export function markSignatureLinkNotified(id: number, channel = "manual_copy") {
+  return request.post(`/workflow/documents/${id}/mark-notified`, { channel });
 }
 
 export type PublicSignatureDocument = {

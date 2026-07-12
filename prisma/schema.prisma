@@ -319,6 +319,8 @@ model ConfirmationDocument {
   payloadJson         String?
   documentStatus      String    @default("generated")
   sendStatus          String    @default("unsent")
+  notificationChannel String?
+  notifiedAt          DateTime?
   signatureStatus     String    @default("pending")
   supervisorStatus    String    @default("pending")
   signatureToken      String?   @unique
