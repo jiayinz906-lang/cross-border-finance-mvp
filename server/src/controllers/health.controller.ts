@@ -35,7 +35,10 @@ export async function readinessController(req: Request, res: Response) {
     checks.database = true;
     checks.importTemplate = templateCount > 0;
     checks.parameterRules = ruleCount > 0;
-    checks.financeSummary = Boolean(summary);
+    // A new deployment is valid before its first Excel import. Keep this
+    // diagnostic visible without making an intentionally empty database fail
+    // the platform readiness probe.
+    checks.financeSummary = true;
     details.templateCount = templateCount;
     details.activeRuleCount = ruleCount;
     details.month = month;
@@ -58,6 +61,7 @@ export async function readinessController(req: Request, res: Response) {
       riskOrderCount: summary.riskOrderCount,
       updatedAt: summary.updatedAt
     } : null;
+    details.businessDataInitialized = Boolean(summary);
   } catch (error) {
     details.error = error instanceof Error ? error.message : String(error);
   }
