@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { can } from "../server/src/config/rbac.js";
 import { prisma } from "../server/src/prisma/client.js";
 import { authService, parseAuthToken } from "../server/src/services/auth.service.js";
+import { analyticsService } from "../server/src/services/analytics.service.js";
 import { financeService } from "../server/src/services/finance.service.js";
 import { payableService } from "../server/src/services/payable.service.js";
 import { receivableService } from "../server/src/services/receivable.service.js";
@@ -132,6 +133,22 @@ async function verifyImport(checks: Check[]) {
     "Dashboard business summary comparison fields generated",
     dashboard.businessSummary.every((row) => "momGrossProfitChange" in row && "yoyGrossProfitChange" in row),
     JSON.stringify(dashboard.businessSummary[0])
+  );
+
+  const operatorGroups = await analyticsService.operatorPerformance(imported.month);
+  const operatorRawTotal = operatorGroups.reduce((sum, group) => sum + group.totalCommission, 0);
+  const operatorPayableTotal = operatorGroups.reduce((sum, group) => sum + group.payablePerformance, 0);
+  assertCheck(
+    checks,
+    "Operator performance uses full category total without payout discount",
+    closeEnough(operatorRawTotal, operatorPayableTotal),
+    `${operatorRawTotal} / ${operatorPayableTotal}`
+  );
+  assertCheck(
+    checks,
+    "Operator performance counts only imported orders and never negative payable tickets",
+    operatorGroups.every((group) => group.rows.every((row) => row.orderCount >= 0 && row.commissionOrderCount >= 0 && row.commissionOrderCount === Math.max(row.orderCount - row.baseCount, 0))),
+    JSON.stringify(operatorGroups.map((group) => ({ operator: group.operatorName, rows: group.rows.map((row) => [row.orderCount, row.baseCount, row.commissionOrderCount]) })))
   );
 
   return {

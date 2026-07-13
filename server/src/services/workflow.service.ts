@@ -846,9 +846,9 @@ export const workflowService = {
           grossProfit: group.totalCommission,
           commissionRate: null,
           accruedCommission: roundMoney(group.totalCommission),
-          supervisorAdjustmentAmount: roundMoney(group.totalCommission - group.payablePerformance),
+          supervisorAdjustmentAmount: 0,
           finalCommission: roundMoney(group.payablePerformance),
-          abnormalNote: "operator performance amount equals category commission total after 80% salary payout rule",
+          abnormalNote: "operator performance amount equals the full category performance total; no payout discount is applied",
           status: "pending operator signature"
         },
         details: group.rows.map((row) => ({
@@ -864,7 +864,7 @@ export const workflowService = {
           commissionAmount: roundMoney(row.commissionAmount),
           source: row.note
         })),
-        statement: "The operator confirms the performance categories, order count, base count, payable count, rate and final payable performance amount.",
+        statement: "The operator confirms the performance categories, Excel-derived order count, rule-derived base count, payable count, rate and final performance amount.",
         signatureTrace: {
           employeeSignature: "pending operator signature",
           signedAt: null,

@@ -1,4 +1,4 @@
-import { Button, Card, Input, InputNumber, Modal, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Modal, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getOperatorPerformanceAnalysis } from "../../api/analytics.api";
@@ -12,20 +12,9 @@ import {
   voidDocument
 } from "../../api/workflow.api";
 import { useSelectedMonth } from "../../contexts/MonthContext";
-import type { FinanceOrder } from "../../types/finance.types";
 import { ReasonActionModal } from "../../components/ReasonActionModal";
 import { copyText } from "../../utils/copyText";
 import { externalSignatureUrl, productionAppUrl, usesLocalSignatureBackend } from "../../utils/externalSignatureUrl";
-
-type PerformanceCategory = "white" | "grey" | "company" | "eac" | "trademark";
-
-type PerformanceRule = {
-  key: PerformanceCategory;
-  orderType: string;
-  baseCount: number;
-  rate: number;
-  note: string;
-};
 
 type PerformanceRow = {
   id: string;
@@ -37,6 +26,7 @@ type PerformanceRow = {
   rate: number;
   commissionAmount: number;
   note: string;
+  bracketLabel?: string;
   rowSpan?: number;
 };
 
@@ -47,47 +37,6 @@ type OperatorGroup = {
   payablePerformance: number;
 };
 
-type EditableNumberField = "orderCount" | "baseCount" | "rate";
-type EditableTextField = "orderType" | "note";
-
-const rules: PerformanceRule[] = [
-  {
-    key: "white",
-    orderType: "汽运白关、铁路白关",
-    baseCount: 9,
-    rate: 50,
-    note: "其他客户1-10票发放50元/票；11-20票发放80元/票，20票以上也是80元/票；基础操作量不拿提成"
-  },
-  {
-    key: "grey",
-    orderType: "物流灰关",
-    baseCount: 50,
-    rate: 10,
-    note: "5-70票：10元/票；71-100票：20元/票"
-  },
-  {
-    key: "company",
-    orderType: "公司注册",
-    baseCount: 0,
-    rate: 100,
-    note: "基础绩效奖金：按照每笔工单完成，发放100元/票"
-  },
-  {
-    key: "eac",
-    orderType: "EAC注册",
-    baseCount: 0,
-    rate: 50,
-    note: "基础绩效奖金：按照每笔工单完成，发放50元/票"
-  },
-  {
-    key: "trademark",
-    orderType: "商标注册",
-    baseCount: 0,
-    rate: 50,
-    note: "基础绩效奖金：按照每笔工单完成，发放50元/票"
-  }
-];
-
 function signedAtText(value?: string | null) {
   return value ? value.replace("T", " ").slice(0, 19) : "-";
 }
@@ -96,80 +45,6 @@ function statusTag(value: string, positiveText: string, pendingText: string) {
   if (value === "confirmed" || value === "signed" || value === "sent") return <Tag color="green">{positiveText}</Tag>;
   if (value === "voided") return <Tag color="red">已作废</Tag>;
   return <Tag color="gold">{pendingText}</Tag>;
-}
-
-function classifyOrder(order: FinanceOrder): PerformanceCategory | null {
-  const type = order.businessType ?? "";
-  if (type.includes("白关") || type.includes("铁路")) return "white";
-  if (type.includes("灰关")) return "grey";
-  if (type.includes("公司")) return "company";
-  if (type.includes("EAC") || type.includes("证书")) return "eac";
-  if (type.includes("商标")) return "trademark";
-  return null;
-}
-
-function performanceRate(rule: PerformanceRule, count: number) {
-  if (rule.key === "white") {
-    if (count >= 11) return 80;
-    if (count >= 1) return 50;
-    return 50;
-  }
-  if (rule.key === "grey") {
-    if (count >= 71) return 20;
-    if (count >= 51) return 10;
-    return 10;
-  }
-  return rule.rate;
-}
-
-function buildRows(operatorName: string, orders: FinanceOrder[]) {
-  const counts = new Map<PerformanceCategory, number>();
-
-  for (const order of orders) {
-    const category = classifyOrder(order);
-    if (!category) continue;
-    counts.set(category, (counts.get(category) ?? 0) + 1);
-  }
-
-  return rules.map((rule, index) => {
-    const orderCount = counts.get(rule.key) ?? 0;
-    const commissionOrderCount = orderCount - rule.baseCount;
-    const rate = performanceRate(rule, orderCount);
-    const validCount = Math.max(commissionOrderCount, 0);
-
-    return {
-      id: `${operatorName}-${rule.key}`,
-      operatorName,
-      orderType: rule.orderType,
-      orderCount,
-      baseCount: rule.baseCount,
-      commissionOrderCount,
-      rate,
-      commissionAmount: validCount * rate,
-      note: rule.note,
-      rowSpan: index === 0 ? rules.length : 0
-    };
-  });
-}
-
-function recalculateRow(row: PerformanceRow): PerformanceRow {
-  const commissionOrderCount = row.orderCount - row.baseCount;
-  return {
-    ...row,
-    commissionOrderCount,
-    commissionAmount: Math.max(commissionOrderCount, 0) * row.rate
-  };
-}
-
-function recalculateGroup(group: OperatorGroup): OperatorGroup {
-  const rows = group.rows.map(recalculateRow);
-  const totalCommission = rows.reduce((sum, row) => sum + row.commissionAmount, 0);
-  return {
-    ...group,
-    rows,
-    totalCommission,
-    payablePerformance: Math.round(totalCommission * 0.8)
-  };
 }
 
 export default function OperatorPerformance() {
@@ -200,24 +75,6 @@ export default function OperatorPerformance() {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  const handleNumberChange = (rowId: string, field: EditableNumberField, value: number | null) => {
-    setOperatorGroups((groups) => groups.map((group) => {
-      const rows = group.rows.map((row) => (
-        row.id === rowId
-          ? recalculateRow({ ...row, [field]: Number(value ?? 0) })
-          : row
-      ));
-      return recalculateGroup({ ...group, rows });
-    }));
-  };
-
-  const handleTextChange = (rowId: string, field: EditableTextField, value: string) => {
-    setOperatorGroups((groups) => groups.map((group) => ({
-      ...group,
-      rows: group.rows.map((row) => row.id === rowId ? { ...row, [field]: value } : row)
-    })));
-  };
 
   const handleGenerateDocuments = async () => {
     const res = await generateOperatorDocuments(selectedMonth);
@@ -269,45 +126,41 @@ export default function OperatorPerformance() {
       title: "订单类型",
       dataIndex: "orderType",
       width: 190,
-      render: (value: string, row) => (
-        <Input value={value} onChange={(event) => handleTextChange(row.id, "orderType", event.target.value)} />
-      )
+      render: (value: string) => value
     },
     {
-      title: "票数",
+      title: "票数（Excel 统计）",
       dataIndex: "orderCount",
       align: "right",
       width: 110,
-      render: (value: number, row) => (
-        <InputNumber min={0} precision={0} value={value} onChange={(next) => handleNumberChange(row.id, "orderCount", next)} />
-      )
+      render: (value: number) => value
     },
     {
-      title: "基础票数",
+      title: "规则基础票数",
       dataIndex: "baseCount",
       align: "right",
       width: 120,
-      render: (value: number, row) => (
-        <InputNumber min={0} precision={0} value={value} onChange={(next) => handleNumberChange(row.id, "baseCount", next)} />
-      )
+      render: (value: number) => value
     },
-    { title: "提成票数", dataIndex: "commissionOrderCount", align: "right", width: 120 },
     {
-      title: "提成比例",
+      title: "自动匹配档位",
+      dataIndex: "bracketLabel",
+      width: 210,
+      render: (value: string | undefined) => value || "-"
+    },
+    { title: "计发票数", dataIndex: "commissionOrderCount", align: "right", width: 120 },
+    {
+      title: "绩效单价（元/票）",
       dataIndex: "rate",
       align: "right",
       width: 120,
-      render: (value: number, row) => (
-        <InputNumber min={0} precision={2} value={value} onChange={(next) => handleNumberChange(row.id, "rate", next)} />
-      )
+      render: (value: number) => value || "-"
     },
-    { title: "提成金额", dataIndex: "commissionAmount", align: "right", width: 120 },
+    { title: "分类绩效金额", dataIndex: "commissionAmount", align: "right", width: 120 },
     {
       title: "备注",
       dataIndex: "note",
-      render: (value: string, row) => (
-        <Input value={value} onChange={(event) => handleTextChange(row.id, "note", event.target.value)} />
-      )
+      render: (value: string) => value
     }
   ];
 
@@ -353,26 +206,32 @@ export default function OperatorPerformance() {
         title="操作员绩效计算"
         extra={(
           <Space size={10} wrap>
-            <Tag bordered={false} className="operator-policy-tag">操作员=客服代表，按图片绩效表口径生成</Tag>
-            <Tag color="blue">总绩效金额：{totalPayablePerformance}</Tag>
+            <Tag bordered={false} className="operator-policy-tag">按客服代表汇总；票数仅来自当前月份有效导入批次</Tag>
+            <Tag color="blue">全额绩效金额：{totalPayablePerformance}</Tag>
           </Space>
         )}
       >
+        <Alert
+          type="info"
+          showIcon
+          message="票数为导入 Excel 的实际订单统计，基础票数和单价由规则自动匹配，页面不支持人工增减。"
+          description="最终绩效金额等于各分类绩效金额合计，不再执行 80% 折算。"
+          style={{ marginBottom: 12 }}
+        />
         <div className="operator-rule-panel">
           <span className="operator-rule-title">操作员业务量绩效表规则</span>
           <div className="operator-rule-grid">
             <div>
               <strong>汽运白关、铁路白关</strong>
               <span>基础票数：9票</span>
-              <span>提成票数 = 票数 - 基础票数</span>
-              <span>1-10票：50元/票</span>
-              <span>11-20票：80元/票</span>
-              <span>20票以上：80元/票</span>
+              <span>计发票数 = 实际票数 - 9票基础量</span>
+              <span>第10票：50元/票</span>
+              <span>第11票及以上：80元/票</span>
             </div>
             <div>
               <strong>物流灰关</strong>
               <span>基础票数：50票</span>
-              <span>提成票数 = 票数 - 基础票数</span>
+              <span>计发票数 = 实际票数 - 50票基础量</span>
               <span>51-70票：10元/票</span>
               <span>71-100票：20元/票</span>
             </div>
@@ -391,7 +250,8 @@ export default function OperatorPerformance() {
             </div>
             <div>
               <strong>绩效金额</strong>
-              <span>各订单类型提成金额汇总后按80%计入绩效金额</span>
+              <span>各订单类型分类绩效金额全额汇总</span>
+              <span>不执行 80% 折算</span>
               <span>有效数据当月薪资一起发放</span>
               <span>无提成显示当月无提成</span>
             </div>
@@ -401,7 +261,7 @@ export default function OperatorPerformance() {
         <div className="operator-table-stack">
           {operatorGroups.map((group) => (
             <div className="operator-performance-table-wrap" key={group.operatorName}>
-              <div className="operator-table-title">世舟物流业务 2026年6月操作员业务量 绩效表</div>
+              <div className="operator-table-title">世舟物流业务 {selectedMonth} 操作员业务量绩效表</div>
               <Table
                 rowKey="id"
                 className="operator-performance-table"
@@ -412,9 +272,9 @@ export default function OperatorPerformance() {
                 bordered
               />
               <div className="operator-total-row">
-                <span>绩效金额</span>
+                <span>最终绩效金额（全额计发）</span>
                 <strong>{group.payablePerformance}</strong>
-                <em>随2026年6月薪资一起发放</em>
+                <em>随 {selectedMonth} 薪资一起发放</em>
               </div>
             </div>
           ))}

@@ -46,41 +46,52 @@ function customerServiceName(order: FinanceOrder) {
   return order.customerServiceName || order.salespersonName || "待主管确认";
 }
 
+type PerformanceBracket = {
+  baseCount: number;
+  rate: number;
+  label: string;
+};
+
+function performanceBracket(key: string, orderCount: number): PerformanceBracket {
+  if (key === "white") {
+    if (orderCount <= 9) return { baseCount: 9, rate: 0, label: "基础操作量内（0-9 票）" };
+    if (orderCount <= 10) return { baseCount: 9, rate: 50, label: "首档（10 票，50 元/票）" };
+    return { baseCount: 9, rate: 80, label: "第二档（11 票及以上，80 元/票）" };
+  }
+  if (key === "grey") {
+    if (orderCount <= 50) return { baseCount: 50, rate: 0, label: "基础操作量内（0-50 票）" };
+    if (orderCount <= 70) return { baseCount: 50, rate: 10, label: "第一档（51-70 票，10 元/票）" };
+    return { baseCount: 50, rate: 20, label: "第二档（71 票及以上，20 元/票）" };
+  }
+  if (key === "company") return { baseCount: 0, rate: 100, label: "按完成单计发（100 元/票）" };
+  return { baseCount: 0, rate: 50, label: "按完成单计发（50 元/票）" };
+}
+
 function operatorRows(operatorName: string, orders: FinanceOrder[]) {
   const rules = [
     {
       key: "white",
       orderType: "汽运白关、铁路白关",
-      baseCount: 9,
-      rate: (count: number) => count >= 11 ? 80 : 50,
       note: "其他客户1-10票发放50元/票；11票以上发放80元/票；基础操作量不拿提成"
     },
     {
       key: "grey",
       orderType: "物流灰关",
-      baseCount: 50,
-      rate: (count: number) => count >= 71 ? 20 : 10,
       note: "51-70票10元/票；71-100票20元/票"
     },
     {
       key: "company",
       orderType: "公司注册",
-      baseCount: 0,
-      rate: () => 100,
       note: "按照每笔工单完成，发放100元/票"
     },
     {
       key: "eac",
       orderType: "EAC注册",
-      baseCount: 0,
-      rate: () => 50,
       note: "按照每笔工单完成，发放50元/票"
     },
     {
       key: "trademark",
       orderType: "商标注册",
-      baseCount: 0,
-      rate: () => 50,
       note: "按照每笔工单完成，发放50元/票"
     }
   ];
@@ -94,23 +105,24 @@ function operatorRows(operatorName: string, orders: FinanceOrder[]) {
 
   const rows = rules.map((rule, index) => {
     const orderCount = counts.get(rule.key) ?? 0;
-    const commissionOrderCount = orderCount - rule.baseCount;
-    const pieceRate = rule.rate(orderCount);
+    const bracket = performanceBracket(rule.key, orderCount);
+    const commissionOrderCount = Math.max(orderCount - bracket.baseCount, 0);
     return {
       id: `${operatorName}-${rule.key}`,
       operatorName,
       orderType: rule.orderType,
       orderCount,
-      baseCount: rule.baseCount,
+      baseCount: bracket.baseCount,
       commissionOrderCount,
-      rate: pieceRate,
-      commissionAmount: Math.max(commissionOrderCount, 0) * pieceRate,
-      note: rule.note,
+      rate: bracket.rate,
+      commissionAmount: commissionOrderCount * bracket.rate,
+      note: `${rule.note}；${bracket.label}`,
+      bracketLabel: bracket.label,
       rowSpan: index === 0 ? rules.length : 0
     };
   });
   const totalCommission = rows.reduce((sum, row) => sum + row.commissionAmount, 0);
-  return { operatorName, rows, totalCommission, payablePerformance: Math.round(totalCommission * 0.8) };
+  return { operatorName, rows, totalCommission, payablePerformance: Math.round(totalCommission * 100) / 100 };
 }
 
 export const analyticsService = {
@@ -136,7 +148,12 @@ export const analyticsService = {
   },
 
   async operatorPerformance(month = "2026-06") {
-    const orders = await prisma.financeOrder.findMany({ where: { month } });
+    const orders = await prisma.financeOrder.findMany({
+      where: {
+        month,
+        importBatch: { is: { status: "active" } }
+      }
+    });
     const groups = new Map<string, FinanceOrder[]>();
     for (const order of orders) {
       const operatorName = customerServiceName(order);
