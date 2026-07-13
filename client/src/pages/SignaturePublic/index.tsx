@@ -47,19 +47,28 @@ export default function SignaturePublic() {
 
   const summary = document?.payload.summary ?? {};
   const details = document?.payload.details ?? [];
+  const isOperatorSalaryDocument = document?.document.documentType === "customer_service_salary"
+    || summary.businessType === "operator_salary";
   const canSign = Boolean(document && accepted && signedName.trim() === document.document.ownerName && !signing);
-  const detailColumns = useMemo(() => [
-    { title: "订单/绩效板块", dataIndex: "performanceCategory", width: 150, render: (value: unknown, row: any) => value || row.orderNo },
-    { title: "原始订单号", dataIndex: "originalOrderNo", width: 140, render: (value: unknown) => value || "-" },
-    { title: "业务类型", dataIndex: "businessType", width: 120 },
+  const salesDetailColumns = useMemo(() => [
+    { title: "系统订单号", dataIndex: "orderNo", width: 130 },
+    { title: "原始订单号", dataIndex: "originalOrderNo", width: 130, render: (value: unknown) => value || "-" },
+    { title: "业务类型", dataIndex: "businessType", width: 130 },
+    { title: "金额构成", dataIndex: "salaryComponent", width: 130, render: (value: unknown) => value || "物流提成" },
+    { title: "毛利", dataIndex: "grossProfit", align: "right" as const, width: 120, render: money },
+    { title: "提成比例", dataIndex: "commissionRate", align: "right" as const, width: 110, render: (value: unknown) => formatPercent(typeof value === "number" ? value : null) },
+    { title: "确认提成", dataIndex: "commissionAmount", align: "right" as const, width: 120, render: money }
+  ], []);
+  const operatorDetailColumns = useMemo(() => [
+    { title: "绩效板块", dataIndex: "performanceCategory", width: 160, render: (value: unknown, row: any) => value || row.orderNo },
     { title: "Excel票数", dataIndex: "rawOrderCount", width: 100, align: "right" as const, render: (value: unknown) => value ?? "-" },
     { title: "基础票数", dataIndex: "baseCount", width: 100, align: "right" as const, render: (value: unknown) => value ?? "-" },
     { title: "计发票数", dataIndex: "commissionOrderCount", width: 100, align: "right" as const, render: (value: unknown) => value ?? "-" },
-    { title: "规则", dataIndex: "bracketLabel", width: 170, render: (value: unknown) => value || "-" },
-    { title: "毛利", dataIndex: "grossProfit", align: "right" as const, width: 120, render: money },
-    { title: "提成比例", dataIndex: "commissionRate", align: "right" as const, width: 110, render: (value: unknown, row: any) => row.performanceRateUnit ? `${row.performanceRate ?? 0}${row.performanceRateUnit}` : formatPercent(typeof value === "number" ? value : null) },
-    { title: "提成金额", dataIndex: "commissionAmount", align: "right" as const, width: 120, render: money }
+    { title: "规则", dataIndex: "bracketLabel", width: 220, render: (value: unknown) => value || "-" },
+    { title: "计薪单价", dataIndex: "performanceRate", width: 120, align: "right" as const, render: (value: unknown, row: any) => `${value ?? 0}${row.performanceRateUnit ?? ""}` },
+    { title: "绩效金额", dataIndex: "commissionAmount", align: "right" as const, width: 120, render: money }
   ], []);
+  const detailColumns = isOperatorSalaryDocument ? operatorDetailColumns : salesDetailColumns;
 
   const handleSign = async () => {
     if (!token || !canSign) return;
@@ -102,8 +111,8 @@ export default function SignaturePublic() {
             </Descriptions>
 
             <div className="public-signature-details">
-              <Typography.Title level={4}>订单 / 绩效板块明细</Typography.Title>
-              <Table rowKey={(row, index) => String(row.orderNo ?? row.originalOrderNo ?? `${document.payload.documentCode}-${index ?? 0}`)} columns={detailColumns} dataSource={details} pagination={false} size="small" scroll={{ x: 720 }} />
+              <Typography.Title level={4}>{isOperatorSalaryDocument ? "绩效板块明细" : "订单提成明细"}</Typography.Title>
+              <Table rowKey={(row, index) => String(row.orderNo ?? row.originalOrderNo ?? `${document.payload.documentCode}-${index ?? 0}`)} columns={detailColumns} dataSource={details} pagination={false} size="small" scroll={{ x: isOperatorSalaryDocument ? 920 : 850 }} />
             </div>
 
             <div className="public-signature-statement">

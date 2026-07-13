@@ -117,6 +117,8 @@ export default function SignatureConfirm() {
   const { selectedMonth } = useSelectedMonth();
 
   const selectedPayload = parsePayload(selectedDocument);
+  const isOperatorSalaryDocument = selectedDocument?.documentType === "customer_service_salary"
+    || selectedPayload?.summary.businessType === "operator_salary";
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -280,22 +282,27 @@ export default function SignatureConfirm() {
     }
   ];
 
-  const detailColumns: ColumnsType<ConfirmationPayloadDetail> = [
-    { title: "订单/绩效板块", dataIndex: "performanceCategory", fixed: "left", width: 150, render: (value, row) => value || row.orderNo },
-    { title: "原始订单号", dataIndex: "originalOrderNo", width: 140, render: (value) => value || "-" },
-    { title: "业务类型", dataIndex: "businessType", width: 140 },
-    { title: "Excel票数", dataIndex: "rawOrderCount", align: "right", width: 100, render: (value) => value ?? "-" },
-    { title: "规则基础票数", dataIndex: "baseCount", align: "right", width: 120, render: (value) => value ?? "-" },
-    { title: "计发票数", dataIndex: "commissionOrderCount", align: "right", width: 100, render: (value) => value ?? "-" },
-    { title: "绩效规则", dataIndex: "bracketLabel", width: 180, render: (value) => value || "-" },
-    { title: "应收", dataIndex: "receivable", align: "right", render: toPlainMoney },
-    { title: "应付", dataIndex: "payable", align: "right", render: toPlainMoney },
-    { title: "毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
-    { title: "毛利率", dataIndex: "grossProfitRate", align: "right", render: formatPercent },
-    { title: "提成比例", dataIndex: "commissionRate", align: "right", render: (value, row) => row.performanceRateUnit ? `${row.performanceRate ?? 0}${row.performanceRateUnit}` : formatPercent(value) },
-    { title: "金额构成", dataIndex: "salaryComponent", width: 130, render: (value) => value || "-" },
-    { title: "提成/绩效金额", dataIndex: "commissionAmount", align: "right", render: toPlainMoney }
+  const salesDetailColumns: ColumnsType<ConfirmationPayloadDetail> = [
+    { title: "系统订单号", dataIndex: "orderNo", fixed: "left", width: 130 },
+    { title: "原始订单号", dataIndex: "originalOrderNo", width: 130, render: (value) => value || "-" },
+    { title: "业务类型", dataIndex: "businessType", width: 130 },
+    { title: "金额构成", dataIndex: "salaryComponent", width: 130, render: (value) => value || "物流提成" },
+    { title: "毛利", dataIndex: "grossProfit", align: "right", width: 120, render: toPlainMoney },
+    { title: "提成比例", dataIndex: "commissionRate", align: "right", width: 110, render: formatPercent },
+    { title: "确认提成", dataIndex: "commissionAmount", align: "right", width: 130, render: toPlainMoney }
   ];
+
+  const operatorDetailColumns: ColumnsType<ConfirmationPayloadDetail> = [
+    { title: "绩效板块", dataIndex: "performanceCategory", fixed: "left", width: 160, render: (value, row) => value || row.orderNo },
+    { title: "Excel票数", dataIndex: "rawOrderCount", align: "right", width: 110, render: (value) => value ?? "-" },
+    { title: "规则基础票数", dataIndex: "baseCount", align: "right", width: 120, render: (value) => value ?? "-" },
+    { title: "计发票数", dataIndex: "commissionOrderCount", align: "right", width: 110, render: (value) => value ?? "-" },
+    { title: "绩效规则", dataIndex: "bracketLabel", width: 230, render: (value) => value || "-" },
+    { title: "计薪单价", dataIndex: "performanceRate", align: "right", width: 120, render: (value, row) => `${value ?? 0}${row.performanceRateUnit ?? ""}` },
+    { title: "绩效金额", dataIndex: "commissionAmount", align: "right", width: 130, render: toPlainMoney }
+  ];
+
+  const detailColumns = isOperatorSalaryDocument ? operatorDetailColumns : salesDetailColumns;
 
   const salaryColumns: ColumnsType<(typeof salaryDocuments)[number]> = [
     { title: "人员类型", dataIndex: "salaryRole", width: 110, render: (value) => <Tag color={value === "销售代表" ? "blue" : "purple"}>{value}</Tag> },
@@ -407,14 +414,14 @@ export default function SignatureConfirm() {
               <Descriptions.Item label="发放说明">{selectedPayload.summary.payoutNote ?? "-"}</Descriptions.Item>
             </Descriptions>
 
-            <Typography.Title level={5}>二、订单明细</Typography.Title>
+            <Typography.Title level={5}>{isOperatorSalaryDocument ? "二、绩效板块明细" : "二、订单提成明细"}</Typography.Title>
             <Table
               rowKey={(row) => `${row.orderNo}-${row.originalOrderNo ?? ""}`}
               size="small"
               pagination={false}
               dataSource={selectedPayload.details}
               columns={detailColumns}
-              scroll={{ x: 1100 }}
+              scroll={{ x: isOperatorSalaryDocument ? 980 : 900 }}
             />
 
             <Typography.Title level={5}>三、员工确认声明</Typography.Title>

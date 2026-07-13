@@ -388,14 +388,25 @@ async function pngBuffer(document: { ownerName: string; month: string; version: 
   const evidenceHeadingY = chargesStart + chargeLineRows.length * rowHeight + 34;
   const evidenceStart = evidenceHeadingY + 32;
   const height = Math.max(760, evidenceStart + evidenceRows.length * 26 + 70);
+  const isOperatorSalary = document.documentType === "customer_service_salary" || payload.summary?.businessType === "operator_salary";
   const detailSvg = detailRows.map((row, index) => {
     const y = detailsStart + index * rowHeight;
+    if (isOperatorSalary) {
+      return `<text x="72" y="${y}" class="small">${xmlEscape(row.performanceCategory)}</text>
+<text x="330" y="${y}" class="small">${xmlEscape(row.rawOrderCount)}</text>
+<text x="500" y="${y}" class="small">${xmlEscape(row.baseCount)}</text>
+<text x="670" y="${y}" class="small">${xmlEscape(row.commissionOrderCount)}</text>
+<text x="840" y="${y}" class="small">${xmlEscape(row.performanceRule)}</text>
+<text x="1120" y="${y}" class="small">${xmlEscape(row.commissionAmount)}</text>
+<line x1="60" y1="${y + 12}" x2="1340" y2="${y + 12}" stroke="#e6edf7"/>`;
+    }
     return `<text x="72" y="${y}" class="small">${xmlEscape(row.systemOrderNo)}</text>
 <text x="260" y="${y}" class="small">${xmlEscape(row.originalOrderNo)}</text>
-<text x="430" y="${y}" class="small">${xmlEscape(row.customerName)}</text>
-<text x="690" y="${y}" class="small">${xmlEscape(row.grossProfit)}</text>
-<text x="860" y="${y}" class="small">${xmlEscape(row.commissionRate)}</text>
-<text x="1040" y="${y}" class="small">${xmlEscape(row.commissionAmount)}</text>
+<text x="430" y="${y}" class="small">${xmlEscape(row.businessType)}</text>
+<text x="650" y="${y}" class="small">${xmlEscape(row.salaryComponent)}</text>
+<text x="850" y="${y}" class="small">${xmlEscape(row.grossProfit)}</text>
+<text x="1010" y="${y}" class="small">${xmlEscape(row.commissionRate)}</text>
+<text x="1170" y="${y}" class="small">${xmlEscape(row.commissionAmount)}</text>
 <line x1="60" y1="${y + 12}" x2="1340" y2="${y + 12}" stroke="#e6edf7"/>`;
   }).join("");
   const summarySvg = summaryRows.map((row, index) => {
@@ -433,8 +444,8 @@ async function pngBuffer(document: { ownerName: string; month: string; version: 
 <text x="70" y="126" class="sub">Owner: ${xmlEscape(document.ownerName)}   Month: ${xmlEscape(document.month)}   Version: ${document.version}   Source: imported Excel ledger</text>
 <text x="70" y="160" class="section">Summary</text>
 ${summarySvg}
-<text x="70" y="${detailsHeadingY}" class="section">Order / Performance Details</text>
-<text x="72" y="${detailsHeadingY + 28}" class="label">System No</text><text x="260" y="${detailsHeadingY + 28}" class="label">Original No</text><text x="430" y="${detailsHeadingY + 28}" class="label">Customer</text><text x="690" y="${detailsHeadingY + 28}" class="label">Gross Profit</text><text x="860" y="${detailsHeadingY + 28}" class="label">Rate</text><text x="1040" y="${detailsHeadingY + 28}" class="label">Commission</text>
+<text x="70" y="${detailsHeadingY}" class="section">${isOperatorSalary ? "Performance Details" : "Commission Details"}</text>
+${isOperatorSalary ? `<text x="72" y="${detailsHeadingY + 28}" class="label">Performance category</text><text x="330" y="${detailsHeadingY + 28}" class="label">Excel tickets</text><text x="500" y="${detailsHeadingY + 28}" class="label">Base</text><text x="670" y="${detailsHeadingY + 28}" class="label">Payable tickets</text><text x="840" y="${detailsHeadingY + 28}" class="label">Rule</text><text x="1120" y="${detailsHeadingY + 28}" class="label">Amount</text>` : `<text x="72" y="${detailsHeadingY + 28}" class="label">System No</text><text x="260" y="${detailsHeadingY + 28}" class="label">Original No</text><text x="430" y="${detailsHeadingY + 28}" class="label">Business type</text><text x="650" y="${detailsHeadingY + 28}" class="label">Component</text><text x="850" y="${detailsHeadingY + 28}" class="label">Gross profit</text><text x="1010" y="${detailsHeadingY + 28}" class="label">Rate</text><text x="1170" y="${detailsHeadingY + 28}" class="label">Commission</text>`}
 ${detailSvg}
 <text x="70" y="${chargesHeadingY}" class="section">Charge Line Traceability</text>
 <text x="72" y="${chargesHeadingY + 28}" class="label">Excel row</text><text x="150" y="${chargesHeadingY + 28}" class="label">System No</text><text x="350" y="${chargesHeadingY + 28}" class="label">Direction</text><text x="470" y="${chargesHeadingY + 28}" class="label">Fee type</text><text x="650" y="${chargesHeadingY + 28}" class="label">Supplier</text><text x="900" y="${chargesHeadingY + 28}" class="label">Original</text><text x="1080" y="${chargesHeadingY + 28}" class="label">Local</text><text x="1220" y="${chargesHeadingY + 28}" class="label">Signed</text>
