@@ -305,6 +305,22 @@ async function verifySignature(checks: Check[], month: string) {
     ["summary", "details", "charge_lines", "signature_evidence"].every((sheet) => confirmationWorkbook.SheetNames.includes(sheet)),
     confirmationWorkbook.SheetNames.join(",")
   );
+  const [confirmationPdf, confirmationPng] = await Promise.all([
+    workflowService.downloadConfirmationDocument(first.id, "pdf"),
+    workflowService.downloadConfirmationDocument(first.id, "png")
+  ]);
+  assertCheck(
+    checks,
+    "Confirmation PDF uses the same document version",
+    confirmationPdf.fileName.replace(/\.pdf$/, "") === confirmationFile.fileName.replace(/\.xlsx$/, "") && confirmationPdf.buffer.subarray(0, 4).toString() === "%PDF",
+    `${confirmationPdf.fileName} / ${confirmationFile.fileName}`
+  );
+  assertCheck(
+    checks,
+    "Confirmation PNG uses the same document version",
+    confirmationPng.fileName.replace(/\.png$/, "") === confirmationFile.fileName.replace(/\.xlsx$/, "") && confirmationPng.buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+    `${confirmationPng.fileName} / ${confirmationFile.fileName}`
+  );
 
   const sent = await workflowService.sendSignatureLink(first.id);
   assertCheck(checks, "Signature token generated", Boolean(sent.signatureToken), sent.signatureToken ?? undefined);

@@ -332,42 +332,58 @@ function confirmationRows(document: {
 }
 
 function pdfBuffer(document: { ownerName: string; month: string; version: number; documentType: string; payloadJson: string | null } & any) {
-  const { payload, summaryRows, detailRows, evidenceRows } = confirmationRows(document);
+  const { payload, summaryRows, detailRows, evidenceRows, chargeLineRows } = confirmationRows(document);
   const doc = new PDFDocument({ size: "A4", margin: 36 });
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
 
+  const writeLine = (value: string, fontSize = 9) => {
+    const pageBottom = doc.page.height - doc.page.margins.bottom - 12;
+    if (doc.y + fontSize * 2 > pageBottom) doc.addPage();
+    doc.fontSize(fontSize).text(value, { width: doc.page.width - doc.page.margins.left - doc.page.margins.right });
+  };
+  const writeSection = (title: string) => {
+    const pageBottom = doc.page.height - doc.page.margins.bottom - 30;
+    if (doc.y + 32 > pageBottom) doc.addPage();
+    doc.moveDown(0.6);
+    doc.fontSize(12).text(title, { underline: true });
+  };
+
   doc.fontSize(16).text(textValue(payload.title ?? "Commission Confirmation"), { align: "center" });
   doc.moveDown(0.5);
-  doc.fontSize(10).text(`Owner: ${document.ownerName}    Month: ${document.month}    Version: ${document.version}`);
-  doc.text(`Type: ${document.documentType}    Generated from imported Excel ledger data`);
-  doc.moveDown();
-  doc.fontSize(12).text("Summary", { underline: true });
-  doc.fontSize(9);
-  for (const row of summaryRows) doc.text(`${row.item}: ${textValue(row.value)}`);
-  doc.moveDown();
-  doc.fontSize(12).text("Order Details", { underline: true });
-  doc.fontSize(8);
-  for (const row of detailRows.slice(0, 35)) {
-    doc.text(`${row.systemOrderNo} | ${row.originalOrderNo ?? "-"} | ${row.customerName ?? "-"} | GP ${row.grossProfit} | Rate ${row.commissionRate} | Commission ${row.commissionAmount}`);
+  writeLine(`Owner: ${document.ownerName}    Month: ${document.month}    Version: ${document.version}`, 10);
+  writeLine(`Type: ${document.documentType}    Snapshot: ${payload.snapshotCreatedAt ?? "-"}`, 10);
+  writeSection("Summary");
+  for (const row of summaryRows) writeLine(`${row.item}: ${textValue(row.value)}`);
+  writeSection(`Order / performance details (${detailRows.length})`);
+  for (const row of detailRows) {
+    writeLine(`${row.systemOrderNo ?? "-"} | ${row.originalOrderNo ?? "-"} | ${row.customerName ?? "-"} | ${row.businessType ?? "-"} | Receivable ${row.receivable} | Payable ${row.payable} | Gross profit ${row.grossProfit} | Rate ${row.commissionRate} | Amount ${row.commissionAmount}`, 8);
   }
-  if (detailRows.length > 35) doc.text(`... ${detailRows.length - 35} more rows included in XLSX confirmation file`);
-  doc.moveDown();
-  doc.fontSize(12).text("Signature Evidence", { underline: true });
-  doc.fontSize(9);
-  for (const row of evidenceRows) doc.text(`${row.item}: ${textValue(row.value).slice(0, 180)}`);
+  writeSection(`Charge line traceability (${chargeLineRows.length})`);
+  for (const row of chargeLineRows) {
+    writeLine(`${row.excelRow ?? "-"} | ${row.systemOrderNo ?? "-"} | ${row.originalOrderNo ?? "-"} | ${row.direction ?? "-"} | ${row.feeType ?? "-"} | ${row.supplierName ?? "-"} | Original ${row.originalAmount} | Local ${row.localAmount} | Signed ${row.signedAmount}`, 8);
+  }
+  writeSection("Signature evidence");
+  for (const row of evidenceRows) writeLine(`${row.item}: ${textValue(row.value)}`);
   doc.end();
   return done;
 }
 
 async function pngBuffer(document: { ownerName: string; month: string; version: number; documentType: string; payloadJson: string | null } & any) {
-  const { payload, summaryRows, detailRows, evidenceRows } = confirmationRows(document);
+  const { payload, summaryRows, detailRows, evidenceRows, chargeLineRows } = confirmationRows(document);
   const width = 1400;
   const rowHeight = 34;
-  const height = Math.min(2200, 260 + summaryRows.length * 24 + Math.min(detailRows.length, 18) * rowHeight + evidenceRows.length * 24);
-  const detailSvg = detailRows.slice(0, 18).map((row, index) => {
-    const y = 520 + index * rowHeight;
+  const summaryStart = 184;
+  const detailsHeadingY = summaryStart + summaryRows.length * 24 + 38;
+  const detailsStart = detailsHeadingY + 52;
+  const chargesHeadingY = detailsStart + detailRows.length * rowHeight + 34;
+  const chargesStart = chargesHeadingY + 52;
+  const evidenceHeadingY = chargesStart + chargeLineRows.length * rowHeight + 34;
+  const evidenceStart = evidenceHeadingY + 32;
+  const height = Math.max(760, evidenceStart + evidenceRows.length * 26 + 70);
+  const detailSvg = detailRows.map((row, index) => {
+    const y = detailsStart + index * rowHeight;
     return `<text x="72" y="${y}" class="small">${xmlEscape(row.systemOrderNo)}</text>
 <text x="260" y="${y}" class="small">${xmlEscape(row.originalOrderNo)}</text>
 <text x="430" y="${y}" class="small">${xmlEscape(row.customerName)}</text>
@@ -376,14 +392,25 @@ async function pngBuffer(document: { ownerName: string; month: string; version: 
 <text x="1040" y="${y}" class="small">${xmlEscape(row.commissionAmount)}</text>
 <line x1="60" y1="${y + 12}" x2="1340" y2="${y + 12}" stroke="#e6edf7"/>`;
   }).join("");
-  const summarySvg = summaryRows.slice(0, 14).map((row, index) => {
-    const y = 154 + index * 24;
+  const summarySvg = summaryRows.map((row, index) => {
+    const y = summaryStart + index * 24;
     return `<text x="72" y="${y}" class="label">${xmlEscape(row.item)}</text><text x="300" y="${y}" class="text">${xmlEscape(row.value)}</text>`;
   }).join("");
-  const evidenceStart = 550 + Math.min(detailRows.length, 18) * rowHeight;
-  const evidenceSvg = evidenceRows.slice(0, 8).map((row, index) => {
+  const chargeSvg = chargeLineRows.map((row, index) => {
+    const y = chargesStart + index * rowHeight;
+    return `<text x="72" y="${y}" class="small">${xmlEscape(row.excelRow)}</text>
+<text x="150" y="${y}" class="small">${xmlEscape(row.systemOrderNo)}</text>
+<text x="350" y="${y}" class="small">${xmlEscape(row.direction)}</text>
+<text x="470" y="${y}" class="small">${xmlEscape(row.feeType)}</text>
+<text x="650" y="${y}" class="small">${xmlEscape(row.supplierName)}</text>
+<text x="900" y="${y}" class="small">${xmlEscape(row.originalAmount)}</text>
+<text x="1080" y="${y}" class="small">${xmlEscape(row.localAmount)}</text>
+<text x="1220" y="${y}" class="small">${xmlEscape(row.signedAmount)}</text>
+<line x1="60" y1="${y + 12}" x2="1340" y2="${y + 12}" stroke="#e6edf7"/>`;
+  }).join("");
+  const evidenceSvg = evidenceRows.map((row, index) => {
     const y = evidenceStart + index * 24;
-    return `<text x="72" y="${y}" class="label">${xmlEscape(row.item)}</text><text x="300" y="${y}" class="text">${xmlEscape(textValue(row.value).slice(0, 105))}</text>`;
+    return `<text x="72" y="${y}" class="label">${xmlEscape(row.item)}</text><text x="300" y="${y}" class="text">${xmlEscape(textValue(row.value))}</text>`;
   }).join("");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
 <style>
@@ -398,12 +425,15 @@ async function pngBuffer(document: { ownerName: string; month: string; version: 
 <rect x="40" y="40" width="1320" height="${height - 80}" rx="14" fill="#fff" stroke="#dbe5f2"/>
 <text x="70" y="94" class="title">${xmlEscape(payload.title ?? "Commission Confirmation")}</text>
 <text x="70" y="126" class="sub">Owner: ${xmlEscape(document.ownerName)}   Month: ${xmlEscape(document.month)}   Version: ${document.version}   Source: imported Excel ledger</text>
-<text x="70" y="154" class="section">Summary</text>
+<text x="70" y="160" class="section">Summary</text>
 ${summarySvg}
-<text x="70" y="470" class="section">Order Details</text>
-<text x="72" y="500" class="label">System No</text><text x="260" y="500" class="label">Original No</text><text x="430" y="500" class="label">Customer</text><text x="690" y="500" class="label">Gross Profit</text><text x="860" y="500" class="label">Rate</text><text x="1040" y="500" class="label">Commission</text>
+<text x="70" y="${detailsHeadingY}" class="section">Order / Performance Details</text>
+<text x="72" y="${detailsHeadingY + 28}" class="label">System No</text><text x="260" y="${detailsHeadingY + 28}" class="label">Original No</text><text x="430" y="${detailsHeadingY + 28}" class="label">Customer</text><text x="690" y="${detailsHeadingY + 28}" class="label">Gross Profit</text><text x="860" y="${detailsHeadingY + 28}" class="label">Rate</text><text x="1040" y="${detailsHeadingY + 28}" class="label">Commission</text>
 ${detailSvg}
-<text x="70" y="${evidenceStart - 16}" class="section">Signature Evidence</text>
+<text x="70" y="${chargesHeadingY}" class="section">Charge Line Traceability</text>
+<text x="72" y="${chargesHeadingY + 28}" class="label">Excel row</text><text x="150" y="${chargesHeadingY + 28}" class="label">System No</text><text x="350" y="${chargesHeadingY + 28}" class="label">Direction</text><text x="470" y="${chargesHeadingY + 28}" class="label">Fee type</text><text x="650" y="${chargesHeadingY + 28}" class="label">Supplier</text><text x="900" y="${chargesHeadingY + 28}" class="label">Original</text><text x="1080" y="${chargesHeadingY + 28}" class="label">Local</text><text x="1220" y="${chargesHeadingY + 28}" class="label">Signed</text>
+${chargeSvg}
+<text x="70" y="${evidenceHeadingY}" class="section">Signature Evidence</text>
 ${evidenceSvg}
 </svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();

@@ -88,6 +88,13 @@ function dateTimeText(value?: string | null) {
   return value ? value.replace("T", " ").slice(0, 19) : "____ 年 ____ 月 ____ 日 ____:____";
 }
 
+function notificationChannelLabel(channel?: string | null) {
+  if (channel === "dingtalk_direct") return "钉钉单聊";
+  if (channel === "dingtalk_webhook") return "钉钉群机器人";
+  if (channel === "wecom_webhook") return "企业微信机器人";
+  return "手工通知";
+}
+
 export default function SignatureConfirm() {
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
   const [salesSalaryDocuments, setSalesSalaryDocuments] = useState<ConfirmationDocument[]>([]);
@@ -170,8 +177,19 @@ export default function SignatureConfirm() {
     const res = await sendSignatureLink(row.id);
     const url = externalSignatureUrl(res.data.signatureUrl);
     const copied = await copyText(url);
-    if (copied) message.success("外部签名链接已生成并复制，可直接发送给员工");
-    else Modal.info({ title: "签名链接已生成，请手动复制", content: <Typography.Paragraph copyable>{url}</Typography.Paragraph> });
+    if (res.data.sendStatus === "notified") {
+      message.success(`签名链接已通过${notificationChannelLabel(res.data.notificationChannel)}发送${copied ? "，并已复制" : ""}`);
+    } else if (res.data.sendStatus === "delivery_failed") {
+      Modal.warning({
+        title: `${notificationChannelLabel(res.data.notificationChannel)}发送失败`,
+        content: <Space direction="vertical"><Typography.Paragraph>{res.data.notificationError ?? "请检查机器人凭据和员工钉钉映射。"}</Typography.Paragraph><Typography.Paragraph copyable>{url}</Typography.Paragraph></Space>
+      });
+    } else {
+      Modal.info({
+        title: "签名链接已生成，但未配置机器人发送",
+        content: <Space direction="vertical"><Typography.Paragraph>请在参数规则页配置钉钉企业应用或群机器人；当前可复制链接后手工发送。</Typography.Paragraph><Typography.Paragraph copyable>{url}</Typography.Paragraph></Space>
+      });
+    }
     await loadData();
   };
 
@@ -213,8 +231,8 @@ export default function SignatureConfirm() {
       dataIndex: "sendStatus",
       width: 130,
       render: (value, row) => {
-        if (value === "notified") return <Tag color="green">{row.notificationChannel === "dingtalk_webhook" ? "钉钉已发送" : row.notificationChannel === "wecom_webhook" ? "企业微信已发送" : "已通知（手工）"}</Tag>;
-        if (value === "delivery_failed") return <Tag color="red" title={row.notificationError ?? "发送失败"}>{row.notificationChannel === "dingtalk_webhook" ? "钉钉发送失败" : "企业微信发送失败"}</Tag>;
+        if (value === "notified") return <Tag color="green">{notificationChannelLabel(row.notificationChannel)}已发送</Tag>;
+        if (value === "delivery_failed") return <Tag color="red" title={row.notificationError ?? "发送失败"}>{notificationChannelLabel(row.notificationChannel)}发送失败</Tag>;
         if (value === "link_generated") return <Tag color="blue">链接已生成</Tag>;
         return <Tag color="gold">未生成链接</Tag>;
       }
@@ -230,7 +248,7 @@ export default function SignatureConfirm() {
       render: (_, row) => (
         <Space size={6} wrap>
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看个人确认单</Button>
-          <Button size="small" onClick={() => handleSend(row)}>生成外发链接</Button>
+          <Button size="small" onClick={() => handleSend(row)}>生成并发送钉钉</Button>
           <Button size="small" disabled={!row.signatureUrl} onClick={async () => {
             if (usesLocalSignatureBackend()) {
               Modal.warning({
@@ -282,7 +300,7 @@ export default function SignatureConfirm() {
       render: (_, row) => (
         <Space size={6} wrap>
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看确认单</Button>
-          <Button size="small" onClick={() => handleSend(row)}>生成外发链接</Button>
+          <Button size="small" onClick={() => handleSend(row)}>生成并发送钉钉</Button>
           <Button size="small" onClick={() => handleDownload(row, "xlsx")}>Excel</Button>
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>PDF</Button>
           <Button size="small" onClick={() => handleDownload(row, "png")}>PNG</Button>
@@ -407,7 +425,7 @@ export default function SignatureConfirm() {
             <Descriptions.Item label="订单数量">{selectedDocument?.orderCount ?? 0}</Descriptions.Item>
             <Descriptions.Item label="最终提成金额">{toPlainMoney(selectedDocument?.commissionAmount)}</Descriptions.Item>
             <Descriptions.Item label="确认单状态">{selectedDocument?.documentStatus}</Descriptions.Item>
-            <Descriptions.Item label="通知状态">{selectedDocument?.sendStatus === "notified" ? (selectedDocument.notificationChannel === "dingtalk_webhook" ? "钉钉已发送" : selectedDocument.notificationChannel === "wecom_webhook" ? "企业微信已发送" : "已记录手工通知") : selectedDocument?.sendStatus === "delivery_failed" ? `${selectedDocument.notificationChannel === "dingtalk_webhook" ? "钉钉" : "企业微信"}发送失败：${selectedDocument.notificationError ?? "请复制链接后手工发送"}` : selectedDocument?.sendStatus === "link_generated" ? "链接已生成，待通知" : "未生成链接"}</Descriptions.Item>
+              <Descriptions.Item label="通知状态">{selectedDocument?.sendStatus === "notified" ? `${notificationChannelLabel(selectedDocument.notificationChannel)}已发送` : selectedDocument?.sendStatus === "delivery_failed" ? `${notificationChannelLabel(selectedDocument.notificationChannel)}发送失败：${selectedDocument.notificationError ?? "请复制链接后手工发送"}` : selectedDocument?.sendStatus === "link_generated" ? "链接已生成，待通知" : "未生成链接"}</Descriptions.Item>
             <Descriptions.Item label="员工签名状态">{selectedDocument?.signatureStatus}</Descriptions.Item>
             <Descriptions.Item label="主管确认状态">{selectedDocument?.supervisorStatus}</Descriptions.Item>
           </Descriptions>
