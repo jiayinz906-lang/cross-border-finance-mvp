@@ -33,6 +33,14 @@ type ConfirmationPayloadDetail = {
   commissionRate: number;
   commissionAmount: number;
   source?: string;
+  salaryComponent?: string;
+  performanceCategory?: string;
+  rawOrderCount?: number;
+  baseCount?: number;
+  commissionOrderCount?: number;
+  performanceRate?: number;
+  performanceRateUnit?: string;
+  bracketLabel?: string;
 };
 
 type ConfirmationPayload = {
@@ -215,7 +223,7 @@ export default function SignatureConfirm() {
   const progressPercent = needConfirmCount ? Math.round((signedCount / needConfirmCount) * 100) : 0;
   const salaryDocuments = [
     ...salesSalaryDocuments.map((row) => ({ ...row, salaryRole: "销售代表" as const })),
-    ...customerServiceSalaryDocuments.map((row) => ({ ...row, salaryRole: "客服代表" as const }))
+    ...customerServiceSalaryDocuments.map((row) => ({ ...row, salaryRole: "操作员" as const }))
   ];
   const salesSalaryTotal = salesSalaryDocuments.reduce((sum, row) => sum + row.commissionAmount, 0);
   const customerServiceSalaryTotal = customerServiceSalaryDocuments.reduce((sum, row) => sum + row.commissionAmount, 0);
@@ -273,21 +281,26 @@ export default function SignatureConfirm() {
   ];
 
   const detailColumns: ColumnsType<ConfirmationPayloadDetail> = [
-    { title: "运单号", dataIndex: "orderNo", fixed: "left", width: 130 },
+    { title: "订单/绩效板块", dataIndex: "performanceCategory", fixed: "left", width: 150, render: (value, row) => value || row.orderNo },
     { title: "原始订单号", dataIndex: "originalOrderNo", width: 140, render: (value) => value || "-" },
     { title: "业务类型", dataIndex: "businessType", width: 140 },
+    { title: "Excel票数", dataIndex: "rawOrderCount", align: "right", width: 100, render: (value) => value ?? "-" },
+    { title: "规则基础票数", dataIndex: "baseCount", align: "right", width: 120, render: (value) => value ?? "-" },
+    { title: "计发票数", dataIndex: "commissionOrderCount", align: "right", width: 100, render: (value) => value ?? "-" },
+    { title: "绩效规则", dataIndex: "bracketLabel", width: 180, render: (value) => value || "-" },
     { title: "应收", dataIndex: "receivable", align: "right", render: toPlainMoney },
     { title: "应付", dataIndex: "payable", align: "right", render: toPlainMoney },
     { title: "毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
     { title: "毛利率", dataIndex: "grossProfitRate", align: "right", render: formatPercent },
-    { title: "提成比例", dataIndex: "commissionRate", align: "right", render: formatPercent },
-    { title: "提成金额", dataIndex: "commissionAmount", align: "right", render: toPlainMoney }
+    { title: "提成比例", dataIndex: "commissionRate", align: "right", render: (value, row) => row.performanceRateUnit ? `${row.performanceRate ?? 0}${row.performanceRateUnit}` : formatPercent(value) },
+    { title: "金额构成", dataIndex: "salaryComponent", width: 130, render: (value) => value || "-" },
+    { title: "提成/绩效金额", dataIndex: "commissionAmount", align: "right", render: toPlainMoney }
   ];
 
   const salaryColumns: ColumnsType<(typeof salaryDocuments)[number]> = [
     { title: "人员类型", dataIndex: "salaryRole", width: 110, render: (value) => <Tag color={value === "销售代表" ? "blue" : "purple"}>{value}</Tag> },
     { title: "姓名", dataIndex: "ownerName", fixed: "left", width: 120 },
-    { title: "确认单", dataIndex: "businessType", width: 160, render: (value) => value === "sales_salary" ? "销售提成薪资确认单" : "客服绩效薪资确认单" },
+    { title: "确认单", dataIndex: "businessType", width: 160, render: (value) => value === "sales_salary" ? "销售提成薪资确认单" : "操作员薪资确认单" },
     { title: "订单/业务量", dataIndex: "orderCount", width: 120 },
     { title: "本月确认金额", dataIndex: "commissionAmount", align: "right", width: 150, render: toPlainMoney },
     { title: "员工签名", dataIndex: "signatureStatus", width: 110, render: (value) => value === "signed" ? <Tag color="green">已签名</Tag> : <Tag color="gold">待签名</Tag> },
@@ -332,7 +345,7 @@ export default function SignatureConfirm() {
 
       <Card
         className="signature-confirm-card"
-        title={<div className="signature-title-block"><strong>薪资汇总与确认单</strong><span>销售代表按物流提成汇总，客服代表按业务量绩效汇总；金额仅来自当前月份已导入数据，不包含固定工资、社保及个税。</span></div>}
+        title={<div className="signature-title-block"><strong>薪资汇总与确认单</strong><span>销售代表按物流提成与已主管确认的注册/服务提成汇总；操作员按各绩效板块汇总。金额仅来自当前月份已导入数据，不包含固定工资、社保及个税。</span></div>}
         extra={<Button type="primary" loading={generatingSalary} onClick={handleGenerateSalaryDocuments}>批量生成薪资确认单</Button>}
       >
         <Alert
@@ -340,13 +353,13 @@ export default function SignatureConfirm() {
           showIcon
           style={{ marginBottom: 16 }}
           message="薪资确认范围说明"
-          description="销售代表确认单汇总物流提成；客服代表确认单汇总操作员绩效。生成后可发送外部签名链接，员工签名和主管确认均会写入确认单证据链。"
+          description="销售代表确认单汇总物流提成及已主管确认的注册/服务提成；操作员确认单按各绩效板块列示 Excel 票数、基础票数、计发票数、规则和小计。生成后可发送外部签名链接，员工签名和主管确认均会写入确认单证据链。"
         />
         <div className="signature-stat-grid">
           <div><span>销售代表确认人数</span><strong>{salesSalaryDocuments.length}</strong></div>
           <div><span>销售提成确认金额</span><strong>{toPlainMoney(salesSalaryTotal)}</strong></div>
-          <div><span>客服代表确认人数</span><strong>{customerServiceSalaryDocuments.length}</strong></div>
-          <div><span>客服绩效确认金额</span><strong>{toPlainMoney(customerServiceSalaryTotal)}</strong></div>
+          <div><span>操作员确认人数</span><strong>{customerServiceSalaryDocuments.length}</strong></div>
+          <div><span>操作员绩效确认金额</span><strong>{toPlainMoney(customerServiceSalaryTotal)}</strong></div>
           <div><span>薪资确认合计</span><strong>{toPlainMoney(salesSalaryTotal + customerServiceSalaryTotal)}</strong></div>
         </div>
         <Table

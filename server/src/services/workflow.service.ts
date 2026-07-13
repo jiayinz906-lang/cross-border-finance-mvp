@@ -286,6 +286,12 @@ function confirmationRows(document: {
     { item: "confirmedAt", value: document.confirmedAt?.toISOString() ?? "-" }
   ];
   const detailRows = details.map((item: any) => ({
+    salaryComponent: item.salaryComponent ?? "-",
+    performanceCategory: item.performanceCategory ?? "-",
+    rawOrderCount: item.rawOrderCount ?? "-",
+    baseCount: item.baseCount ?? "-",
+    commissionOrderCount: item.commissionOrderCount ?? "-",
+    performanceRule: item.bracketLabel ?? (item.performanceRateUnit ? `${item.performanceRate ?? 0}${item.performanceRateUnit}` : "-"),
     systemOrderNo: item.orderNo,
     originalOrderNo: item.originalOrderNo,
     customerName: item.customerName,
@@ -358,7 +364,7 @@ function pdfBuffer(document: { ownerName: string; month: string; version: number
   for (const row of summaryRows) writeLine(`${row.item}: ${textValue(row.value)}`);
   writeSection(`Order / performance details (${detailRows.length})`);
   for (const row of detailRows) {
-    writeLine(`${row.systemOrderNo ?? "-"} | ${row.originalOrderNo ?? "-"} | ${row.customerName ?? "-"} | ${row.businessType ?? "-"} | Receivable ${row.receivable} | Payable ${row.payable} | Gross profit ${row.grossProfit} | Rate ${row.commissionRate} | Amount ${row.commissionAmount}`, 8);
+    writeLine(`${row.performanceCategory ?? "-"} | Excel tickets ${row.rawOrderCount ?? "-"} | Base ${row.baseCount ?? "-"} | Payable tickets ${row.commissionOrderCount ?? "-"} | ${row.performanceRule ?? "-"} | ${row.systemOrderNo ?? "-"} | ${row.originalOrderNo ?? "-"} | ${row.customerName ?? "-"} | ${row.businessType ?? "-"} | Gross profit ${row.grossProfit} | Rate ${row.commissionRate} | Amount ${row.commissionAmount}`, 8);
   }
   writeSection(`Charge line traceability (${chargeLineRows.length})`);
   for (const row of chargeLineRows) {
@@ -940,25 +946,53 @@ export const workflowService = {
 
   async generateSalaryDocuments(month?: string) {
     const selectedMonth = monthOrDefault(month);
-    const [commissions, performance, activeBatch] = await Promise.all([
+    const [commissions, confirmedServiceRecords, performance, activeBatch] = await Promise.all([
       prisma.commissionRecord.findMany({
         where: { financeOrder: { month: selectedMonth } },
+        include: { financeOrder: true }
+      }),
+      prisma.serviceBusinessRecord.findMany({
+        where: { confirmStatus: "confirmed", financeOrder: { month: selectedMonth } },
         include: { financeOrder: true }
       }),
       analyticsService.operatorPerformanceWithSettings(selectedMonth),
       latestActiveImportBatch(selectedMonth)
     ]);
     const documents = [];
-    const salesGroups = new Map<string, typeof commissions>();
-    for (const item of commissions) {
-      salesGroups.set(item.salespersonName, [...(salesGroups.get(item.salespersonName) ?? []), item]);
+    const salesItems = [
+      ...commissions.map((item) => ({
+        sourceType: "logistics" as const,
+        ownerName: item.salespersonName,
+        financeOrder: item.financeOrder,
+        businessType: item.businessType,
+        grossProfit: item.grossProfit,
+        commissionRate: item.commissionRate,
+        commissionAmount: item.manualCommissionAmount ?? item.commissionAmount,
+        source: "Imported Excel logistics commission"
+      })),
+      ...confirmedServiceRecords.map((item) => ({
+        sourceType: "service" as const,
+        ownerName: item.financeOrder.salespersonName || "Pending supervisor confirmation",
+        financeOrder: item.financeOrder,
+        businessType: item.serviceType,
+        grossProfit: item.grossProfit ?? 0,
+        commissionRate: item.grossProfit ? (item.supervisorFinalCommission ?? item.suggestedCommissionMin ?? 0) / item.grossProfit : null,
+        commissionAmount: item.supervisorFinalCommission ?? item.suggestedCommissionMin ?? 0,
+        source: "Supervisor-confirmed registration/service commission"
+      }))
+    ];
+    const salesGroups = new Map<string, typeof salesItems>();
+    for (const item of salesItems) {
+      salesGroups.set(item.ownerName, [...(salesGroups.get(item.ownerName) ?? []), item]);
     }
 
     for (const [index, [ownerName, items]] of Array.from(salesGroups.entries()).sort(([left], [right]) => left.localeCompare(right, "zh-Hans-CN")).entries()) {
-      const finalAmount = roundMoney(items.reduce((sum, item) => sum + (item.manualCommissionAmount ?? item.commissionAmount), 0));
+      const finalAmount = roundMoney(items.reduce((sum, item) => sum + item.commissionAmount, 0));
       const grossProfit = roundMoney(items.reduce((sum, item) => sum + item.grossProfit, 0));
       const receivable = roundMoney(items.reduce((sum, item) => sum + item.financeOrder.adjustedReceivable, 0));
       const payable = roundMoney(items.reduce((sum, item) => sum + item.financeOrder.adjustedPayable, 0));
+      const logisticsCommission = roundMoney(items.filter((item) => item.sourceType === "logistics").reduce((sum, item) => sum + item.commissionAmount, 0));
+      const serviceCommission = roundMoney(items.filter((item) => item.sourceType === "service").reduce((sum, item) => sum + item.commissionAmount, 0));
       const payload = {
         title: "销售代表提成薪资确认单",
         fileType: "sales_salary_confirmation",
@@ -979,7 +1013,9 @@ export const workflowService = {
           accruedCommission: finalAmount,
           supervisorAdjustmentAmount: 0,
           finalCommission: finalAmount,
-          abnormalNote: "本确认单仅汇总导入 Excel 产生的物流提成，不包含固定底薪、社保和个税。",
+          logisticsCommission,
+          serviceCommission,
+          abnormalNote: "本确认单汇总导入 Excel 产生的物流提成及已主管确认的注册/服务提成，不包含固定底薪、社保和个税。",
           payoutNote: `随 ${selectedMonth} 薪资一起发放`,
           status: "pending employee signature"
         },
@@ -993,8 +1029,9 @@ export const workflowService = {
           grossProfit: roundMoney(item.grossProfit),
           grossProfitRate: item.financeOrder.adjustedGrossProfitRate,
           commissionRate: item.commissionRate,
-          commissionAmount: roundMoney(item.manualCommissionAmount ?? item.commissionAmount),
-          source: "导入 Excel 订单提成"
+          commissionAmount: roundMoney(item.commissionAmount),
+          source: item.source,
+          salaryComponent: item.sourceType === "service" ? "注册/服务提成" : "物流提成"
         })),
         statement: "本人确认本月销售提成薪资确认单中的订单、毛利、提成比例和最终提成金额。该确认单不包含固定底薪、社保和个税。",
         signatureTrace: {
@@ -1020,7 +1057,7 @@ export const workflowService = {
     for (const [index, group] of performance.rows.entries()) {
       const finalAmount = roundMoney(group.payablePerformance);
       const payload = {
-        title: "客服代表绩效薪资确认单",
+        title: "操作员薪资确认单",
         fileType: "customer_service_salary_confirmation",
         documentCode: documentCode(selectedMonth, index, "customer_service_salary"),
         sourceFileName: activeBatch?.fileName ?? "-",
@@ -1030,7 +1067,7 @@ export const workflowService = {
         generatedAt: new Date().toISOString(),
         summary: {
           ownerName: group.operatorName,
-          businessType: "customer_service_salary",
+          businessType: "operator_salary",
           orderCount: group.rows.reduce((sum, row) => sum + row.rawOrderCount, 0),
           receivable: 0,
           payable: 0,
@@ -1039,7 +1076,7 @@ export const workflowService = {
           accruedCommission: finalAmount,
           supervisorAdjustmentAmount: 0,
           finalCommission: finalAmount,
-          abnormalNote: "本确认单仅汇总导入 Excel 产生的客服绩效，不包含固定底薪、社保和个税。",
+          abnormalNote: "本确认单按操作员的各绩效板块汇总导入 Excel 统计、规则基础票数、计发票数和绩效金额，不包含固定底薪、社保和个税。",
           payoutNote: performance.payoutNote,
           status: "pending employee signature"
         },
@@ -1047,16 +1084,23 @@ export const workflowService = {
           orderNo: row.orderType,
           originalOrderNo: "-",
           customerName: group.operatorName,
-          businessType: "customer_service_performance",
+          businessType: "operator_performance",
           receivable: row.rawOrderCount,
           payable: row.baseCount,
           grossProfit: roundMoney(row.commissionAmount),
           grossProfitRate: null,
           commissionRate: row.rateUnit === "%" ? row.rate / 100 : null,
           commissionAmount: roundMoney(row.commissionAmount),
-          source: `${row.note}；规则值：${row.rate}${row.rateUnit}`
+          source: `${row.note}；规则值：${row.rate}${row.rateUnit}`,
+          performanceCategory: row.orderType,
+          rawOrderCount: row.rawOrderCount,
+          baseCount: row.baseCount,
+          commissionOrderCount: row.commissionOrderCount,
+          performanceRate: row.rate,
+          performanceRateUnit: row.rateUnit,
+          bracketLabel: row.bracketLabel
         })),
-        statement: `本人确认本月客服绩效薪资确认单中的 Excel 统计、绩效规则和最终绩效金额。${performance.payoutNote}`,
+        statement: `本人确认本月操作员薪资确认单中的各绩效板块、Excel 统计、规则基础票数、计发票数、绩效规则和最终绩效金额。${performance.payoutNote}`,
         signatureTrace: {
           employeeSignature: "pending employee signature",
           signedAt: null,
