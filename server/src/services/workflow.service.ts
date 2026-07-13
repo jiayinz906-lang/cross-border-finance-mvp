@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import PDFDocument from "pdfkit";
 import sharp from "sharp";
 import { prisma } from "../prisma/client.js";
@@ -94,6 +95,15 @@ function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], s
     XLSX.utils.json_to_sheet(rows.length ? rows : [{ note: "no data" }]),
     sheetName.slice(0, 31)
   );
+}
+
+function confirmationFontPath() {
+  const configured = process.env.CONFIRMATION_FONT_PATH;
+  if (configured && fs.existsSync(configured)) return configured;
+  const localWindowsFont = "C:\\Windows\\Fonts\\simhei.ttf";
+  if (fs.existsSync(localWindowsFont)) return localWindowsFont;
+  const bundledFont = "/usr/share/fonts/truetype/xjd/SimHei.ttf";
+  return fs.existsSync(bundledFont) ? bundledFont : null;
 }
 
 type NotificationChannel = "dingtalk_direct" | "dingtalk_webhook" | "wecom_webhook";
@@ -343,6 +353,8 @@ function pdfBuffer(document: { ownerName: string; month: string; version: number
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+  const fontPath = confirmationFontPath();
+  if (fontPath) doc.font(fontPath);
 
   const writeLine = (value: string, fontSize = 9) => {
     const pageBottom = doc.page.height - doc.page.margins.bottom - 12;
@@ -431,12 +443,12 @@ async function pngBuffer(document: { ownerName: string; month: string; version: 
   }).join("");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
 <style>
-.title{font:700 30px Arial,"Microsoft YaHei",sans-serif;fill:#071737}
-.sub{font:600 18px Arial,"Microsoft YaHei",sans-serif;fill:#52627d}
-.section{font:700 22px Arial,"Microsoft YaHei",sans-serif;fill:#071737}
-.label{font:700 15px Arial,"Microsoft YaHei",sans-serif;fill:#71809c}
-.text{font:700 15px Arial,"Microsoft YaHei",sans-serif;fill:#071737}
-.small{font:700 15px Arial,"Microsoft YaHei",sans-serif;fill:#13213c}
+.title{font:700 30px "SimHei",Arial,sans-serif;fill:#071737}
+.sub{font:600 18px "SimHei",Arial,sans-serif;fill:#52627d}
+.section{font:700 22px "SimHei",Arial,sans-serif;fill:#071737}
+.label{font:700 15px "SimHei",Arial,sans-serif;fill:#71809c}
+.text{font:700 15px "SimHei",Arial,sans-serif;fill:#071737}
+.small{font:700 15px "SimHei",Arial,sans-serif;fill:#13213c}
 </style>
 <rect width="100%" height="100%" fill="#f4f7fb"/>
 <rect x="40" y="40" width="1320" height="${height - 80}" rx="14" fill="#fff" stroke="#dbe5f2"/>

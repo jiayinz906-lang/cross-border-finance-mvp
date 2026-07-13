@@ -5,7 +5,7 @@ ENV DATABASE_URL=file:./dev.db
 ENV VITE_API_BASE_URL=/api
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends openssl ca-certificates fontconfig \
   && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable
@@ -43,6 +43,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/server/dist ./server/dist
 COPY --from=build /app/client/dist ./client/dist
 COPY --from=build /app/prisma/dev.db ./prisma/dev.db
+COPY server/assets/SimHei.ttf /usr/share/fonts/truetype/xjd/SimHei.ttf
+RUN fc-cache -f
 
 EXPOSE 4000
 
