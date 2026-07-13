@@ -357,7 +357,13 @@ function pdfBuffer(document: { ownerName: string; month: string; version: number
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
   const fontPath = confirmationFontPath();
-  if (fontPath) doc.font(fontPath);
+  // Register the bundled CJK font explicitly. Passing an unnamed path can fall
+  // back to Helvetica in the production PDFKit runtime, which corrupts Chinese
+  // text before the PDF is rendered to PNG.
+  if (fontPath) {
+    doc.registerFont("XjdConfirmationCjk", fontPath);
+    doc.font("XjdConfirmationCjk");
+  }
 
   const writeLine = (value: string, fontSize = 9) => {
     const pageBottom = doc.page.height - doc.page.margins.bottom - 12;

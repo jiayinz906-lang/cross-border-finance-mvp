@@ -30,6 +30,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=4000
 ENV DATABASE_URL=file:./dev.db
+ENV CONFIRMATION_FONT_PATH=/usr/share/fonts/truetype/xjd/SimHei.ttf
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates fontconfig poppler-utils \
