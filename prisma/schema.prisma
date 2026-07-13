@@ -75,6 +75,31 @@ model FinanceOrder {
   settlementRecords           SettlementRecord[]
 }
 
+model OperatorPerformanceOverride {
+  id           Int      @id @default(autoincrement())
+  month        String
+  operatorName String
+  category     String
+  orderCount   Int?
+  baseCount    Int?
+  rate         Float?
+  updatedBy    String   @default("主管")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([month, operatorName, category])
+  @@index([month, operatorName])
+}
+
+model OperatorPerformanceMonthSetting {
+  id         Int      @id @default(autoincrement())
+  month      String   @unique
+  payoutNote String
+  updatedBy  String   @default("主管")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
 model SettlementRecord {
   id              Int          @id @default(autoincrement())
   financeOrderId  Int

@@ -1,7 +1,11 @@
-import { Alert, Button, Card, Modal, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Input, InputNumber, Modal, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getOperatorPerformanceAnalysis } from "../../api/analytics.api";
+import {
+  getOperatorPerformanceAnalysis,
+  updateOperatorPerformanceOverride,
+  updateOperatorPerformancePayoutNote
+} from "../../api/analytics.api";
 import {
   type ConfirmationDocument,
   downloadConfirmationDocumentFile,
@@ -18,12 +22,17 @@ import { externalSignatureUrl, productionAppUrl, usesLocalSignatureBackend } fro
 
 type PerformanceRow = {
   id: string;
+  category: string;
   operatorName: string;
   orderType: string;
+  rawOrderCount: number;
+  rawGrossProfit: number;
   orderCount: number;
   baseCount: number;
   commissionOrderCount: number;
   rate: number;
+  rateUnit: "元/票" | "%";
+  calculationMode: "ticket" | "gross_profit";
   commissionAmount: number;
   note: string;
   bracketLabel?: string;
@@ -47,11 +56,35 @@ function statusTag(value: string, positiveText: string, pendingText: string) {
   return <Tag color="gold">{pendingText}</Tag>;
 }
 
+function recalculatePerformanceRow(row: PerformanceRow): PerformanceRow {
+  if (row.calculationMode === "gross_profit") {
+    return {
+      ...row,
+      commissionAmount: Math.round(row.rawGrossProfit * row.rate) / 100
+    };
+  }
+  const commissionOrderCount = Math.max(row.orderCount - row.baseCount, 0);
+  return {
+    ...row,
+    commissionOrderCount,
+    commissionAmount: Math.round(commissionOrderCount * row.rate * 100) / 100
+  };
+}
+
+function recalculatePerformanceGroup(group: OperatorGroup): OperatorGroup {
+  const rows = group.rows.map(recalculatePerformanceRow);
+  const totalCommission = rows.reduce((sum, row) => sum + row.commissionAmount, 0);
+  return { ...group, rows, totalCommission, payablePerformance: totalCommission };
+}
+
 export default function OperatorPerformance() {
   const { selectedMonth } = useSelectedMonth();
   const [operatorGroups, setOperatorGroups] = useState<OperatorGroup[]>([]);
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
+  const [payoutNote, setPayoutNote] = useState("");
   const [loading, setLoading] = useState(false);
+  const [rowSaving, setRowSaving] = useState<string | null>(null);
+  const [payoutSaving, setPayoutSaving] = useState(false);
   const [supervisorDocument, setSupervisorDocument] = useState<ConfirmationDocument | null>(null);
   const [voidingDocument, setVoidingDocument] = useState<ConfirmationDocument | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -64,6 +97,7 @@ export default function OperatorPerformance() {
         getDocuments(selectedMonth, "operator_performance")
       ]);
       setOperatorGroups(ledgerRes.data.rows ?? []);
+      setPayoutNote(ledgerRes.data.payoutNote ?? `随 ${selectedMonth} 薪资一起发放`);
       setDocuments(documentRes.data.rows ?? []);
     } catch {
       message.error("操作员绩效数据加载失败，请确认后端服务可用。");
@@ -75,6 +109,71 @@ export default function OperatorPerformance() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleNumberChange = (rowId: string, field: "orderCount" | "baseCount" | "rate", value: number | null) => {
+    setOperatorGroups((groups) => groups.map((group) => {
+      const rows = group.rows.map((row) => row.id === rowId
+        ? recalculatePerformanceRow({ ...row, [field]: Number(value ?? 0) })
+        : row);
+      return recalculatePerformanceGroup({ ...group, rows });
+    }));
+  };
+
+  const savePerformanceRow = async (row: PerformanceRow) => {
+    setRowSaving(row.id);
+    try {
+      const response = await updateOperatorPerformanceOverride({
+        month: selectedMonth,
+        operatorName: row.operatorName,
+        category: row.category,
+        orderCount: row.calculationMode === "ticket" ? row.orderCount : null,
+        baseCount: row.calculationMode === "ticket" ? row.baseCount : null,
+        rate: row.rate
+      });
+      setOperatorGroups(response.data.rows ?? []);
+      setPayoutNote(response.data.payoutNote ?? payoutNote);
+      message.success("绩效参数已保存，Excel 原始订单未被修改。");
+    } catch (error: any) {
+      message.error(error?.response?.data?.message ?? "保存绩效参数失败。");
+      await loadData();
+    } finally {
+      setRowSaving(null);
+    }
+  };
+
+  const resetPerformanceRow = async (row: PerformanceRow) => {
+    setRowSaving(row.id);
+    try {
+      const response = await updateOperatorPerformanceOverride({
+        month: selectedMonth,
+        operatorName: row.operatorName,
+        category: row.category,
+        orderCount: null,
+        baseCount: null,
+        rate: null
+      });
+      setOperatorGroups(response.data.rows ?? []);
+      setPayoutNote(response.data.payoutNote ?? payoutNote);
+      message.success("已恢复 Excel 统计和自动规则。");
+    } catch (error: any) {
+      message.error(error?.response?.data?.message ?? "恢复自动规则失败。");
+    } finally {
+      setRowSaving(null);
+    }
+  };
+
+  const savePayoutNote = async () => {
+    setPayoutSaving(true);
+    try {
+      const response = await updateOperatorPerformancePayoutNote(selectedMonth, payoutNote);
+      setPayoutNote(response.data.payoutNote ?? payoutNote);
+      message.success("绩效发放说明已保存。");
+    } catch (error: any) {
+      message.error(error?.response?.data?.message ?? "保存发放说明失败。");
+    } finally {
+      setPayoutSaving(false);
+    }
+  };
 
   const handleGenerateDocuments = async () => {
     const res = await generateOperatorDocuments(selectedMonth);
@@ -129,18 +228,21 @@ export default function OperatorPerformance() {
       render: (value: string) => value
     },
     {
-      title: "票数（Excel 统计）",
+      title: "绩效票数（默认 Excel）",
       dataIndex: "orderCount",
       align: "right",
-      width: 110,
-      render: (value: number) => value
+      width: 150,
+      render: (value: number, row) => <Space direction="vertical" size={0}>
+        <InputNumber min={0} precision={0} disabled={row.calculationMode === "gross_profit"} value={value} onChange={(next) => handleNumberChange(row.id, "orderCount", next)} />
+        <Typography.Text type="secondary" style={{ fontSize: 11 }}>Excel：{row.rawOrderCount}</Typography.Text>
+      </Space>
     },
     {
       title: "规则基础票数",
       dataIndex: "baseCount",
       align: "right",
       width: 120,
-      render: (value: number) => value
+      render: (value: number, row) => <InputNumber min={0} precision={0} disabled={row.calculationMode === "gross_profit"} value={value} onChange={(next) => handleNumberChange(row.id, "baseCount", next)} />
     },
     {
       title: "自动匹配档位",
@@ -148,19 +250,34 @@ export default function OperatorPerformance() {
       width: 210,
       render: (value: string | undefined) => value || "-"
     },
-    { title: "计发票数", dataIndex: "commissionOrderCount", align: "right", width: 120 },
     {
-      title: "绩效单价（元/票）",
+      title: "计发基数",
+      dataIndex: "commissionOrderCount",
+      align: "right",
+      width: 130,
+      render: (value: number, row) => row.calculationMode === "gross_profit" ? `¥${value.toFixed(2)}` : value
+    },
+    {
+      title: "绩效规则值",
       dataIndex: "rate",
       align: "right",
-      width: 120,
-      render: (value: number) => value || "-"
+      width: 150,
+      render: (value: number, row) => <Space size={4}><InputNumber min={0} precision={2} value={value} onChange={(next) => handleNumberChange(row.id, "rate", next)} /><Typography.Text type="secondary">{row.rateUnit}</Typography.Text></Space>
     },
     { title: "分类绩效金额", dataIndex: "commissionAmount", align: "right", width: 120 },
     {
       title: "备注",
       dataIndex: "note",
       render: (value: string) => value
+    },
+    {
+      title: "操作",
+      fixed: "right",
+      width: 150,
+      render: (_, row) => <Space size={4}>
+        <Button size="small" type="primary" loading={rowSaving === row.id} onClick={() => savePerformanceRow(row)}>保存</Button>
+        <Button size="small" disabled={rowSaving === row.id} onClick={() => resetPerformanceRow(row)}>恢复</Button>
+      </Space>
     }
   ];
 
@@ -214,13 +331,20 @@ export default function OperatorPerformance() {
         <Alert
           type="info"
           showIcon
-          message="票数为导入 Excel 的实际订单统计，基础票数和单价由规则自动匹配，页面不支持人工增减。"
-          description="最终绩效金额等于各分类绩效金额合计，不再执行 80% 折算。"
+          message="Excel 原始票数和毛利基数始终保留；可手动调整绩效票数、基础票数和规则值，保存后自动重算总绩效金额。"
+          description="手工调整只写入绩效覆盖记录，不会修改、增加或删除导入 Excel 原始数据；最终绩效金额不执行 80% 折算。"
           style={{ marginBottom: 12 }}
         />
         <div className="operator-rule-panel">
           <span className="operator-rule-title">操作员业务量绩效表规则</span>
           <div className="operator-rule-grid">
+            <div>
+              <strong>空运白关业务</strong>
+              <span>按客服代表当月空运白关调整后毛利计提</span>
+              <span>毛利 1.5万-5万：15%</span>
+              <span>毛利不足 1.5万：仍按 15%</span>
+              <span>超过 5万部分：20%</span>
+            </div>
             <div>
               <strong>汽运白关、铁路白关</strong>
               <span>基础票数：9票</span>
@@ -252,8 +376,8 @@ export default function OperatorPerformance() {
               <strong>绩效金额</strong>
               <span>各订单类型分类绩效金额全额汇总</span>
               <span>不执行 80% 折算</span>
-              <span>有效数据当月薪资一起发放</span>
-              <span>无提成显示当月无提成</span>
+              <Input value={payoutNote} onChange={(event) => setPayoutNote(event.target.value)} placeholder="填写绩效发放说明" />
+              <Button size="small" type="primary" loading={payoutSaving} onClick={savePayoutNote}>保存发放说明</Button>
             </div>
           </div>
         </div>
@@ -274,7 +398,7 @@ export default function OperatorPerformance() {
               <div className="operator-total-row">
                 <span>最终绩效金额（全额计发）</span>
                 <strong>{group.payablePerformance}</strong>
-                <em>随 {selectedMonth} 薪资一起发放</em>
+                <em>{payoutNote || `随 ${selectedMonth} 薪资一起发放`}</em>
               </div>
             </div>
           ))}

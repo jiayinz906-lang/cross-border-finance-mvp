@@ -19,6 +19,8 @@ export async function resetBusinessData(operator: string, reason: string): Promi
     const chargeLines = await tx.financeChargeLine.deleteMany();
     const rawLedgerLines = await tx.rawLedgerLine.deleteMany();
     const confirmationDocuments = await tx.confirmationDocument.deleteMany();
+    const operatorPerformanceOverrides = await tx.operatorPerformanceOverride.deleteMany();
+    const operatorPerformanceMonthSettings = await tx.operatorPerformanceMonthSetting.deleteMany();
     const exportJobs = await tx.exportJob.deleteMany();
     const monthCloses = await tx.monthClose.deleteMany();
     const financeSummaries = await tx.financeSummary.deleteMany();
@@ -35,6 +37,8 @@ export async function resetBusinessData(operator: string, reason: string): Promi
       chargeLines: chargeLines.count,
       rawLedgerLines: rawLedgerLines.count,
       confirmationDocuments: confirmationDocuments.count,
+      operatorPerformanceOverrides: operatorPerformanceOverrides.count,
+      operatorPerformanceMonthSettings: operatorPerformanceMonthSettings.count,
       exportJobs: exportJobs.count,
       monthCloses: monthCloses.count,
       financeSummaries: financeSummaries.count,

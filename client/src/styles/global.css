@@ -1780,7 +1780,7 @@ body {
 
 .operator-rule-grid {
   display: grid;
-  grid-template-columns: 1.05fr 1.05fr 1.05fr 1.05fr 1.05fr;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 10px;
 }
 
@@ -1885,6 +1885,16 @@ body {
   justify-self: start;
   font-style: normal;
   font-weight: 850;
+}
+
+.operator-rule-grid .ant-input {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.operator-rule-grid .ant-btn {
+  align-self: flex-start;
+  margin-top: 4px;
 }
 
 .operator-signature-card {

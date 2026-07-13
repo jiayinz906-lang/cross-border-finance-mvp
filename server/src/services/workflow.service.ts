@@ -267,6 +267,7 @@ function confirmationRows(document: {
     { item: "grossProfit", value: money(document.grossProfit) },
     { item: "commissionRate", value: percentText(summary.commissionRate) },
     { item: "finalCommission", value: money(document.commissionAmount) },
+    { item: "payoutNote", value: summary.payoutNote ?? "-" },
     { item: "adjustReason", value: document.adjustReason ?? "-" },
     { item: "voidReason", value: document.voidReason ?? "-" },
     { item: "documentStatus", value: document.documentStatus },
@@ -823,7 +824,8 @@ export const workflowService = {
 
   async generateOperatorDocuments(month?: string) {
     const selectedMonth = monthOrDefault(month);
-    const groups = await analyticsService.operatorPerformance(selectedMonth);
+    const performance = await analyticsService.operatorPerformanceWithSettings(selectedMonth);
+    const groups = performance.rows;
     const documents = [];
 
     for (const [index, group] of groups.entries()) {
@@ -849,6 +851,7 @@ export const workflowService = {
           supervisorAdjustmentAmount: 0,
           finalCommission: roundMoney(group.payablePerformance),
           abnormalNote: "operator performance amount equals the full category performance total; no payout discount is applied",
+          payoutNote: performance.payoutNote,
           status: "pending operator signature"
         },
         details: group.rows.map((row) => ({
@@ -860,11 +863,11 @@ export const workflowService = {
           payable: row.baseCount,
           grossProfit: row.commissionAmount,
           grossProfitRate: null,
-          commissionRate: row.rate,
+          commissionRate: row.rateUnit === "%" ? row.rate / 100 : null,
           commissionAmount: roundMoney(row.commissionAmount),
-          source: row.note
+          source: `${row.note}；绩效规则值：${row.rate}${row.rateUnit}`
         })),
-        statement: "The operator confirms the performance categories, Excel-derived order count, rule-derived base count, payable count, rate and final performance amount.",
+        statement: `The operator confirms the performance categories, Excel-derived order count, rule-derived base count, payable count, rate and final performance amount. Payout note: ${performance.payoutNote}`,
         signatureTrace: {
           employeeSignature: "pending operator signature",
           signedAt: null,
