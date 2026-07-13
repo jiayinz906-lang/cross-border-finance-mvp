@@ -1,4 +1,4 @@
-import { Button, Card, Descriptions, Modal, Progress, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Descriptions, Modal, Progress, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -7,6 +7,7 @@ import {
   downloadConfirmationDocumentFile,
   downloadExportJobFile,
   generateLogisticsDocuments,
+  generateSalaryDocuments,
   getDocuments,
   markSignatureLinkNotified,
   sendSignatureLink,
@@ -52,6 +53,7 @@ type ConfirmationPayload = {
     supervisorAdjustmentAmount: number;
     finalCommission: number;
     abnormalNote: string;
+    payoutNote?: string;
     status: string;
   };
   details: ConfirmationPayloadDetail[];
@@ -88,9 +90,12 @@ function dateTimeText(value?: string | null) {
 
 export default function SignatureConfirm() {
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
+  const [salesSalaryDocuments, setSalesSalaryDocuments] = useState<ConfirmationDocument[]>([]);
+  const [customerServiceSalaryDocuments, setCustomerServiceSalaryDocuments] = useState<ConfirmationDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<ConfirmationDocument | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [generatingSalary, setGeneratingSalary] = useState(false);
   const [supervisorDocument, setSupervisorDocument] = useState<ConfirmationDocument | null>(null);
   const [voidingDocument, setVoidingDocument] = useState<ConfirmationDocument | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -101,8 +106,14 @@ export default function SignatureConfirm() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const docRes = await getDocuments(selectedMonth, "logistics_commission");
+      const [docRes, salesRes, customerServiceRes] = await Promise.all([
+        getDocuments(selectedMonth, "logistics_commission"),
+        getDocuments(selectedMonth, "sales_salary"),
+        getDocuments(selectedMonth, "customer_service_salary")
+      ]);
       setDocuments(docRes.data.rows ?? []);
+      setSalesSalaryDocuments(salesRes.data.rows ?? []);
+      setCustomerServiceSalaryDocuments(customerServiceRes.data.rows ?? []);
     } catch {
       message.error("电子签名数据加载失败，请确认后端服务可用。");
     } finally {
@@ -133,6 +144,19 @@ export default function SignatureConfirm() {
 
   const handleDownload = async (row: ConfirmationDocument, fileFormat: "xlsx" | "pdf" | "png") => {
     await downloadConfirmationDocumentFile(row.id, fileFormat);
+  };
+
+  const handleGenerateSalaryDocuments = async () => {
+    setGeneratingSalary(true);
+    try {
+      const res = await generateSalaryDocuments(selectedMonth);
+      message.success(`已生成 ${res.data.rows?.length ?? 0} 份提成/绩效薪资确认单`);
+      await loadData();
+    } catch (error: any) {
+      message.error(error?.response?.data?.message ?? "生成薪资确认单失败。");
+    } finally {
+      setGeneratingSalary(false);
+    }
   };
 
   const handleSend = async (row: ConfirmationDocument) => {
@@ -171,6 +195,12 @@ export default function SignatureConfirm() {
   const pendingSignCount = Math.max(needConfirmCount - signedCount, 0);
   const supervisorConfirmedCount = documents.filter((row) => row.supervisorStatus === "confirmed").length;
   const progressPercent = needConfirmCount ? Math.round((signedCount / needConfirmCount) * 100) : 0;
+  const salaryDocuments = [
+    ...salesSalaryDocuments.map((row) => ({ ...row, salaryRole: "销售代表" as const })),
+    ...customerServiceSalaryDocuments.map((row) => ({ ...row, salaryRole: "客服代表" as const }))
+  ];
+  const salesSalaryTotal = salesSalaryDocuments.reduce((sum, row) => sum + row.commissionAmount, 0);
+  const customerServiceSalaryTotal = customerServiceSalaryDocuments.reduce((sum, row) => sum + row.commissionAmount, 0);
 
   const columns: ColumnsType<ConfirmationDocument> = [
     { title: "业务员", dataIndex: "ownerName", fixed: "left", width: 110 },
@@ -236,6 +266,33 @@ export default function SignatureConfirm() {
     { title: "提成金额", dataIndex: "commissionAmount", align: "right", render: toPlainMoney }
   ];
 
+  const salaryColumns: ColumnsType<(typeof salaryDocuments)[number]> = [
+    { title: "人员类型", dataIndex: "salaryRole", width: 110, render: (value) => <Tag color={value === "销售代表" ? "blue" : "purple"}>{value}</Tag> },
+    { title: "姓名", dataIndex: "ownerName", fixed: "left", width: 120 },
+    { title: "确认单", dataIndex: "businessType", width: 160, render: (value) => value === "sales_salary" ? "销售提成薪资确认单" : "客服绩效薪资确认单" },
+    { title: "订单/业务量", dataIndex: "orderCount", width: 120 },
+    { title: "本月确认金额", dataIndex: "commissionAmount", align: "right", width: 150, render: toPlainMoney },
+    { title: "员工签名", dataIndex: "signatureStatus", width: 110, render: (value) => value === "signed" ? <Tag color="green">已签名</Tag> : <Tag color="gold">待签名</Tag> },
+    { title: "主管确认", dataIndex: "supervisorStatus", width: 110, render: (value) => value === "confirmed" ? <Tag color="green">已确认</Tag> : <Tag color="gold">待确认</Tag> },
+    {
+      title: "操作",
+      key: "actions",
+      fixed: "right",
+      width: 410,
+      render: (_, row) => (
+        <Space size={6} wrap>
+          <Button size="small" onClick={() => setSelectedDocument(row)}>查看确认单</Button>
+          <Button size="small" onClick={() => handleSend(row)}>生成外发链接</Button>
+          <Button size="small" onClick={() => handleDownload(row, "xlsx")}>Excel</Button>
+          <Button size="small" onClick={() => handleDownload(row, "pdf")}>PDF</Button>
+          <Button size="small" onClick={() => handleDownload(row, "png")}>PNG</Button>
+          <Button size="small" disabled={row.supervisorStatus === "confirmed" || row.signatureStatus !== "signed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
+          <Button size="small" danger onClick={() => handleVoid(row)}>作废重签</Button>
+        </Space>
+      )
+    }
+  ];
+
   return (
     <div className="signature-board">
       <Card
@@ -255,9 +312,40 @@ export default function SignatureConfirm() {
         <Table rowKey="id" className="signature-summary-table" loading={loading} columns={columns} dataSource={documents} pagination={false} scroll={{ x: 1680 }} />
       </Card>
 
+      <Card
+        className="signature-confirm-card"
+        title={<div className="signature-title-block"><strong>薪资汇总与确认单</strong><span>销售代表按物流提成汇总，客服代表按业务量绩效汇总；金额仅来自当前月份已导入数据，不包含固定工资、社保及个税。</span></div>}
+        extra={<Button type="primary" loading={generatingSalary} onClick={handleGenerateSalaryDocuments}>批量生成薪资确认单</Button>}
+      >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="薪资确认范围说明"
+          description="销售代表确认单汇总物流提成；客服代表确认单汇总操作员绩效。生成后可发送外部签名链接，员工签名和主管确认均会写入确认单证据链。"
+        />
+        <div className="signature-stat-grid">
+          <div><span>销售代表确认人数</span><strong>{salesSalaryDocuments.length}</strong></div>
+          <div><span>销售提成确认金额</span><strong>{toPlainMoney(salesSalaryTotal)}</strong></div>
+          <div><span>客服代表确认人数</span><strong>{customerServiceSalaryDocuments.length}</strong></div>
+          <div><span>客服绩效确认金额</span><strong>{toPlainMoney(customerServiceSalaryTotal)}</strong></div>
+          <div><span>薪资确认合计</span><strong>{toPlainMoney(salesSalaryTotal + customerServiceSalaryTotal)}</strong></div>
+        </div>
+        <Table
+          rowKey={(row) => `${row.salaryRole}-${row.id}`}
+          className="signature-summary-table"
+          loading={loading || generatingSalary}
+          columns={salaryColumns}
+          dataSource={salaryDocuments}
+          locale={{ emptyText: "尚未生成薪资确认单，请先点击“批量生成薪资确认单”。" }}
+          pagination={false}
+          scroll={{ x: 1280 }}
+        />
+      </Card>
+
       <Modal
         open={Boolean(selectedDocument)}
-        title={`${selectedPayload?.summary.ownerName ?? selectedDocument?.ownerName ?? ""} 个人提成签名确认单`}
+        title={selectedPayload?.title ?? `${selectedDocument?.ownerName ?? ""} 个人确认单`}
         footer={<Button type="primary" onClick={() => setSelectedDocument(null)}>关闭</Button>}
         onCancel={() => setSelectedDocument(null)}
         width={1180}
@@ -285,6 +373,7 @@ export default function SignatureConfirm() {
               <Descriptions.Item label="主管调整金额">{toPlainMoney(selectedPayload.summary.supervisorAdjustmentAmount)}</Descriptions.Item>
               <Descriptions.Item label="最终确认提成">{toPlainMoney(selectedPayload.summary.finalCommission)}</Descriptions.Item>
               <Descriptions.Item label="异常说明">{selectedPayload.summary.abnormalNote}</Descriptions.Item>
+              <Descriptions.Item label="发放说明">{selectedPayload.summary.payoutNote ?? "-"}</Descriptions.Item>
             </Descriptions>
 
             <Typography.Title level={5}>二、订单明细</Typography.Title>

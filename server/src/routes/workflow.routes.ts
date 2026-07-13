@@ -10,6 +10,7 @@ import {
   exportSystemBackupController,
   generateLogisticsDocumentsController,
   generateOperatorDocumentsController,
+  generateSalaryDocumentsController,
   generateServiceDocumentsController,
   lockMonthController,
   listDocumentsController,
@@ -37,6 +38,7 @@ workflowRoutes.get("/documents", listDocumentsController);
 workflowRoutes.post("/documents/logistics/generate", requirePermission("confirmation:approve"), generateLogisticsDocumentsController);
 workflowRoutes.post("/documents/service/generate", requirePermission("confirmation:approve"), generateServiceDocumentsController);
 workflowRoutes.post("/documents/operator/generate", requirePermission("confirmation:approve"), generateOperatorDocumentsController);
+workflowRoutes.post("/documents/salary/generate", requirePermission("confirmation:approve"), generateSalaryDocumentsController);
 workflowRoutes.post("/documents/:id/send-signature", requirePermission("confirmation:approve"), sendSignatureLinkController);
 workflowRoutes.post("/documents/:id/mark-notified", requirePermission("confirmation:approve"), markSignatureLinkNotifiedController);
 workflowRoutes.get("/signature/:token", publicSignatureDocumentController);

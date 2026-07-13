@@ -343,6 +343,29 @@ async function verifySignature(checks: Check[], month: string) {
   assertCheck(checks, "Supervisor evidence stored", evidence?.supervisor?.role === "supervisor", JSON.stringify(evidence));
 }
 
+async function verifySalaryDocuments(checks: Check[], month: string) {
+  const [documents, performance] = await Promise.all([
+    workflowService.generateSalaryDocuments(month),
+    analyticsService.operatorPerformanceWithSettings(month)
+  ]);
+  const salesDocuments = documents.filter((document) => document.documentType === "sales_salary");
+  const customerServiceDocuments = documents.filter((document) => document.documentType === "customer_service_salary");
+  const commissionRows = await prisma.commissionRecord.findMany({
+    where: { financeOrder: { month } }
+  });
+  const expectedSalesAmount = commissionRows.reduce((sum, row) => sum + (row.manualCommissionAmount ?? row.commissionAmount), 0);
+  const actualSalesAmount = salesDocuments.reduce((sum, row) => sum + row.commissionAmount, 0);
+  const expectedCustomerServiceAmount = performance.rows.reduce((sum, row) => sum + row.payablePerformance, 0);
+  const actualCustomerServiceAmount = customerServiceDocuments.reduce((sum, row) => sum + row.commissionAmount, 0);
+  const salaryPayload = salesDocuments[0]?.payloadJson ? JSON.parse(salesDocuments[0].payloadJson) : null;
+
+  assertCheck(checks, "Sales salary documents generated", salesDocuments.length > 0, String(salesDocuments.length));
+  assertCheck(checks, "Customer service salary documents generated", customerServiceDocuments.length === performance.rows.length, `${customerServiceDocuments.length} / ${performance.rows.length}`);
+  assertCheck(checks, "Sales salary total matches commission records", closeEnough(actualSalesAmount, expectedSalesAmount), `${actualSalesAmount} / ${expectedSalesAmount}`);
+  assertCheck(checks, "Customer service salary total matches performance", closeEnough(actualCustomerServiceAmount, expectedCustomerServiceAmount), `${actualCustomerServiceAmount} / ${expectedCustomerServiceAmount}`);
+  assertCheck(checks, "Salary document snapshot records imported source", Boolean(salaryPayload?.sourceFileName) && Boolean(salaryPayload?.importBatchNo) && Array.isArray(salaryPayload?.details), JSON.stringify(salaryPayload && { sourceFileName: salaryPayload.sourceFileName, importBatchNo: salaryPayload.importBatchNo, detailCount: salaryPayload.details.length }));
+}
+
 async function verifyAging(checks: Check[], month: string) {
   const [receivables, payables] = await Promise.all([
     receivableService.listReceivables(month),
@@ -504,6 +527,7 @@ async function main() {
   await verifyMonthlyReportExport(checks, imported.month);
   await verifySystemBackupExport(checks, imported.month);
   await verifySignature(checks, imported.month);
+  await verifySalaryDocuments(checks, imported.month);
   await verifyAging(checks, imported.month);
   await verifySettlements(checks, imported.month);
   await verifyMonthClose(checks, imported);

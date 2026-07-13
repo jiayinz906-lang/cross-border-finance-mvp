@@ -10,7 +10,7 @@ export async function listDocumentsController(req: Request, res: Response) {
   res.json({
     rows: await workflowService.listDocuments(
       month(req),
-      req.query.documentType as "logistics_commission" | "service_commission" | "operator_performance" | undefined,
+      req.query.documentType as "logistics_commission" | "service_commission" | "operator_performance" | "sales_salary" | "customer_service_salary" | undefined,
       req.query.history === "true"
     )
   });
@@ -26,6 +26,10 @@ export async function generateServiceDocumentsController(req: Request, res: Resp
 
 export async function generateOperatorDocumentsController(req: Request, res: Response) {
   res.json({ rows: await workflowService.generateOperatorDocuments(month(req)) });
+}
+
+export async function generateSalaryDocumentsController(req: Request, res: Response) {
+  res.json({ rows: await workflowService.generateSalaryDocuments(month(req)) });
 }
 
 export async function sendSignatureLinkController(req: Request, res: Response) {
