@@ -23,5 +23,8 @@ export const env = {
   publicAppUrl: (process.env.PUBLIC_APP_URL || "http://localhost:5173/").replace(/\/$/, ""),
   wecomWebhookUrl: process.env.WECOM_WEBHOOK_URL?.trim() || "",
   dingtalkWebhookUrl: process.env.DINGTALK_WEBHOOK_URL?.trim() || "",
-  dingtalkWebhookSecret: process.env.DINGTALK_WEBHOOK_SECRET?.trim() || ""
+  dingtalkWebhookSecret: process.env.DINGTALK_WEBHOOK_SECRET?.trim() || "",
+  dingtalkAppKey: process.env.DINGTALK_APP_KEY?.trim() || "",
+  dingtalkAppSecret: process.env.DINGTALK_APP_SECRET?.trim() || "",
+  dingtalkRobotCode: process.env.DINGTALK_ROBOT_CODE?.trim() || ""
 };

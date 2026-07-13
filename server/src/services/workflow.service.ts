@@ -88,9 +88,12 @@ function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], s
   );
 }
 
-type NotificationChannel = "dingtalk_webhook" | "wecom_webhook";
+type NotificationChannel = "dingtalk_direct" | "dingtalk_webhook" | "wecom_webhook";
+type SignatureNotificationDocument = { month: string; ownerName: string; commissionAmount: number; signatureUrl: string | null };
 
-function notificationContent(document: { month: string; ownerName: string; commissionAmount: number; signatureUrl: string | null }) {
+let dingtalkAccessTokenCache: { token: string; expiresAt: number } | null = null;
+
+function notificationContent(document: SignatureNotificationDocument) {
   const externalUrl = `${env.publicAppUrl}#${document.signatureUrl}`;
   return {
     externalUrl,
@@ -115,7 +118,7 @@ function dingtalkWebhookUrl() {
   return url.toString();
 }
 
-async function sendDingtalkNotification(document: { month: string; ownerName: string; commissionAmount: number; signatureUrl: string | null }) {
+async function sendDingtalkNotification(document: SignatureNotificationDocument) {
   const webhookUrl = dingtalkWebhookUrl();
   if (!webhookUrl || !document.signatureUrl) return null;
   const content = notificationContent(document);
@@ -134,7 +137,7 @@ async function sendDingtalkNotification(document: { month: string; ownerName: st
   return receipt;
 }
 
-async function sendWecomNotification(document: { month: string; ownerName: string; commissionAmount: number; signatureUrl: string | null }) {
+async function sendWecomNotification(document: SignatureNotificationDocument) {
   if (!env.wecomWebhookUrl || !document.signatureUrl) return null;
   const content = notificationContent(document);
   const response = await fetch(env.wecomWebhookUrl, {
@@ -149,14 +152,57 @@ async function sendWecomNotification(document: { month: string; ownerName: strin
   return receipt;
 }
 
-function configuredNotificationChannel(): NotificationChannel | null {
-  if (env.dingtalkWebhookUrl) return "dingtalk_webhook";
-  if (env.wecomWebhookUrl) return "wecom_webhook";
+async function getDingtalkAccessToken() {
+  if (!env.dingtalkAppKey || !env.dingtalkAppSecret) throw new Error("钉钉企业应用凭据未配置。");
+  if (dingtalkAccessTokenCache && dingtalkAccessTokenCache.expiresAt > Date.now() + 60_000) return dingtalkAccessTokenCache.token;
+  const response = await fetch("https://api.dingtalk.com/v1.0/oauth2/accessToken", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ appKey: env.dingtalkAppKey, appSecret: env.dingtalkAppSecret })
+  });
+  const payload = await response.json().catch(() => ({})) as { accessToken?: string; expireIn?: number; message?: string; code?: string };
+  if (!response.ok || !payload.accessToken) throw new Error(payload.message || payload.code || `钉钉应用 Token 获取失败（HTTP ${response.status}）`);
+  dingtalkAccessTokenCache = { token: payload.accessToken, expiresAt: Date.now() + Math.max((payload.expireIn ?? 7200) - 120, 60) * 1000 };
+  return payload.accessToken;
+}
+
+async function sendDingtalkDirectNotification(document: SignatureNotificationDocument, dingtalkUserId: string) {
+  if (!document.signatureUrl) return null;
+  const accessToken = await getDingtalkAccessToken();
+  const content = notificationContent(document);
+  const response = await fetch("https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-acs-dingtalk-access-token": accessToken },
+    body: JSON.stringify({
+      robotCode: env.dingtalkRobotCode || env.dingtalkAppKey,
+      userIds: [dingtalkUserId],
+      msgKey: "sampleLink",
+      msgParam: JSON.stringify({ title: "XJD Finance 个人确认单", text: `${document.month} ${document.ownerName}，请打开确认单完成电子签名。`, messageUrl: content.externalUrl, picUrl: "" })
+    })
+  });
+  const receipt = await response.json().catch(() => ({ httpStatus: response.status }));
+  if (!response.ok || (typeof receipt?.code === "string" && receipt.code !== "0") || (typeof receipt?.errcode === "number" && receipt.errcode !== 0)) {
+    throw new Error(receipt?.message || receipt?.errmsg || receipt?.code || `钉钉单聊发送失败（HTTP ${response.status}）`);
+  }
+  return receipt;
+}
+
+async function configuredNotificationChannel(document: SignatureNotificationDocument): Promise<{ channel: NotificationChannel; dingtalkUserId?: string } | null> {
+  if (env.dingtalkAppKey && env.dingtalkAppSecret) {
+    const user = await prisma.appUser.findFirst({
+      where: { dingtalkUserId: { not: null }, OR: [{ displayName: document.ownerName }, { username: document.ownerName }] },
+      select: { dingtalkUserId: true }
+    });
+    if (user?.dingtalkUserId) return { channel: "dingtalk_direct", dingtalkUserId: user.dingtalkUserId };
+  }
+  if (env.dingtalkWebhookUrl) return { channel: "dingtalk_webhook" };
+  if (env.wecomWebhookUrl) return { channel: "wecom_webhook" };
   return null;
 }
 
-async function sendNotification(channel: NotificationChannel, document: { month: string; ownerName: string; commissionAmount: number; signatureUrl: string | null }) {
-  return channel === "dingtalk_webhook" ? sendDingtalkNotification(document) : sendWecomNotification(document);
+async function sendNotification(target: { channel: NotificationChannel; dingtalkUserId?: string }, document: SignatureNotificationDocument) {
+  if (target.channel === "dingtalk_direct") return sendDingtalkDirectNotification(document, target.dingtalkUserId!);
+  return target.channel === "dingtalk_webhook" ? sendDingtalkNotification(document) : sendWecomNotification(document);
 }
 
 function textValue(value: unknown) {
@@ -888,27 +934,27 @@ export const workflowService = {
       }
     });
     await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "generate_signature_link", payload: { signatureUrl, expiresAt } });
-    const notificationChannel = configuredNotificationChannel();
-    if (!notificationChannel) return document;
+    const notificationTarget = await configuredNotificationChannel(document);
+    if (!notificationTarget) return document;
 
     try {
-      const receipt = await sendNotification(notificationChannel, document);
+      const receipt = await sendNotification(notificationTarget, document);
       const notifiedAt = new Date();
       const notified = await prisma.confirmationDocument.update({
         where: { id },
         data: {
           sendStatus: "notified",
-          notificationChannel,
+          notificationChannel: notificationTarget.channel,
           notifiedAt,
           notificationReceiptJson: JSON.stringify(receipt ?? {}),
           notificationError: null,
           payloadJson: updatePayloadJson(document.payloadJson, (payload) => ({
             ...payload,
-            signatureTrace: { ...(payload.signatureTrace ?? {}), notificationStatus: "notified", notificationChannel, notifiedAt: notifiedAt.toISOString() }
+            signatureTrace: { ...(payload.signatureTrace ?? {}), notificationStatus: "notified", notificationChannel: notificationTarget.channel, notifiedAt: notifiedAt.toISOString() }
           }))
         }
       });
-      await logAction({ month: notified.month, entityType: "confirmation_document", entityId: id, action: "send_signature_notification", payload: { notificationChannel, notifiedAt } });
+      await logAction({ month: notified.month, entityType: "confirmation_document", entityId: id, action: "send_signature_notification", payload: { notificationChannel: notificationTarget.channel, notifiedAt } });
       return notified;
     } catch (error: any) {
       const notificationError = String(error?.message ?? "通知发送失败").slice(0, 500);
@@ -916,15 +962,15 @@ export const workflowService = {
         where: { id },
         data: {
           sendStatus: "delivery_failed",
-          notificationChannel,
+          notificationChannel: notificationTarget.channel,
           notificationError,
           payloadJson: updatePayloadJson(document.payloadJson, (payload) => ({
             ...payload,
-            signatureTrace: { ...(payload.signatureTrace ?? {}), notificationStatus: "delivery_failed", notificationChannel, notificationError }
+            signatureTrace: { ...(payload.signatureTrace ?? {}), notificationStatus: "delivery_failed", notificationChannel: notificationTarget.channel, notificationError }
           }))
         }
       });
-      await logAction({ month: failed.month, entityType: "confirmation_document", entityId: id, action: "signature_notification_failed", payload: { notificationChannel, notificationError } });
+      await logAction({ month: failed.month, entityType: "confirmation_document", entityId: id, action: "signature_notification_failed", payload: { notificationChannel: notificationTarget.channel, notificationError } });
       return failed;
     }
   },

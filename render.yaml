@@ -27,6 +27,12 @@ services:
         sync: false
       - key: DINGTALK_WEBHOOK_SECRET
         sync: false
+      - key: DINGTALK_APP_KEY
+        sync: false
+      - key: DINGTALK_APP_SECRET
+        sync: false
+      - key: DINGTALK_ROBOT_CODE
+        sync: false
       - key: AUTH_TOKEN_SECRET
         generateValue: true
 

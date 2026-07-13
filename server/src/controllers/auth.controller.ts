@@ -51,12 +51,14 @@ export async function updateUserController(req: Request, res: Response) {
 }
 
 export function notificationStatusController(_req: Request, res: Response) {
+  const dingtalkDirectConfigured = Boolean(env.dingtalkAppKey && env.dingtalkAppSecret);
   const dingtalkConfigured = Boolean(env.dingtalkWebhookUrl);
   const wecomConfigured = Boolean(env.wecomWebhookUrl);
   res.json({
-    provider: dingtalkConfigured ? "dingtalk_webhook" : wecomConfigured ? "wecom_webhook" : null,
-    configured: dingtalkConfigured || wecomConfigured,
+    provider: dingtalkDirectConfigured ? "dingtalk_direct" : dingtalkConfigured ? "dingtalk_webhook" : wecomConfigured ? "wecom_webhook" : null,
+    configured: dingtalkDirectConfigured || dingtalkConfigured || wecomConfigured,
     channels: {
+      dingtalkDirect: { configured: dingtalkDirectConfigured, appKeyConfigured: Boolean(env.dingtalkAppKey), appSecretConfigured: Boolean(env.dingtalkAppSecret), robotCodeConfigured: Boolean(env.dingtalkRobotCode || env.dingtalkAppKey) },
       dingtalkWebhook: { configured: dingtalkConfigured, signingEnabled: Boolean(env.dingtalkWebhookSecret) },
       wecomWebhook: { configured: wecomConfigured }
     }
