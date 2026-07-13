@@ -101,12 +101,16 @@ function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], s
 }
 
 function confirmationFontPath() {
-  const configured = process.env.CONFIRMATION_FONT_PATH;
-  if (configured && fs.existsSync(configured)) return configured;
-  const localWindowsFont = "C:\\Windows\\Fonts\\simhei.ttf";
-  if (fs.existsSync(localWindowsFont)) return localWindowsFont;
-  const bundledFont = "/usr/share/fonts/truetype/xjd/SimHei.ttf";
-  return fs.existsSync(bundledFont) ? bundledFont : null;
+  const candidates = [
+    process.env.CONFIRMATION_FONT_PATH,
+    // Render uses the Node runtime rather than the Docker image. Its working
+    // directory is /opt/render/project/src/server after start:render.
+    path.resolve(process.cwd(), "assets", "SimHei.ttf"),
+    path.resolve(process.cwd(), "server", "assets", "SimHei.ttf"),
+    "C:\\Windows\\Fonts\\simhei.ttf",
+    "/usr/share/fonts/truetype/xjd/SimHei.ttf"
+  ];
+  return candidates.find((candidate): candidate is string => Boolean(candidate && fs.existsSync(candidate))) ?? null;
 }
 
 type NotificationChannel = "dingtalk_direct" | "dingtalk_webhook" | "wecom_webhook";
