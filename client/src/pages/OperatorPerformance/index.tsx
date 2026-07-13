@@ -340,10 +340,9 @@ export default function OperatorPerformance() {
           <div className="operator-rule-grid">
             <div>
               <strong>空运白关业务</strong>
-              <span>按客服代表当月空运白关调整后毛利计提</span>
-              <span>毛利 1.5万-5万：15%</span>
-              <span>毛利不足 1.5万：仍按 15%</span>
-              <span>超过 5万部分：20%</span>
+              <span>按客服代表当月有效导入批次的实际票数统计</span>
+              <span>固定 50元/票</span>
+              <span>不按毛利比例计提</span>
             </div>
             <div>
               <strong>汽运白关、铁路白关</strong>

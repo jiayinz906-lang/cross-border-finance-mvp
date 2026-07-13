@@ -78,6 +78,7 @@ function asOptionalNonNegativeNumber(value: unknown, field: string) {
 }
 
 function performanceBracket(key: string, orderCount: number): PerformanceBracket {
+  if (key === "air_white") return { baseCount: 0, rate: 50, label: "按实际票数计发（50 元/票）" };
   if (key === "white") {
     if (orderCount <= 9) return { baseCount: 9, rate: 0, label: "基础操作量内（0-9 票）" };
     if (orderCount <= 10) return { baseCount: 9, rate: 50, label: "首档（10 票，50 元/票）" };
@@ -97,7 +98,7 @@ function operatorRows(operatorName: string, orders: FinanceOrder[], overrides: M
     {
       key: "air_white",
       orderType: "空运白关",
-      note: "按客服代表当月空运白关调整后毛利计提：5万元以内15%，超过5万元部分20%，不足1.5万元仍按15%"
+      note: "按客服代表当月导入 Excel 的空运白关实际票数计发：固定 50 元/票"
     },
     {
       key: "white",
@@ -139,33 +140,6 @@ function operatorRows(operatorName: string, orders: FinanceOrder[], overrides: M
     const rawOrderCount = counts.get(rule.key) ?? 0;
     const rawGrossProfit = Math.round((grossProfits.get(rule.key) ?? 0) * 100) / 100;
     const override = overrides.get(overrideKey(operatorName, rule.key));
-    if (rule.key === "air_white") {
-      const overrideRate = override?.rate;
-      const defaultRate = rawGrossProfit > 50_000 ? 20 : 15;
-      const rate = overrideRate ?? defaultRate;
-      const commissionAmount = overrideRate === null || overrideRate === undefined
-        ? Math.round((Math.min(rawGrossProfit, 50_000) * 0.15 + Math.max(rawGrossProfit - 50_000, 0) * 0.2) * 100) / 100
-        : Math.round(rawGrossProfit * rate) / 100;
-      const manuallyAdjusted = overrideRate !== null && overrideRate !== undefined;
-      return {
-        id: `${operatorName}-${rule.key}`,
-        category: rule.key,
-        operatorName,
-        orderType: rule.orderType,
-        rawOrderCount,
-        rawGrossProfit,
-        orderCount: rawOrderCount,
-        baseCount: 0,
-        commissionOrderCount: rawGrossProfit,
-        rate,
-        rateUnit: "%",
-        calculationMode: "gross_profit",
-        commissionAmount,
-        note: `${rule.note}；Excel 原始票数：${rawOrderCount}；Excel 毛利基数：${rawGrossProfit}${manuallyAdjusted ? "；已手工调整绩效比例" : ""}`,
-        bracketLabel: rawGrossProfit > 50_000 ? "分段计提（5万内15%，超出部分20%）" : "15% 档",
-        rowSpan: index === 0 ? rules.length : 0
-      };
-    }
     const orderCount = override?.orderCount ?? rawOrderCount;
     const bracket = performanceBracket(rule.key, orderCount);
     const baseCount = override?.baseCount ?? bracket.baseCount;

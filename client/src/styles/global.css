@@ -1738,19 +1738,19 @@ body {
 }
 
 .operator-performance-card .ant-card-head {
-  min-height: 70px;
-  padding: 0 24px;
+  min-height: 56px;
+  padding: 0 18px;
   border-bottom: none;
 }
 
 .operator-performance-card .ant-card-head-title {
   color: #071737;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 950;
 }
 
 .operator-performance-card .ant-card-body {
-  padding: 0 24px 24px;
+  padding: 0 18px 18px;
 }
 
 .operator-policy-tag {
@@ -1763,8 +1763,8 @@ body {
 }
 
 .operator-rule-panel {
-  margin-bottom: 12px;
-  padding: 12px;
+  margin-bottom: 10px;
+  padding: 8px;
   border: 1px solid #e6edf6;
   border-radius: 6px;
   background: #f8fbff;
@@ -1772,7 +1772,7 @@ body {
 
 .operator-rule-title {
   display: block;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   color: #74829b;
   font-size: 12px;
   font-weight: 900;
@@ -1780,18 +1780,18 @@ body {
 
 .operator-rule-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px;
 }
 
 .operator-rule-grid div {
-  min-height: 138px;
-  padding: 12px 14px;
+  min-height: 96px;
+  padding: 9px 10px;
   background: #ffffff;
   border-left: 4px solid #f59b23;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 4px;
   color: #8290a8;
   font-size: 12px;
   font-weight: 750;
@@ -1799,14 +1799,14 @@ body {
 
 .operator-rule-grid strong {
   color: #071737;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 950;
 }
 
 .operator-table-stack {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .operator-performance-table-wrap {
@@ -1815,18 +1815,18 @@ body {
 }
 
 .operator-table-title {
-  height: 42px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #ffffff;
   background: #2b3038;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 950;
 }
 
 .operator-performance-table .ant-table {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .operator-performance-table .ant-table-thead > tr > th {
@@ -1835,12 +1835,14 @@ body {
   font-weight: 950;
   text-align: center;
   border-color: #636b76 !important;
+  padding: 9px 8px !important;
 }
 
 .operator-performance-table .ant-table-tbody > tr > td {
   color: #14213b;
   font-weight: 750;
   border-color: #636b76 !important;
+  padding: 8px !important;
 }
 
 .operator-performance-table .ant-table-tbody > tr > td:nth-child(3),
@@ -1854,13 +1856,13 @@ body {
 .operator-name-cell {
   display: block;
   color: #071737;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 950;
   text-align: center;
 }
 
 .operator-total-row {
-  min-height: 40px;
+  min-height: 34px;
   display: grid;
   grid-template-columns: 1fr 140px 1fr;
   align-items: center;
