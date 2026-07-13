@@ -5,7 +5,7 @@ ENV DATABASE_URL=file:./dev.db
 ENV VITE_API_BASE_URL=/api
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates fontconfig \
+  && apt-get install -y --no-install-recommends openssl ca-certificates fontconfig poppler-utils \
   && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable
@@ -32,7 +32,7 @@ ENV PORT=4000
 ENV DATABASE_URL=file:./dev.db
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends openssl ca-certificates fontconfig poppler-utils \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json pnpm-workspace.yaml ./

@@ -1,6 +1,9 @@
 import * as XLSX from "xlsx";
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import PDFDocument from "pdfkit";
 import sharp from "sharp";
 import { prisma } from "../prisma/client.js";
@@ -389,7 +392,26 @@ function pdfBuffer(document: { ownerName: string; month: string; version: number
 }
 
 async function pngBuffer(document: { ownerName: string; month: string; version: number; documentType: string; payloadJson: string | null } & any) {
+  // Render the same embedded-font PDF used for download. Sharp/librsvg cannot
+  // reliably resolve CJK fonts in Render, whereas Poppler preserves the PDF font.
+  const renderId = crypto.randomUUID();
+  const pdfPath = path.join(os.tmpdir(), `xjd-confirmation-${renderId}.pdf`);
+  const outputBase = path.join(os.tmpdir(), `xjd-confirmation-${renderId}`);
+  try {
+    fs.writeFileSync(pdfPath, await pdfBuffer(document));
+    execFileSync("pdftoppm", ["-png", "-singlefile", "-r", "144", pdfPath, outputBase], { stdio: "ignore" });
+    return fs.readFileSync(`${outputBase}.png`);
+  } finally {
+    fs.rmSync(pdfPath, { force: true });
+    fs.rmSync(`${outputBase}.png`, { force: true });
+  }
+
+  /* Legacy SVG renderer retained below as a fallback reference. */
   const { payload, summaryRows, detailRows, evidenceRows, chargeLineRows } = confirmationRows(document);
+  const fontPath = confirmationFontPath();
+  const embeddedFontCss = fontPath
+    ? `@font-face{font-family:"XJDConfirmation";src:url("data:font/ttf;base64,${fs.readFileSync(fontPath!).toString("base64")}") format("truetype");}`
+    : "";
   const width = 1400;
   const rowHeight = 34;
   const summaryStart = 184;
@@ -443,12 +465,13 @@ async function pngBuffer(document: { ownerName: string; month: string; version: 
   }).join("");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
 <style>
-.title{font:700 30px "SimHei",Arial,sans-serif;fill:#071737}
-.sub{font:600 18px "SimHei",Arial,sans-serif;fill:#52627d}
-.section{font:700 22px "SimHei",Arial,sans-serif;fill:#071737}
-.label{font:700 15px "SimHei",Arial,sans-serif;fill:#71809c}
-.text{font:700 15px "SimHei",Arial,sans-serif;fill:#071737}
-.small{font:700 15px "SimHei",Arial,sans-serif;fill:#13213c}
+${embeddedFontCss}
+.title{font:700 30px "XJDConfirmation",Arial,sans-serif;fill:#071737}
+.sub{font:600 18px "XJDConfirmation",Arial,sans-serif;fill:#52627d}
+.section{font:700 22px "XJDConfirmation",Arial,sans-serif;fill:#071737}
+.label{font:700 15px "XJDConfirmation",Arial,sans-serif;fill:#71809c}
+.text{font:700 15px "XJDConfirmation",Arial,sans-serif;fill:#071737}
+.small{font:700 15px "XJDConfirmation",Arial,sans-serif;fill:#13213c}
 </style>
 <rect width="100%" height="100%" fill="#f4f7fb"/>
 <rect x="40" y="40" width="1320" height="${height - 80}" rx="14" fill="#fff" stroke="#dbe5f2"/>
