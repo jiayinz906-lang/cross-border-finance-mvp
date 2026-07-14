@@ -24,7 +24,7 @@ const menuItems: MenuProps["items"] = [
   { key: "/dashboard", icon: <MenuMark />, label: "经营总览" },
   { key: "/profit-analysis", icon: <MenuMark />, label: "业务利润" },
   { key: "/commission", icon: <MenuMark />, label: "物流提成" },
-  { key: "/service-confirm", icon: <MenuMark />, label: "注册确认" },
+  { key: "/service-confirm", icon: <MenuMark />, label: "注册提成" },
   { key: "/signature-confirm", icon: <MenuMark />, label: "电子签名确认" },
   { key: "/operator-performance", icon: <MenuMark />, label: "操作员绩效" },
   { key: "/customer-profit", icon: <MenuMark />, label: "客户利润分析" },

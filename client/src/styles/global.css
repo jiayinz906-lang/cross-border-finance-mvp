@@ -1649,6 +1649,64 @@ body {
   font-weight: 850;
 }
 
+.salary-confirmation-modal .ant-modal-body {
+  max-height: calc(100vh - 190px);
+  padding-right: 22px;
+  overflow-y: auto;
+}
+
+.salary-confirmation-modal .ant-modal-title {
+  color: #101f3f;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.salary-confirmation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  border: 1px solid #dce7f5;
+  border-radius: 6px;
+  background: #f8fbff;
+}
+
+.salary-confirmation-meta .ant-typography {
+  font-size: 13px;
+}
+
+.salary-confirmation-summary .ant-descriptions-item-label {
+  width: 108px;
+  color: #61708a;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.salary-confirmation-summary .ant-descriptions-item-content {
+  min-width: 190px;
+  color: #162744;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+@media (max-width: 768px) {
+  .salary-confirmation-modal {
+    max-width: calc(100vw - 24px);
+    margin: 12px auto;
+  }
+
+  .salary-confirmation-modal .ant-modal-body {
+    max-height: calc(100vh - 150px);
+    padding-right: 4px;
+  }
+
+  .salary-confirmation-meta {
+    display: grid;
+    gap: 6px;
+  }
+}
+
 .public-signature-page {
   min-height: 100vh;
   display: grid;

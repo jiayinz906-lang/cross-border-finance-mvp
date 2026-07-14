@@ -103,6 +103,19 @@ function notificationChannelLabel(channel?: string | null) {
   return "手工通知";
 }
 
+function salaryDocumentTypeLabel(fileType?: string | null) {
+  if (fileType === "sales_salary_confirmation") return "销售提成薪资确认单";
+  if (fileType === "operator_salary_confirmation") return "操作员薪资确认单";
+  return "个人薪资确认单";
+}
+
+function salaryStatusLabel(status?: string | null, signatureStatus?: string | null) {
+  if (signatureStatus === "signed") return "员工已签名";
+  if (status === "pending employee signature") return "待员工签名";
+  if (status === "supervisor confirmed") return "主管已确认";
+  return status || "待确认";
+}
+
 export default function SignatureConfirm() {
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
   const [salesSalaryDocuments, setSalesSalaryDocuments] = useState<ConfirmationDocument[]>([]);
@@ -387,31 +400,31 @@ export default function SignatureConfirm() {
         footer={<Button type="primary" onClick={() => setSelectedDocument(null)}>关闭</Button>}
         onCancel={() => setSelectedDocument(null)}
         width={1180}
+        className="salary-confirmation-modal"
       >
         {selectedPayload ? (
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
-            <Typography.Title level={4} style={{ margin: 0 }}>{selectedPayload.title}</Typography.Title>
-            <Typography.Text type="secondary">
-              文件类型：{selectedPayload.fileType}　月份：{selectedPayload.monthLabel}
-              <br />
-              确认单编号：{selectedPayload.documentCode}　生成时间：{dateTimeText(selectedPayload.generatedAt)}
-            </Typography.Text>
+            <div className="salary-confirmation-meta">
+              <Tag color={isOperatorSalaryDocument ? "purple" : "blue"}>{salaryDocumentTypeLabel(selectedPayload.fileType)}</Tag>
+              <Typography.Text type="secondary">确认月份：{selectedPayload.monthLabel}</Typography.Text>
+              <Typography.Text type="secondary">确认单编号：{selectedPayload.documentCode}</Typography.Text>
+              <Typography.Text type="secondary">生成时间：{dateTimeText(selectedPayload.generatedAt)}</Typography.Text>
+            </div>
 
-            <Typography.Title level={5}>一、员工与提成汇总</Typography.Title>
-            <Descriptions bordered column={4} size="small">
+            <Typography.Title level={5}>一、确认信息与金额汇总</Typography.Title>
+            <Descriptions className="salary-confirmation-summary" bordered column={{ xs: 1, md: 2 }} size="small">
               <Descriptions.Item label="员工姓名">{selectedPayload.summary.ownerName}</Descriptions.Item>
-              <Descriptions.Item label="业务类型">{selectedPayload.summary.businessType}</Descriptions.Item>
+              <Descriptions.Item label="确认状态">{salaryStatusLabel(selectedPayload.summary.status, selectedDocument?.signatureStatus)}</Descriptions.Item>
               <Descriptions.Item label="订单数量">{selectedPayload.summary.orderCount}</Descriptions.Item>
-              <Descriptions.Item label="状态">{selectedDocument?.signatureStatus === "signed" ? "已员工签名" : selectedPayload.summary.status}</Descriptions.Item>
+              <Descriptions.Item label="提成比例">{formatPercent(selectedPayload.summary.commissionRate)}</Descriptions.Item>
               <Descriptions.Item label="应收金额">{toPlainMoney(selectedPayload.summary.receivable)}</Descriptions.Item>
               <Descriptions.Item label="调整后应付">{toPlainMoney(selectedPayload.summary.payable)}</Descriptions.Item>
               <Descriptions.Item label="调整后毛利">{toPlainMoney(selectedPayload.summary.grossProfit)}</Descriptions.Item>
-              <Descriptions.Item label="提成比例">{formatPercent(selectedPayload.summary.commissionRate)}</Descriptions.Item>
               <Descriptions.Item label="应计提成">{toPlainMoney(selectedPayload.summary.accruedCommission)}</Descriptions.Item>
               <Descriptions.Item label="主管调整金额">{toPlainMoney(selectedPayload.summary.supervisorAdjustmentAmount)}</Descriptions.Item>
-              <Descriptions.Item label="最终确认提成">{toPlainMoney(selectedPayload.summary.finalCommission)}</Descriptions.Item>
-              <Descriptions.Item label="异常说明">{selectedPayload.summary.abnormalNote}</Descriptions.Item>
-              <Descriptions.Item label="发放说明">{selectedPayload.summary.payoutNote ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="最终确认提成"><Typography.Text strong>{toPlainMoney(selectedPayload.summary.finalCommission)}</Typography.Text></Descriptions.Item>
+              <Descriptions.Item label="确认口径" span={2}>{selectedPayload.summary.abnormalNote}</Descriptions.Item>
+              <Descriptions.Item label="发放说明" span={2}>{selectedPayload.summary.payoutNote ?? "-"}</Descriptions.Item>
             </Descriptions>
 
             <Typography.Title level={5}>{isOperatorSalaryDocument ? "二、绩效板块明细" : "二、订单提成明细"}</Typography.Title>
