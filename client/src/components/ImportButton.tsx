@@ -9,6 +9,7 @@ import { formatMoney } from "../utils/formatMoney";
 import { formatPercent } from "../utils/formatPercent";
 
 type Props = {
+  targetMonth?: string;
   onImported?: (result: ImportResult) => void;
 };
 
@@ -105,7 +106,7 @@ function tags(values?: string[]) {
   );
 }
 
-export function ImportButton({ onImported }: Props) {
+export function ImportButton({ targetMonth, onImported }: Props) {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -120,7 +121,7 @@ export function ImportButton({ onImported }: Props) {
       const uploadFile = file as File;
       setLoading(true);
       try {
-        const response = await previewFinanceExcel(uploadFile);
+        const response = await previewFinanceExcel(uploadFile, targetMonth);
         const result = response.data as ImportPreviewResult;
         if (result.audit?.missingRequiredFields?.length) {
           message.error(`缺少必填字段：${result.audit.missingRequiredFields.join("、")}`);
@@ -147,7 +148,7 @@ export function ImportButton({ onImported }: Props) {
     }
     setImporting(true);
     try {
-      const response = await importFinanceExcel(pendingFile);
+      const response = await importFinanceExcel(pendingFile, targetMonth);
       const result = response.data as ImportResult;
       const mapped = result.audit?.fieldMapping.length ?? 0;
       message.success(`导入完成：${result.importedOrders} 票，自动映射 ${mapped} 个字段，批次 ${result.batchNo ?? "-"}`);
@@ -190,7 +191,8 @@ export function ImportButton({ onImported }: Props) {
             <Descriptions size="small" bordered column={4}>
               <Descriptions.Item label="文件">{preview.fileName}</Descriptions.Item>
               <Descriptions.Item label="工作表">{preview.sheetName}</Descriptions.Item>
-              <Descriptions.Item label="月份">{preview.month}</Descriptions.Item>
+              <Descriptions.Item label="入账月份">{preview.month}</Descriptions.Item>
+              <Descriptions.Item label="Excel 下单月份">{preview.sourceMonths?.join("、") || "未识别"}</Descriptions.Item>
               <Descriptions.Item label="明细行">{preview.importedRows}</Descriptions.Item>
               <Descriptions.Item label="总票数">{preview.importedOrders}</Descriptions.Item>
               <Descriptions.Item label="物流票">{preview.logisticsOrders}</Descriptions.Item>
@@ -201,6 +203,14 @@ export function ImportButton({ onImported }: Props) {
               <Descriptions.Item label="调整后毛利">{money(preview.totalGrossProfit)}</Descriptions.Item>
               <Descriptions.Item label="毛利率">{formatPercent(preview.grossProfitRate)}</Descriptions.Item>
             </Descriptions>
+            {preview.sourceMonths?.length && !preview.sourceMonths.includes(preview.month) ? (
+              <Alert
+                type="info"
+                showIcon
+                message={`本次将按 ${preview.month} 入账`}
+                description={`Excel 原始下单月份为 ${preview.sourceMonths.join("、")}，原始下单日期会完整保留在台账中，不会被修改。`}
+              />
+            ) : null}
             <Alert
               type={(preview.qualityReport?.blockingCount ?? 0) > 0 ? "error" : (preview.qualityReport?.warningCount ?? 0) > 0 ? "warning" : "success"}
               showIcon

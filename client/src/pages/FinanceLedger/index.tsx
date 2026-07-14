@@ -30,7 +30,7 @@ export default function FinanceLedger() {
         extra={(
           <Space wrap>
             <TemplateImportButton />
-            <ImportButton onImported={(result) => setSelectedMonth(result.month)} />
+            <ImportButton targetMonth={selectedMonth} onImported={(result) => setSelectedMonth(result.month)} />
             <Button onClick={load}>刷新</Button>
           </Space>
         )}

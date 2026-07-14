@@ -40,7 +40,7 @@ export async function importPreviewController(req: Request, res: Response) {
     return;
   }
 
-  res.json(await excelService.previewWorkbook(req.file.buffer, req.file.originalname));
+  res.json(await excelService.previewWorkbook(req.file.buffer, req.file.originalname, req.body?.targetMonth));
 }
 
 export async function importExcelController(req: Request, res: Response) {
@@ -49,7 +49,7 @@ export async function importExcelController(req: Request, res: Response) {
     return;
   }
 
-  res.json(await excelService.importWorkbook(req.file.buffer, req.file.originalname));
+  res.json(await excelService.importWorkbook(req.file.buffer, req.file.originalname, req.body?.targetMonth));
 }
 
 export async function importTemplateController(req: Request, res: Response) {

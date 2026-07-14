@@ -902,7 +902,12 @@ async function writeChargeLinesForBatch(input: {
   return drafts.length;
 }
 
-async function parseWorkbook(buffer: Buffer, originalName: string) {
+function normalizeImportMonth(value?: string) {
+  const month = String(value ?? "").trim();
+  return /^\d{4}-\d{2}$/.test(month) ? month : null;
+}
+
+async function parseWorkbook(buffer: Buffer, originalName: string, targetMonth?: string) {
   const rules = await loadImportRules();
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
   const fileName = normalizeUploadFileName(originalName);
@@ -941,8 +946,14 @@ async function parseWorkbook(buffer: Buffer, originalName: string) {
   }
 
   const finalized = Array.from(orders.values()).map((order) => finalize(order, rules));
-  const month = finalized[0]?.month ?? monthOf(new Date());
-  const monthOrders = finalized.filter((order) => order.month === month);
+  const sourceMonths = Array.from(new Set(finalized.map((order) => order.month))).sort();
+  const requestedMonth = normalizeImportMonth(targetMonth);
+  if (!requestedMonth && sourceMonths.length > 1) {
+    throw new Error(`Excel 包含多个下单月份（${sourceMonths.join("、")}），请在页面选择入账月份后再导入。`);
+  }
+  const month = requestedMonth ?? sourceMonths[0] ?? monthOf(new Date());
+  // 入账月份由用户在页面选择；Excel 下单时间保持原值，仅用于原始台账追溯。
+  const monthOrders = finalized.map((order) => ({ ...order, month }));
   const summary = summarizeOrders(monthOrders, rules);
   const expectedHeaders = await loadTemplateHeaders();
   const audit = importAudit(headers, mapping, rules, expectedHeaders);
@@ -952,6 +963,7 @@ async function parseWorkbook(buffer: Buffer, originalName: string) {
     fileName,
     sheetName,
     month,
+    sourceMonths,
     rows,
     rawLines,
     headers,
@@ -1146,8 +1158,8 @@ export const excelService = {
     });
   },
 
-  async previewWorkbook(buffer: Buffer, originalName: string) {
-    const parsed = await parseWorkbook(buffer, originalName);
+  async previewWorkbook(buffer: Buffer, originalName: string, targetMonth?: string) {
+    const parsed = await parseWorkbook(buffer, originalName, targetMonth);
     const auditReport = buildImportAuditReport(parsed);
     const sampleOrders = parsed.orders.slice(0, 5).map((order) => ({
       orderNo: order.orderNo,
@@ -1166,6 +1178,7 @@ export const excelService = {
       fileName: parsed.fileName,
       sheetName: parsed.sheetName,
       month: parsed.month,
+      sourceMonths: parsed.sourceMonths,
       importedRows: parsed.importedRows,
       importedOrders: parsed.importedOrders,
       serviceOrders: parsed.serviceOrders,
@@ -1181,12 +1194,12 @@ export const excelService = {
       audit: parsed.audit,
       qualityReport: parsed.qualityReport,
       ...auditReport,
-      writeMode: "确认后将保留每一行原始台账，并按月份重建订单、应收应付、毛利、风险和提成派生数据。"
+      writeMode: "确认后将保留每一行原始台账，并按选定入账月份重建订单、应收应付、毛利、风险和提成派生数据。"
     };
   },
 
-  async importWorkbook(buffer: Buffer, originalName: string) {
-    const parsed = await parseWorkbook(buffer, originalName);
+  async importWorkbook(buffer: Buffer, originalName: string, targetMonth?: string) {
+    const parsed = await parseWorkbook(buffer, originalName, targetMonth);
     const auditReport = buildImportAuditReport(parsed);
     if (auditReport.blockingIssues.length) {
       throw new Error("导入审计存在阻断项，请先修正 Excel 后重新导入。");

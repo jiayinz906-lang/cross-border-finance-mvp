@@ -28,17 +28,19 @@ export function getAuthContext() {
   return request.get("/finance/auth-context");
 }
 
-export function importFinanceExcel(file: File) {
+export function importFinanceExcel(file: File, targetMonth?: string) {
   const formData = new FormData();
   formData.append("file", file);
+  if (targetMonth) formData.append("targetMonth", targetMonth);
   return request.post("/finance/import", formData, {
     headers: { "Content-Type": "multipart/form-data" }
   });
 }
 
-export function previewFinanceExcel(file: File) {
+export function previewFinanceExcel(file: File, targetMonth?: string) {
   const formData = new FormData();
   formData.append("file", file);
+  if (targetMonth) formData.append("targetMonth", targetMonth);
   return request.post("/finance/import-preview", formData, {
     headers: { "Content-Type": "multipart/form-data" }
   });

@@ -154,6 +154,7 @@ export type ImportResult = {
 };
 
 export type ImportPreviewResult = ImportResult & {
+  sourceMonths?: string[];
   totalReceivable: number;
   totalPayable: number;
   totalGrossProfit: number;

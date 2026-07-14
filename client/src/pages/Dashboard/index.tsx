@@ -300,7 +300,7 @@ export default function Dashboard() {
           <div className="overview-select"><FileExcelOutlined /> 数据源：<b>{summary?.month ? `${summary.month} 数据库` : "Excel 数据"}</b></div>
           <Button className="overview-select" onClick={openMonthModal}>月份：<b>{selectedMonth}</b><CalendarOutlined /></Button>
           <TemplateImportButton />
-          <ImportButton onImported={handleImported} />
+          <ImportButton targetMonth={selectedMonth} onImported={handleImported} />
           <Button type="primary" loading={reportDownloading} icon={<DownloadOutlined />} onClick={async () => {
             setReportDownloading(true);
             try {
@@ -326,7 +326,7 @@ export default function Dashboard() {
             description={<Space direction="vertical" size={4}><strong>尚未导入业务数据</strong><span>请先上传符合固定表头规范的 Excel，系统会生成原始台账、应收应付、毛利、风险与提成数据。</span></Space>}
           >
             <Space wrap>
-              <ImportButton onImported={handleImported} />
+              <ImportButton targetMonth={selectedMonth} onImported={handleImported} />
               <TemplateImportButton />
               <Button onClick={() => navigate("/settings")}>查看模板与参数规则</Button>
             </Space>
