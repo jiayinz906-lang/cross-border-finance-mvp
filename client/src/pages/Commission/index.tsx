@@ -6,6 +6,7 @@ import { getFinanceDashboard } from "../../api/finance.api";
 import {
   type ConfirmationDocument,
   confirmSalespersonCommission,
+  downloadConfirmationDocumentFile,
   generateLogisticsDocuments,
   getDocuments,
   sendSignatureLink,
@@ -199,6 +200,10 @@ export default function Commission() {
 
   const handleVoidDocument = (row: ConfirmationDocument) => setVoidingDocument(row);
 
+  const handleDownloadDocument = async (row: ConfirmationDocument, format: "pdf" | "png") => {
+    await downloadConfirmationDocumentFile(row.id, format);
+  };
+
   const summary = dashboard?.summary;
 
   const metrics: MetricCard[] = useMemo(() => [
@@ -368,10 +373,12 @@ export default function Commission() {
       title: "操作",
       key: "actions",
       fixed: "right",
-      width: 270,
+      width: 390,
       render: (_, row) => (
         <Space size={6}>
           <Button size="small" onClick={() => handleSendDocument(row)}>发送链接</Button>
+          <Button size="small" onClick={() => handleDownloadDocument(row, "pdf")}>PDF</Button>
+          <Button size="small" onClick={() => handleDownloadDocument(row, "png")}>PNG</Button>
           <Button size="small" onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
           <Button size="small" danger onClick={() => handleVoidDocument(row)}>作废</Button>
         </Space>

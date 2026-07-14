@@ -140,6 +140,7 @@ async function verifyImport(checks: Check[]) {
   if (airSourceOrder) {
     await prisma.financeOrder.update({ where: { id: airSourceOrder.id }, data: { businessType: "空运白关" } });
   }
+  await prisma.operatorPerformanceOverride.deleteMany({ where: { month: imported.month } });
   const operatorGroups = await analyticsService.operatorPerformance(imported.month);
   const operatorRawTotal = operatorGroups.reduce((sum, group) => sum + group.totalCommission, 0);
   const operatorPayableTotal = operatorGroups.reduce((sum, group) => sum + group.payablePerformance, 0);
@@ -294,30 +295,21 @@ async function verifySignature(checks: Check[], month: string) {
   }
   assertCheck(checks, "Supervisor confirmation requires employee signature", supervisorBlockedBeforeEmployeeSign);
 
-  const confirmationFile = await workflowService.downloadConfirmationDocument(first.id);
-  const confirmationWorkbook = XLSX.read(confirmationFile.buffer, { type: "buffer" });
-  assertCheck(checks, "Confirmation document export returns xlsx", confirmationFile.fileName.endsWith(".xlsx") && confirmationFile.buffer.length > 1000, `${confirmationFile.fileName} / ${confirmationFile.buffer.length}`);
-  assertCheck(
-    checks,
-    "Confirmation document export includes sheets",
-    ["summary", "details", "charge_lines", "signature_evidence"].every((sheet) => confirmationWorkbook.SheetNames.includes(sheet)),
-    confirmationWorkbook.SheetNames.join(",")
-  );
   const [confirmationPdf, confirmationPng] = await Promise.all([
-    workflowService.downloadConfirmationDocument(first.id, "pdf"),
+    workflowService.downloadConfirmationDocument(first.id),
     workflowService.downloadConfirmationDocument(first.id, "png")
   ]);
   assertCheck(
     checks,
-    "Confirmation PDF uses the same document version",
-    confirmationPdf.fileName.replace(/\.pdf$/, "") === confirmationFile.fileName.replace(/\.xlsx$/, "") && confirmationPdf.buffer.subarray(0, 4).toString() === "%PDF",
-    `${confirmationPdf.fileName} / ${confirmationFile.fileName}`
+    "Confirmation document defaults to PDF",
+    confirmationPdf.fileName.endsWith(".pdf") && confirmationPdf.buffer.subarray(0, 4).toString() === "%PDF",
+    `${confirmationPdf.fileName} / ${confirmationPdf.buffer.length}`
   );
   assertCheck(
     checks,
     "Confirmation PNG uses the same document version",
-    confirmationPng.fileName.replace(/\.png$/, "") === confirmationFile.fileName.replace(/\.xlsx$/, "") && confirmationPng.buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
-    `${confirmationPng.fileName} / ${confirmationFile.fileName}`
+    confirmationPng.fileName.replace(/\.png$/, "") === confirmationPdf.fileName.replace(/\.pdf$/, "") && confirmationPng.buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+    `${confirmationPng.fileName} / ${confirmationPdf.fileName}`
   );
 
   const sent = await workflowService.sendSignatureLink(first.id);
@@ -471,16 +463,16 @@ async function verifyMonthClose(
   checks: Check[],
   input: { month: string; buffer: Buffer; fileName: string; batchId: number }
 ) {
-  let closeBlockedBeforeReady = false;
-  try {
-    await workflowService.lockMonth(input.month, {
-      operator: "verify-import",
-      note: "Verify close blockers"
-    });
-  } catch (error) {
-    closeBlockedBeforeReady = String((error as Error).message).includes("Month close blocked");
-  }
-  assertCheck(checks, "Month close blocks unfinished workflow", closeBlockedBeforeReady);
+  const lockedWithWarnings = await workflowService.lockMonth(input.month, {
+    operator: "verify-import",
+    note: "Verify close warnings"
+  });
+  assertCheck(
+    checks,
+    "Month close allows locking with unfinished workflow warnings",
+    lockedWithWarnings.status === "locked" && lockedWithWarnings.unresolvedBlockers.length > 0,
+    `${lockedWithWarnings.status} / ${lockedWithWarnings.unresolvedBlockers.length}`
+  );
 
   await Promise.all([
     prisma.riskRecord.updateMany({

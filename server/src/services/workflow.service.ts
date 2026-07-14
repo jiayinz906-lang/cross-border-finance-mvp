@@ -1,14 +1,9 @@
 import * as XLSX from "xlsx";
 import crypto from "node:crypto";
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import PDFDocument from "pdfkit";
-import sharp from "sharp";
 import { prisma } from "../prisma/client.js";
 import { analyticsService } from "./analytics.service.js";
 import { env } from "../config/env.js";
+import { renderConfirmationPdf, renderConfirmationPng } from "./confirmation-renderer.js";
 
 type DocumentType = "logistics_commission" | "service_commission" | "operator_performance" | "sales_salary" | "customer_service_salary";
 
@@ -98,19 +93,6 @@ function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], s
     XLSX.utils.json_to_sheet(rows.length ? rows : [{ note: "no data" }]),
     sheetName.slice(0, 31)
   );
-}
-
-function confirmationFontPath() {
-  const candidates = [
-    process.env.CONFIRMATION_FONT_PATH,
-    // Render uses the Node runtime rather than the Docker image. Its working
-    // directory is /opt/render/project/src/server after start:render.
-    path.resolve(process.cwd(), "assets", "SimHei.ttf"),
-    path.resolve(process.cwd(), "server", "assets", "SimHei.ttf"),
-    "C:\\Windows\\Fonts\\simhei.ttf",
-    "/usr/share/fonts/truetype/xjd/SimHei.ttf"
-  ];
-  return candidates.find((candidate): candidate is string => Boolean(candidate && fs.existsSync(candidate))) ?? null;
 }
 
 type NotificationChannel = "dingtalk_direct" | "dingtalk_webhook" | "wecom_webhook";
@@ -240,14 +222,6 @@ function percentText(value: unknown) {
   return typeof value === "number" ? `${(value * 100).toFixed(2)}%` : "-";
 }
 
-function xmlEscape(value: unknown) {
-  return textValue(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 function confirmationRows(document: {
   id: number;
   month: string;
@@ -352,153 +326,6 @@ function confirmationRows(document: {
     isCompensation: Boolean(item.isCompensation)
   }));
   return { payload, summaryRows, detailRows, evidenceRows, chargeLineRows };
-}
-
-function pdfBuffer(document: { ownerName: string; month: string; version: number; documentType: string; payloadJson: string | null } & any) {
-  const { payload, summaryRows, detailRows, evidenceRows, chargeLineRows } = confirmationRows(document);
-  const doc = new PDFDocument({ size: "A4", margin: 36 });
-  const chunks: Buffer[] = [];
-  doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-  const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
-  const fontPath = confirmationFontPath();
-  // Register the bundled CJK font explicitly. Passing an unnamed path can fall
-  // back to Helvetica in the production PDFKit runtime, which corrupts Chinese
-  // text before the PDF is rendered to PNG.
-  if (fontPath) {
-    doc.registerFont("XjdConfirmationCjk", fontPath);
-    doc.font("XjdConfirmationCjk");
-  }
-
-  const writeLine = (value: string, fontSize = 9) => {
-    const pageBottom = doc.page.height - doc.page.margins.bottom - 12;
-    if (doc.y + fontSize * 2 > pageBottom) doc.addPage();
-    doc.fontSize(fontSize).text(value, { width: doc.page.width - doc.page.margins.left - doc.page.margins.right });
-  };
-  const writeSection = (title: string) => {
-    const pageBottom = doc.page.height - doc.page.margins.bottom - 30;
-    if (doc.y + 32 > pageBottom) doc.addPage();
-    doc.moveDown(0.6);
-    doc.fontSize(12).text(title, { underline: true });
-  };
-
-  doc.fontSize(16).text(textValue(payload.title ?? "Commission Confirmation"), { align: "center" });
-  doc.moveDown(0.5);
-  writeLine(`Owner: ${document.ownerName}    Month: ${document.month}    Version: ${document.version}`, 10);
-  writeLine(`Type: ${document.documentType}    Snapshot: ${payload.snapshotCreatedAt ?? "-"}`, 10);
-  writeSection("Summary");
-  for (const row of summaryRows) writeLine(`${row.item}: ${textValue(row.value)}`);
-  writeSection(`Order / performance details (${detailRows.length})`);
-  for (const row of detailRows) {
-    writeLine(`${row.performanceCategory ?? "-"} | Excel tickets ${row.rawOrderCount ?? "-"} | Base ${row.baseCount ?? "-"} | Payable tickets ${row.commissionOrderCount ?? "-"} | ${row.performanceRule ?? "-"} | ${row.systemOrderNo ?? "-"} | ${row.originalOrderNo ?? "-"} | ${row.customerName ?? "-"} | ${row.businessType ?? "-"} | Gross profit ${row.grossProfit} | Rate ${row.commissionRate} | Amount ${row.commissionAmount}`, 8);
-  }
-  writeSection(`Charge line traceability (${chargeLineRows.length})`);
-  for (const row of chargeLineRows) {
-    writeLine(`${row.excelRow ?? "-"} | ${row.systemOrderNo ?? "-"} | ${row.originalOrderNo ?? "-"} | ${row.direction ?? "-"} | ${row.feeType ?? "-"} | ${row.supplierName ?? "-"} | Original ${row.originalAmount} | Local ${row.localAmount} | Signed ${row.signedAmount}`, 8);
-  }
-  writeSection("Signature evidence");
-  for (const row of evidenceRows) writeLine(`${row.item}: ${textValue(row.value)}`);
-  doc.end();
-  return done;
-}
-
-async function pngBuffer(document: { ownerName: string; month: string; version: number; documentType: string; payloadJson: string | null } & any) {
-  // Render the same embedded-font PDF used for download. Sharp/librsvg cannot
-  // reliably resolve CJK fonts in Render, whereas Poppler preserves the PDF font.
-  const renderId = crypto.randomUUID();
-  const pdfPath = path.join(os.tmpdir(), `xjd-confirmation-${renderId}.pdf`);
-  const outputBase = path.join(os.tmpdir(), `xjd-confirmation-${renderId}`);
-  try {
-    fs.writeFileSync(pdfPath, await pdfBuffer(document));
-    execFileSync("pdftoppm", ["-png", "-singlefile", "-r", "144", pdfPath, outputBase], { stdio: "ignore" });
-    return fs.readFileSync(`${outputBase}.png`);
-  } finally {
-    fs.rmSync(pdfPath, { force: true });
-    fs.rmSync(`${outputBase}.png`, { force: true });
-  }
-
-  /* Legacy SVG renderer retained below as a fallback reference. */
-  const { payload, summaryRows, detailRows, evidenceRows, chargeLineRows } = confirmationRows(document);
-  const fontPath = confirmationFontPath();
-  const embeddedFontCss = fontPath
-    ? `@font-face{font-family:"XJDConfirmation";src:url("data:font/ttf;base64,${fs.readFileSync(fontPath!).toString("base64")}") format("truetype");}`
-    : "";
-  const width = 1400;
-  const rowHeight = 34;
-  const summaryStart = 184;
-  const detailsHeadingY = summaryStart + summaryRows.length * 24 + 38;
-  const detailsStart = detailsHeadingY + 52;
-  const chargesHeadingY = detailsStart + detailRows.length * rowHeight + 34;
-  const chargesStart = chargesHeadingY + 52;
-  const evidenceHeadingY = chargesStart + chargeLineRows.length * rowHeight + 34;
-  const evidenceStart = evidenceHeadingY + 32;
-  const height = Math.max(760, evidenceStart + evidenceRows.length * 26 + 70);
-  const isOperatorSalary = document.documentType === "customer_service_salary" || payload.summary?.businessType === "operator_salary";
-  const detailSvg = detailRows.map((row, index) => {
-    const y = detailsStart + index * rowHeight;
-    if (isOperatorSalary) {
-      return `<text x="72" y="${y}" class="small">${xmlEscape(row.performanceCategory)}</text>
-<text x="330" y="${y}" class="small">${xmlEscape(row.rawOrderCount)}</text>
-<text x="500" y="${y}" class="small">${xmlEscape(row.baseCount)}</text>
-<text x="670" y="${y}" class="small">${xmlEscape(row.commissionOrderCount)}</text>
-<text x="840" y="${y}" class="small">${xmlEscape(row.performanceRule)}</text>
-<text x="1120" y="${y}" class="small">${xmlEscape(row.commissionAmount)}</text>
-<line x1="60" y1="${y + 12}" x2="1340" y2="${y + 12}" stroke="#e6edf7"/>`;
-    }
-    return `<text x="72" y="${y}" class="small">${xmlEscape(row.systemOrderNo)}</text>
-<text x="260" y="${y}" class="small">${xmlEscape(row.originalOrderNo)}</text>
-<text x="430" y="${y}" class="small">${xmlEscape(row.businessType)}</text>
-<text x="650" y="${y}" class="small">${xmlEscape(row.salaryComponent)}</text>
-<text x="850" y="${y}" class="small">${xmlEscape(row.grossProfit)}</text>
-<text x="1010" y="${y}" class="small">${xmlEscape(row.commissionRate)}</text>
-<text x="1170" y="${y}" class="small">${xmlEscape(row.commissionAmount)}</text>
-<line x1="60" y1="${y + 12}" x2="1340" y2="${y + 12}" stroke="#e6edf7"/>`;
-  }).join("");
-  const summarySvg = summaryRows.map((row, index) => {
-    const y = summaryStart + index * 24;
-    return `<text x="72" y="${y}" class="label">${xmlEscape(row.item)}</text><text x="300" y="${y}" class="text">${xmlEscape(row.value)}</text>`;
-  }).join("");
-  const chargeSvg = chargeLineRows.map((row, index) => {
-    const y = chargesStart + index * rowHeight;
-    return `<text x="72" y="${y}" class="small">${xmlEscape(row.excelRow)}</text>
-<text x="150" y="${y}" class="small">${xmlEscape(row.systemOrderNo)}</text>
-<text x="350" y="${y}" class="small">${xmlEscape(row.direction)}</text>
-<text x="470" y="${y}" class="small">${xmlEscape(row.feeType)}</text>
-<text x="650" y="${y}" class="small">${xmlEscape(row.supplierName)}</text>
-<text x="900" y="${y}" class="small">${xmlEscape(row.originalAmount)}</text>
-<text x="1080" y="${y}" class="small">${xmlEscape(row.localAmount)}</text>
-<text x="1220" y="${y}" class="small">${xmlEscape(row.signedAmount)}</text>
-<line x1="60" y1="${y + 12}" x2="1340" y2="${y + 12}" stroke="#e6edf7"/>`;
-  }).join("");
-  const evidenceSvg = evidenceRows.map((row, index) => {
-    const y = evidenceStart + index * 24;
-    return `<text x="72" y="${y}" class="label">${xmlEscape(row.item)}</text><text x="300" y="${y}" class="text">${xmlEscape(textValue(row.value))}</text>`;
-  }).join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-<style>
-${embeddedFontCss}
-.title{font:700 30px "XJDConfirmation",Arial,sans-serif;fill:#071737}
-.sub{font:600 18px "XJDConfirmation",Arial,sans-serif;fill:#52627d}
-.section{font:700 22px "XJDConfirmation",Arial,sans-serif;fill:#071737}
-.label{font:700 15px "XJDConfirmation",Arial,sans-serif;fill:#71809c}
-.text{font:700 15px "XJDConfirmation",Arial,sans-serif;fill:#071737}
-.small{font:700 15px "XJDConfirmation",Arial,sans-serif;fill:#13213c}
-</style>
-<rect width="100%" height="100%" fill="#f4f7fb"/>
-<rect x="40" y="40" width="1320" height="${height - 80}" rx="14" fill="#fff" stroke="#dbe5f2"/>
-<text x="70" y="94" class="title">${xmlEscape(payload.title ?? "Commission Confirmation")}</text>
-<text x="70" y="126" class="sub">Owner: ${xmlEscape(document.ownerName)}   Month: ${xmlEscape(document.month)}   Version: ${document.version}   Source: imported Excel ledger</text>
-<text x="70" y="160" class="section">Summary</text>
-${summarySvg}
-<text x="70" y="${detailsHeadingY}" class="section">${isOperatorSalary ? "Performance Details" : "Commission Details"}</text>
-${isOperatorSalary ? `<text x="72" y="${detailsHeadingY + 28}" class="label">Performance category</text><text x="330" y="${detailsHeadingY + 28}" class="label">Excel tickets</text><text x="500" y="${detailsHeadingY + 28}" class="label">Base</text><text x="670" y="${detailsHeadingY + 28}" class="label">Payable tickets</text><text x="840" y="${detailsHeadingY + 28}" class="label">Rule</text><text x="1120" y="${detailsHeadingY + 28}" class="label">Amount</text>` : `<text x="72" y="${detailsHeadingY + 28}" class="label">System No</text><text x="260" y="${detailsHeadingY + 28}" class="label">Original No</text><text x="430" y="${detailsHeadingY + 28}" class="label">Business type</text><text x="650" y="${detailsHeadingY + 28}" class="label">Component</text><text x="850" y="${detailsHeadingY + 28}" class="label">Gross profit</text><text x="1010" y="${detailsHeadingY + 28}" class="label">Rate</text><text x="1170" y="${detailsHeadingY + 28}" class="label">Commission</text>`}
-${detailSvg}
-<text x="70" y="${chargesHeadingY}" class="section">Charge Line Traceability</text>
-<text x="72" y="${chargesHeadingY + 28}" class="label">Excel row</text><text x="150" y="${chargesHeadingY + 28}" class="label">System No</text><text x="350" y="${chargesHeadingY + 28}" class="label">Direction</text><text x="470" y="${chargesHeadingY + 28}" class="label">Fee type</text><text x="650" y="${chargesHeadingY + 28}" class="label">Supplier</text><text x="900" y="${chargesHeadingY + 28}" class="label">Original</text><text x="1080" y="${chargesHeadingY + 28}" class="label">Local</text><text x="1220" y="${chargesHeadingY + 28}" class="label">Signed</text>
-${chargeSvg}
-<text x="70" y="${evidenceHeadingY}" class="section">Signature Evidence</text>
-${evidenceSvg}
-</svg>`;
-  return sharp(Buffer.from(svg)).png().toBuffer();
 }
 
 function requireReason(reason: string | undefined, message: string) {
@@ -1520,12 +1347,11 @@ startxref
     };
   },
 
-  async downloadConfirmationDocument(id: number, format: "xlsx" | "pdf" | "png" = "xlsx") {
+  async downloadConfirmationDocument(id: number, format: "pdf" | "png" = "pdf") {
     const document = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
-    const { summaryRows, detailRows, evidenceRows, chargeLineRows } = confirmationRows(document);
 
     if (format === "pdf") {
-      const buffer = await pdfBuffer(document);
+      const buffer = await renderConfirmationPdf(document);
       await logAction({
         month: document.month,
         entityType: "confirmation_document",
@@ -1541,7 +1367,7 @@ startxref
     }
 
     if (format === "png") {
-      const buffer = await pngBuffer(document);
+      const buffer = await renderConfirmationPng(document);
       await logAction({
         month: document.month,
         entityType: "confirmation_document",
@@ -1556,26 +1382,7 @@ startxref
       };
     }
 
-    const workbook = XLSX.utils.book_new();
-
-    appendSheet(workbook, summaryRows, "summary");
-    appendSheet(workbook, detailRows, "details");
-    appendSheet(workbook, chargeLineRows, "charge_lines");
-    appendSheet(workbook, evidenceRows, "signature_evidence");
-
-    await logAction({
-      month: document.month,
-      entityType: "confirmation_document",
-      entityId: document.id,
-      action: "download_confirmation_xlsx",
-      payload: { ownerName: document.ownerName, documentType: document.documentType, version: document.version }
-    });
-
-    return {
-      fileName: `${document.month}-${document.ownerName}-v${document.version}-confirmation.xlsx`,
-      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      buffer: XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer
-    };
+    throw new Error("确认单仅支持 PDF 或 PNG 格式");
   },
 
   async exportSystemBackup(month?: string) {

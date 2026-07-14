@@ -1,9 +1,15 @@
-import { Button, Card, Input, Space, Table, Tag, message } from "antd";
+import { Button, Card, Input, Modal, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getFinanceDashboard } from "../../api/finance.api";
 import { getMonthlyReport } from "../../api/reports.api";
-import { confirmServiceRecord, generateServiceDocuments, getDocuments } from "../../api/workflow.api";
+import {
+  type ConfirmationDocument,
+  confirmServiceRecord,
+  downloadConfirmationDocumentFile,
+  generateServiceDocuments,
+  getDocuments
+} from "../../api/workflow.api";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
@@ -107,6 +113,9 @@ export default function ServiceConfirm() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [commissionEdits, setCommissionEdits] = useState<Record<number, { rule: string; amount: string }>>({});
+  const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
+  const [documentsOpen, setDocumentsOpen] = useState(false);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
   const { selectedMonth } = useSelectedMonth();
 
   const loadData = useCallback(async () => {
@@ -163,14 +172,27 @@ export default function ServiceConfirm() {
 
   const handleGenerateServiceDocuments = async () => {
     const res = await generateServiceDocuments(selectedMonth);
+    setDocuments(res.data.rows ?? []);
+    setDocumentsOpen(true);
     message.success(`已生成 ${res.data.rows?.length ?? 0} 份注册业务确认单`);
   };
 
   const handleViewSignatureStatus = async () => {
-    const res = await getDocuments(selectedMonth, "service_commission");
-    const documentRows = res.data.rows ?? [];
-    const signed = documentRows.filter((row: { signatureStatus: string }) => row.signatureStatus === "signed").length;
-    message.info(`注册业务确认单 ${documentRows.length} 份，已签名 ${signed} 份`);
+    setDocumentsLoading(true);
+    try {
+      const res = await getDocuments(selectedMonth, "service_commission");
+      const documentRows = res.data.rows ?? [];
+      setDocuments(documentRows);
+      setDocumentsOpen(true);
+      const signed = documentRows.filter((row: { signatureStatus: string }) => row.signatureStatus === "signed").length;
+      message.info(`注册业务确认单 ${documentRows.length} 份，已签名 ${signed} 份`);
+    } finally {
+      setDocumentsLoading(false);
+    }
+  };
+
+  const handleDownloadDocument = async (row: ConfirmationDocument, format: "pdf" | "png") => {
+    await downloadConfirmationDocumentFile(row.id, format);
   };
 
   const handleSaveConfirm = async (row: ServiceRecord) => {
@@ -369,6 +391,37 @@ export default function ServiceConfirm() {
           scroll={{ x: 1600 }}
         />
       </Card>
+
+      <Modal
+        open={documentsOpen}
+        title={`${selectedMonth} 注册/服务提成确认单`}
+        footer={<Button type="primary" onClick={() => setDocumentsOpen(false)}>关闭</Button>}
+        width={1080}
+        onCancel={() => setDocumentsOpen(false)}
+      >
+        <Table
+          rowKey="id"
+          loading={documentsLoading}
+          size="small"
+          pagination={false}
+          dataSource={documents}
+          scroll={{ x: 920 }}
+          columns={[
+            { title: "系统订单号", dataIndex: "ownerName", width: 150 },
+            { title: "业务类型", dataIndex: "businessType", width: 150 },
+            { title: "确认提成", dataIndex: "commissionAmount", align: "right", width: 130, render: toPlainMoney },
+            { title: "员工签名", dataIndex: "signatureStatus", width: 110, render: (value) => value === "signed" ? <Tag color="green">已签名</Tag> : <Tag color="gold">待签名</Tag> },
+            { title: "主管确认", dataIndex: "supervisorStatus", width: 110, render: (value) => value === "confirmed" ? <Tag color="green">已确认</Tag> : <Tag color="gold">待确认</Tag> },
+            {
+              title: "下载",
+              key: "download",
+              fixed: "right",
+              width: 150,
+              render: (_, row) => <Space size={6}><Button size="small" onClick={() => handleDownloadDocument(row, "pdf")}>PDF</Button><Button size="small" onClick={() => handleDownloadDocument(row, "png")}>PNG</Button></Space>
+            }
+          ]}
+        />
+      </Modal>
     </div>
   );
 }

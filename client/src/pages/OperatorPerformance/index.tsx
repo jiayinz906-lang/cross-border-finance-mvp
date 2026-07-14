@@ -197,7 +197,7 @@ export default function OperatorPerformance() {
     await loadData();
   };
 
-  const handleDownload = async (row: ConfirmationDocument, fileFormat: "xlsx" | "pdf" | "png") => {
+  const handleDownload = async (row: ConfirmationDocument, fileFormat: "pdf" | "png") => {
     await downloadConfirmationDocumentFile(row.id, fileFormat);
   };
 
@@ -306,7 +306,6 @@ export default function OperatorPerformance() {
             if (await copyText(url)) message.success("签名链接已复制");
             else Modal.info({ title: "请手动复制签名链接", content: <Typography.Paragraph copyable>{url}</Typography.Paragraph> });
           }}>复制链接</Button>
-          <Button size="small" onClick={() => handleDownload(row, "xlsx")}>下载确认单</Button>
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>下载 PDF</Button>
           <Button size="small" onClick={() => handleDownload(row, "png")}>下载 PNG</Button>
           <Button size="small" disabled={row.supervisorStatus === "confirmed" || row.signatureStatus !== "signed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>

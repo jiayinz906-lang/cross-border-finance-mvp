@@ -143,11 +143,11 @@ export function exportDownloadUrl(id: number) {
   return `${request.defaults.baseURL}/workflow/exports/${id}/download`;
 }
 
-export function confirmationDocumentDownloadUrl(id: number, format: "xlsx" | "pdf" | "png" = "xlsx") {
+export function confirmationDocumentDownloadUrl(id: number, format: "pdf" | "png" = "pdf") {
   return `${request.defaults.baseURL}/workflow/documents/${id}/download?format=${encodeURIComponent(format)}`;
 }
 
-export async function downloadConfirmationDocumentFile(id: number, format: "xlsx" | "pdf" | "png" = "xlsx") {
+export async function downloadConfirmationDocumentFile(id: number, format: "pdf" | "png" = "pdf") {
   return downloadAuthenticatedFile(`/workflow/documents/${id}/download`, `confirmation-${id}.${format}`, { format });
 }
 
