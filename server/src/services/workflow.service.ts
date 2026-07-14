@@ -9,6 +9,7 @@ import sharp from "sharp";
 import { prisma } from "../prisma/client.js";
 import { analyticsService } from "./analytics.service.js";
 import { env } from "../config/env.js";
+import { AppError } from "../errors/app-error.js";
 
 type DocumentType = "logistics_commission" | "service_commission" | "operator_performance" | "sales_salary" | "customer_service_salary";
 
@@ -698,14 +699,14 @@ export const workflowService = {
     const importAuditBlockingCount = blockingIssueCountFromBatch(activeBatch);
     const receivablePayablePending = pendingReceivableOrders + pendingPayableOrders;
     const blockers = [
-      !hasImport ? "Excel import not completed" : null,
-      importAuditBlockingCount > 0 ? `import audit blocked: ${importAuditBlockingCount}` : null,
-      openRisks > 0 ? `risk review pending: ${openRisks}` : null,
-      pendingServices > 0 ? `service confirmation pending: ${pendingServices}` : null,
-      pendingLogisticsDocs > 0 ? `logistics commission signature/supervisor confirmation pending: ${pendingLogisticsDocs}` : null,
-      pendingServiceDocs > 0 ? `service signature/supervisor confirmation pending: ${pendingServiceDocs}` : null,
-      pendingOperatorDocs > 0 ? `operator performance signature/supervisor confirmation pending: ${pendingOperatorDocs}` : null,
-      receivablePayablePending > 0 ? `receivable/payable pending: ${receivablePayablePending}` : null
+      !hasImport ? "尚未完成 Excel 导入" : null,
+      importAuditBlockingCount > 0 ? `导入审计存在 ${importAuditBlockingCount} 项阻断问题` : null,
+      openRisks > 0 ? `风险复核待处理 ${openRisks} 票` : null,
+      pendingServices > 0 ? `注册/服务提成待确认 ${pendingServices} 笔` : null,
+      pendingLogisticsDocs > 0 ? `物流提成签名或主管确认待处理 ${pendingLogisticsDocs} 份` : null,
+      pendingServiceDocs > 0 ? `注册/服务提成签名或主管确认待处理 ${pendingServiceDocs} 份` : null,
+      pendingOperatorDocs > 0 ? `操作员绩效签名或主管确认待处理 ${pendingOperatorDocs} 份` : null,
+      receivablePayablePending > 0 ? `应收应付待对账 ${receivablePayablePending} 项` : null
     ].filter(Boolean) as string[];
     const locked = close?.status === "locked";
     const ready = hasImport && blockers.length === 0;
@@ -1832,7 +1833,12 @@ startxref
     const selectedMonth = monthOrDefault(month);
     const status = await this.monthStatus(selectedMonth);
     if (!status.readyToClose) {
-      throw new Error(`Month close blocked: ${status.blockers.join("; ") || "Excel import not completed"}`);
+      throw new AppError(
+        409,
+        "MONTH_CLOSE_BLOCKED",
+        `${selectedMonth} 暂不能锁账：${status.blockers.join("；") || "尚未完成 Excel 导入"}`,
+        { blockers: status.blockers.join("；") }
+      );
     }
     const operator = input.operator || "supervisor";
     const close = await prisma.monthClose.upsert({

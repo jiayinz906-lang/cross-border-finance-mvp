@@ -115,9 +115,26 @@ export const financeService = {
   },
 
   async listMonths() {
-    const rows = await financeRepository.listMonths();
+    const [summaries, activeBatches] = await Promise.all([
+      financeRepository.listMonths(),
+      prisma.importBatch.findMany({
+        where: { status: "active" },
+        select: {
+          month: true,
+          updatedAt: true,
+          totalReceivable: true,
+          totalGrossProfit: true
+        },
+        orderBy: { month: "desc" }
+      })
+    ]);
+    const rows = new Map<string, { month: string; updatedAt: Date; totalReceivable: number; totalGrossProfit: number }>();
+    for (const item of [...summaries, ...activeBatches]) {
+      const current = rows.get(item.month);
+      if (!current || item.updatedAt > current.updatedAt) rows.set(item.month, item);
+    }
     return {
-      rows: rows.map((item) => ({
+      rows: Array.from(rows.values()).sort((left, right) => right.month.localeCompare(left.month)).map((item) => ({
         month: item.month,
         updatedAt: item.updatedAt,
         totalReceivable: item.totalReceivable,

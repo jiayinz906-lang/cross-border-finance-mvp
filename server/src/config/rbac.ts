@@ -23,7 +23,7 @@ export const roleLabels: Record<UserRole, string> = {
 export const rolePermissions: Record<UserRole, Permission[]> = {
   admin: ["finance:read", "finance:import", "users:manage", "finance:reset", "finance:rollback", "finance:close", "risk:review", "rules:write", "confirmation:approve", "reports:export"],
   finance: ["finance:read", "finance:import", "risk:review", "reports:export"],
-  supervisor: ["finance:read", "finance:close", "risk:review", "confirmation:approve", "reports:export"],
+  supervisor: ["finance:read", "finance:import", "finance:close", "risk:review", "confirmation:approve", "reports:export"],
   executive: ["finance:read", "reports:export"],
   sales: ["finance:read"]
 };

@@ -28,7 +28,7 @@ export function requirePermission(permission: Permission) {
     const role = currentRole(req);
     if (!can(role, permission)) {
       res.status(403).json({
-        message: "Current role is not allowed to perform this operation.",
+        message: `当前角色无权执行该操作，需要权限：${permission}。请使用管理员、财务或已授权主管账号。`,
         role,
         requiredPermission: permission
       });

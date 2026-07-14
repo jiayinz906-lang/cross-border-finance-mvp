@@ -155,8 +155,9 @@ export function ImportButton({ onImported }: Props) {
       setPendingFile(null);
       setPreview(null);
       onImported?.(result);
-    } catch {
-      message.error("确认导入失败，请检查后端数据库连接和 Excel 数据");
+    } catch (error: unknown) {
+      const detail = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      message.error(detail || "确认导入失败，请检查后端数据库连接和 Excel 数据");
     } finally {
       setImporting(false);
     }

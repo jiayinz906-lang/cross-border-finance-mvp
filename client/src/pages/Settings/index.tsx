@@ -371,8 +371,11 @@ export default function Settings() {
         message.success(`${selectedMonth} 已解锁`);
       }
       await Promise.all([loadMonthClose(), loadBatches(), loadActionLogs()]);
-    } catch {
-      message.error("月度锁账操作失败，请检查角色权限或后端服务");
+    } catch (error: unknown) {
+      const response = (error as { response?: { data?: { message?: string; fieldErrors?: Record<string, string> } } })?.response?.data;
+      const detail = response?.fieldErrors?.blockers || response?.message;
+      message.error(detail || "月度锁账操作失败，请检查角色权限或后端服务");
+      await loadMonthClose();
     } finally {
       setCloseLoading(false);
     }
