@@ -48,7 +48,7 @@ export function MonthWorkflowStatus({ month }: { month: string }) {
       <div className="month-workflow-head">
         <div>
           <strong>{month} 月度闭环进度</strong>
-          <span>{data.readyToClose ? "当前月份已满足锁账前置条件" : "锁账前必须完成以下卡点"}</span>
+          <span>{data.locked ? "已锁账，未完成事项保留为提醒" : data.readyToClose ? "当前月份已满足锁账前置条件" : "未完成事项仅作锁账提醒"}</span>
         </div>
         <Tag color={data.locked ? "green" : data.readyToClose ? "blue" : "orange"}>
           {data.locked ? "已锁账" : data.readyToClose ? "可锁账" : "处理中"}
@@ -70,7 +70,7 @@ export function MonthWorkflowStatus({ month }: { month: string }) {
           className="month-workflow-alert"
           type="warning"
           showIcon
-          message="当前月份暂不能锁账"
+          message={data.locked ? "当前月份已锁账，以下事项保留为提醒" : "当前月份存在待处理提醒"}
           description={<Space wrap>{data.blockers.map((item) => <Tag key={item} color="orange">{item}</Tag>)}</Space>}
         />
       )}

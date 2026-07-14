@@ -9,7 +9,6 @@ import sharp from "sharp";
 import { prisma } from "../prisma/client.js";
 import { analyticsService } from "./analytics.service.js";
 import { env } from "../config/env.js";
-import { AppError } from "../errors/app-error.js";
 
 type DocumentType = "logistics_commission" | "service_commission" | "operator_performance" | "sales_salary" | "customer_service_salary";
 
@@ -1832,15 +1831,8 @@ startxref
   async lockMonth(month?: string, input: { operator?: string; note?: string } = {}) {
     const selectedMonth = monthOrDefault(month);
     const status = await this.monthStatus(selectedMonth);
-    if (!status.readyToClose) {
-      throw new AppError(
-        409,
-        "MONTH_CLOSE_BLOCKED",
-        `${selectedMonth} 暂不能锁账：${status.blockers.join("；") || "尚未完成 Excel 导入"}`,
-        { blockers: status.blockers.join("；") }
-      );
-    }
     const operator = input.operator || "supervisor";
+    const unresolvedBlockers = status.blockers;
     const close = await prisma.monthClose.upsert({
       where: { month: selectedMonth },
       update: {
@@ -1864,9 +1856,9 @@ startxref
       entityType: "month_close",
       entityId: selectedMonth,
       action: "lock_month",
-      payload: { operator, note: input.note }
+      payload: { operator, note: input.note, unresolvedBlockers }
     });
-    return close;
+    return { ...close, unresolvedBlockers };
   },
 
   async unlockMonth(month?: string, input: { operator?: string; note?: string } = {}) {

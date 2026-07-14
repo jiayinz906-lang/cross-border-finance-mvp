@@ -364,8 +364,13 @@ export default function Settings() {
     setCloseLoading(true);
     try {
       if (action === "lock") {
-        await lockMonth(selectedMonth, closeNote || "月度财务复核完成，锁定本月数据");
-        message.success(`${selectedMonth} 已锁账，导入和回滚已禁止`);
+        const result = await lockMonth(selectedMonth, closeNote || "月度财务复核完成，锁定本月数据");
+        const blockers = (result.data as { unresolvedBlockers?: string[] }).unresolvedBlockers ?? [];
+        if (blockers.length) {
+          message.warning(`${selectedMonth} 已锁账；以下事项仅作提醒，后续仍可由主管解锁处理：${blockers.join("；")}`);
+        } else {
+          message.success(`${selectedMonth} 已锁账，导入和回滚已禁止`);
+        }
       } else {
         await unlockMonth(selectedMonth, closeNote || "主管解锁，允许补充调整");
         message.success(`${selectedMonth} 已解锁`);
@@ -717,7 +722,7 @@ export default function Settings() {
             <Space wrap>
               <Popconfirm
                 title="确认锁定该月份？"
-                description="锁账后，该月份 Excel 导入和导入批次回滚都会被后端拒绝。"
+                description="未完成的风险、确认、签名和对账事项会作为提醒写入操作日志，但不会阻止锁账。锁账后该月份 Excel 导入和批次回滚仍会被后端拒绝。"
                 okText="确认锁账"
                 cancelText="取消"
                 disabled={!canCloseMonth || isMonthLocked}
