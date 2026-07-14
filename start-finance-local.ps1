@@ -14,11 +14,6 @@ if (Test-Path (Join-Path $bundledNodeBin "node.exe")) {
   $env:PATH = "$bundledNodeBin;$env:PATH"
 }
 
-function Convert-ToFileUrlPath {
-  param([string] $Path)
-  return $Path.Replace("\", "/")
-}
-
 function Stop-PortListener {
   param([int] $Port)
 
@@ -50,19 +45,15 @@ function Start-FinanceWindow {
   )
 }
 
-$databasePath = Convert-ToFileUrlPath (Join-Path $projectRoot "prisma\dev.db")
-$databaseUrl = "file:$databasePath"
-
 if (-not $NoRestartPorts) {
   Stop-PortListener -Port 4000
   Stop-PortListener -Port 5173
 }
 
 Write-Host "Preparing database..."
-$env:DATABASE_URL = $databaseUrl
 & $pnpm prisma:deploy
 
-$backendCommand = "`$env:PATH='$bundledNodeBin;' + `$env:PATH; `$env:DATABASE_URL='$databaseUrl'; `$env:PORT='4000'; & '$pnpm' --filter cross-border-finance-server dev"
+$backendCommand = "`$env:PATH='$bundledNodeBin;' + `$env:PATH; `$env:PORT='4000'; & '$pnpm' --filter cross-border-finance-server dev"
 $frontendCommand = "`$env:PATH='$bundledNodeBin;' + `$env:PATH; `$env:VITE_API_BASE_URL='http://localhost:4000/api'; & '$pnpm' --filter cross-border-finance-client dev -- --host localhost --port 5173"
 
 Start-FinanceWindow -Title "XJD Finance API :4000" -Command $backendCommand

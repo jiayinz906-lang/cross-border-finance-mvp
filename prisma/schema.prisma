@@ -27,7 +27,7 @@ model FinanceOrder {
   id                          Int                     @id @default(autoincrement())
   importBatchId               Int?
   importBatch                 ImportBatch?            @relation(fields: [importBatchId], references: [id])
-  orderNo                     String                  @unique
+  orderNo                     String
   customerOrderNo             String?
   orderDate                   DateTime
   month                       String
@@ -73,6 +73,9 @@ model FinanceOrder {
   costAdjustments             CostAdjustment[]
   serviceBusinessRecords      ServiceBusinessRecord[]
   settlementRecords           SettlementRecord[]
+
+  @@unique([month, orderNo])
+  @@index([orderNo])
 }
 
 model OperatorPerformanceOverride {
@@ -199,6 +202,9 @@ model ImportBatch {
   abnormalHighProfitCount Int            @default(0)
   templateAuditJson       String?
   previewJson             String?
+  sourceFileData          Bytes?
+  sourceFileSha256        String?
+  sourceFileSize          Int?
   createdBy               String         @default("system")
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt

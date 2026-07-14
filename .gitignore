@@ -10,3 +10,5 @@ client/dist/
 outputs/
 .codex-server.log
 .codex-server.err.log
+.codex-client.log
+.codex-client.err.log

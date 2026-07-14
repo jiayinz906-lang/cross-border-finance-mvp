@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import crypto from "node:crypto";
+import type { Prisma } from "@prisma/client";
 import { agencyRuntimeProfile } from "../config/agent.registry.js";
 import { selfHostedStack } from "../config/selfhosted-stack.js";
 import { prisma } from "../prisma/client.js";
@@ -849,19 +850,19 @@ function buildImportAuditReport(parsed: {
   };
 }
 
-async function writeChargeLinesForBatch(input: {
+async function writeChargeLinesForBatch(db: Prisma.TransactionClient, input: {
   batchId: number;
   month: string;
   fileName: string;
   rawLines: ParsedRawLine[];
   rules: ImportRules;
 }) {
-  const rawRows = await prisma.rawLedgerLine.findMany({
+  const rawRows = await db.rawLedgerLine.findMany({
     where: { importBatchId: input.batchId },
     select: { id: true, rowIndex: true }
   });
   const rawIdByRow = new Map(rawRows.map((row) => [row.rowIndex, row.id]));
-  const orders = await prisma.financeOrder.findMany({
+  const orders = await db.financeOrder.findMany({
     where: { importBatchId: input.batchId },
     select: { id: true, orderNo: true }
   });
@@ -872,7 +873,7 @@ async function writeChargeLinesForBatch(input: {
 
   if (!drafts.length) return 0;
 
-  await prisma.financeChargeLine.createMany({
+  await db.financeChargeLine.createMany({
     data: drafts.map((line) => ({
       importBatchId: input.batchId,
       financeOrderId: orderIdByNo.get(line.orderNo),
@@ -988,7 +989,7 @@ async function assertMonthOpen(month: string, action: string) {
   }
 }
 
-async function writeActionLog(input: {
+async function writeActionLog(db: Prisma.TransactionClient, input: {
   month?: string;
   entityType: string;
   entityId: string | number;
@@ -996,7 +997,7 @@ async function writeActionLog(input: {
   operator?: string;
   payload?: unknown;
 }) {
-  return prisma.actionLog.create({
+  return db.actionLog.create({
     data: {
       month: input.month,
       entityType: input.entityType,
@@ -1008,17 +1009,16 @@ async function writeActionLog(input: {
   });
 }
 
-async function rebuildFinanceSummary(month: string) {
-  const rules = await loadImportRules();
-  const orders = await prisma.financeOrder.findMany({ where: { month } });
+async function rebuildFinanceSummary(db: Prisma.TransactionClient, month: string, rules: ImportRules) {
+  const orders = await db.financeOrder.findMany({ where: { month } });
   const totalReceivable = orders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
   const totalPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
   const totalGrossProfit = orders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
-  const commissions = await prisma.commissionRecord.findMany({ where: { financeOrder: { month } } });
+  const commissions = await db.commissionRecord.findMany({ where: { financeOrder: { month } } });
   const riskOrderCount = orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < rules.highRiskBelow || order.needSupervisorConfirm).length;
   const abnormalHighProfitOrderCount = orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > rules.abnormalHighAbove).length;
 
-  await prisma.financeSummary.upsert({
+  await db.financeSummary.upsert({
     where: { month },
     update: {
       totalReceivable,
@@ -1049,6 +1049,7 @@ async function rebuildFinanceSummary(month: string) {
 }
 
 async function createDerivedRecords(
+  db: Prisma.TransactionClient,
   order: Awaited<ReturnType<typeof prisma.financeOrder.create>>,
   logisticsProfitBySalesperson: Map<string, number>,
   rules: ImportRules
@@ -1057,7 +1058,7 @@ async function createDerivedRecords(
     const rate = order.isCompanyCustomerAdjusted
       ? rules.companyCustomerCommissionRate
       : commissionRate(logisticsProfitBySalesperson.get(order.salespersonName) ?? 0, rules);
-    await prisma.commissionRecord.create({
+    await db.commissionRecord.create({
       data: {
         financeOrderId: order.id,
         salespersonName: order.salespersonName,
@@ -1073,7 +1074,7 @@ async function createDerivedRecords(
   }
 
   if (order.needSupervisorConfirm || (order.adjustedGrossProfitRate ?? 1) < rules.highRiskBelow || (order.adjustedGrossProfitRate ?? 0) > rules.abnormalHighAbove) {
-    await prisma.riskRecord.create({
+    await db.riskRecord.create({
       data: {
         financeOrderId: order.id,
         riskLevel: riskLevel(order, rules),
@@ -1086,7 +1087,7 @@ async function createDerivedRecords(
   }
 
   if (order.isServiceBusiness) {
-    await prisma.serviceBusinessRecord.create({
+    await db.serviceBusinessRecord.create({
       data: {
         financeOrderId: order.id,
         serviceType: order.businessType,
@@ -1206,154 +1207,211 @@ export const excelService = {
     }
     await assertMonthOpen(parsed.month, "重新导入 Excel");
     const batchNumber = batchNo(parsed.month);
+    const sourceFileSha256 = crypto.createHash("sha256").update(buffer).digest("hex");
 
-    const batch = await prisma.importBatch.create({
-      data: {
-        batchNo: batchNumber,
-        month: parsed.month,
-        fileName: parsed.fileName,
-        sheetName: parsed.sheetName,
-        importedRows: parsed.importedRows,
-        importedOrders: parsed.importedOrders,
-        logisticsOrders: parsed.logisticsOrders,
-        serviceOrders: parsed.serviceOrders,
-        totalReceivable: parsed.totalReceivable,
-        totalPayable: parsed.totalPayable,
-        totalGrossProfit: parsed.totalGrossProfit,
-        riskOrderCount: parsed.riskOrderCount,
-        abnormalHighProfitCount: parsed.abnormalHighProfitOrderCount,
-        templateAuditJson: JSON.stringify(parsed.audit),
-        previewJson: JSON.stringify({
+    return prisma.$transaction(async (tx) => {
+      const batch = await tx.importBatch.create({
+        data: {
+          batchNo: batchNumber,
+          month: parsed.month,
+          fileName: parsed.fileName,
+          sheetName: parsed.sheetName,
+          importedRows: parsed.importedRows,
+          importedOrders: parsed.importedOrders,
+          logisticsOrders: parsed.logisticsOrders,
+          serviceOrders: parsed.serviceOrders,
           totalReceivable: parsed.totalReceivable,
           totalPayable: parsed.totalPayable,
           totalGrossProfit: parsed.totalGrossProfit,
-          grossProfitRate: parsed.grossProfitRate,
-          qualityReport: parsed.qualityReport,
-          activeRules: parsed.rules,
-          ...auditReport
-        })
-      }
-    });
-
-    await prisma.serviceBusinessRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
-    await prisma.settlementRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
-    await prisma.costAdjustment.deleteMany({ where: { financeOrder: { month: parsed.month } } });
-    await prisma.riskRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
-    await prisma.commissionRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
-    await prisma.financeSummary.deleteMany({ where: { month: parsed.month } });
-    await prisma.confirmationDocument.updateMany({
-      where: { month: parsed.month, documentStatus: { not: "voided" } },
-      data: {
-        documentStatus: "voided",
-        signatureStatus: "pending",
-        supervisorStatus: "pending",
-        signatureToken: null,
-        signatureUrl: null,
-        signatureTokenExpiresAt: null,
-        voidReason: "Excel 重新导入并重建月度数据，旧确认单自动作废",
-        voidedAt: new Date()
-      }
-    });
-    await prisma.financeChargeLine.deleteMany({ where: { month: parsed.month } });
-    await prisma.financeOrder.deleteMany({ where: { month: parsed.month } });
-    await prisma.importBatch.updateMany({
-      where: { month: parsed.month, id: { not: batch.id }, status: "active" },
-      data: { status: "superseded" }
-    });
-
-    const createdOrders = [];
-    for (const order of parsed.orders) {
-      createdOrders.push(await prisma.financeOrder.create({ data: { ...order, importBatchId: batch.id } }));
-    }
-
-    if (parsed.rawLines.length) {
-      await prisma.rawLedgerLine.createMany({
-        data: parsed.rawLines.map((line) => ({
-          importBatchId: batch.id,
-          month: parsed.month,
-          orderNo: line.orderNo,
-          customerOrderNo: line.customerOrderNo,
-          rowIndex: line.rowIndex,
-          sheetName: parsed.sheetName,
-          sourceFileName: parsed.fileName,
-          rowHash: rowHash(line.raw),
-          rawJson: stableJson(line.raw),
-          canonicalJson: stableJson(line.canonical),
-          parseStatus: line.parseStatus,
-          parseMessage: line.parseMessage
-        }))
+          riskOrderCount: parsed.riskOrderCount,
+          abnormalHighProfitCount: parsed.abnormalHighProfitOrderCount,
+          templateAuditJson: JSON.stringify(parsed.audit),
+          previewJson: JSON.stringify({
+            totalReceivable: parsed.totalReceivable,
+            totalPayable: parsed.totalPayable,
+            totalGrossProfit: parsed.totalGrossProfit,
+            grossProfitRate: parsed.grossProfitRate,
+            qualityReport: parsed.qualityReport,
+            activeRules: parsed.rules,
+            ...auditReport
+          }),
+          sourceFileData: buffer,
+          sourceFileSha256,
+          sourceFileSize: buffer.length
+        }
       });
-    }
 
-    const chargeLineCount = await writeChargeLinesForBatch({
-      batchId: batch.id,
-      month: parsed.month,
-      fileName: parsed.fileName,
-      rawLines: parsed.rawLines,
-      rules: parsed.rules
-    });
+      await tx.serviceBusinessRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
+      await tx.settlementRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
+      await tx.costAdjustment.deleteMany({ where: { financeOrder: { month: parsed.month } } });
+      await tx.riskRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
+      await tx.commissionRecord.deleteMany({ where: { financeOrder: { month: parsed.month } } });
+      await tx.financeSummary.deleteMany({ where: { month: parsed.month } });
+      await tx.confirmationDocument.updateMany({
+        where: { month: parsed.month, documentStatus: { not: "voided" } },
+        data: {
+          documentStatus: "voided",
+          signatureStatus: "pending",
+          supervisorStatus: "pending",
+          signatureToken: null,
+          signatureUrl: null,
+          signatureTokenExpiresAt: null,
+          voidReason: "Excel 重新导入并重建月度数据，旧确认单自动作废",
+          voidedAt: new Date()
+        }
+      });
+      await tx.financeChargeLine.deleteMany({ where: { month: parsed.month } });
+      await tx.financeOrder.deleteMany({ where: { month: parsed.month } });
+      await tx.importBatch.updateMany({
+        where: { month: parsed.month, id: { not: batch.id }, status: "active" },
+        data: { status: "superseded" }
+      });
 
-    const logisticsProfitBySalesperson = new Map<string, number>();
-    for (const order of createdOrders) {
-      if (!order.isServiceBusiness && order.adjustedGrossProfit > 0) {
-        logisticsProfitBySalesperson.set(
-          order.salespersonName,
-          (logisticsProfitBySalesperson.get(order.salespersonName) ?? 0) + order.adjustedGrossProfit
-        );
+      const createdOrders = [];
+      for (const order of parsed.orders) {
+        createdOrders.push(await tx.financeOrder.create({ data: { ...order, importBatchId: batch.id } }));
       }
-    }
 
-    for (const order of createdOrders) {
-      await createDerivedRecords(order, logisticsProfitBySalesperson, parsed.rules);
-    }
+      if (parsed.rawLines.length) {
+        await tx.rawLedgerLine.createMany({
+          data: parsed.rawLines.map((line) => ({
+            importBatchId: batch.id,
+            month: parsed.month,
+            orderNo: line.orderNo,
+            customerOrderNo: line.customerOrderNo,
+            rowIndex: line.rowIndex,
+            sheetName: parsed.sheetName,
+            sourceFileName: parsed.fileName,
+            rowHash: rowHash(line.raw),
+            rawJson: stableJson(line.raw),
+            canonicalJson: stableJson(line.canonical),
+            parseStatus: line.parseStatus,
+            parseMessage: line.parseMessage
+          }))
+        });
+      }
 
-    await rebuildFinanceSummary(parsed.month);
-    await writeActionLog({
-      month: parsed.month,
-      entityType: "import_batch",
-      entityId: batch.id,
-      action: "import_excel",
-      payload: {
+      const chargeLineCount = await writeChargeLinesForBatch(tx, {
+        batchId: batch.id,
+        month: parsed.month,
+        fileName: parsed.fileName,
+        rawLines: parsed.rawLines,
+        rules: parsed.rules
+      });
+
+      const logisticsProfitBySalesperson = new Map<string, number>();
+      for (const order of createdOrders) {
+        if (!order.isServiceBusiness && order.adjustedGrossProfit > 0) {
+          logisticsProfitBySalesperson.set(
+            order.salespersonName,
+            (logisticsProfitBySalesperson.get(order.salespersonName) ?? 0) + order.adjustedGrossProfit
+          );
+        }
+      }
+
+      for (const order of createdOrders) {
+        await createDerivedRecords(tx, order, logisticsProfitBySalesperson, parsed.rules);
+      }
+
+      await rebuildFinanceSummary(tx, parsed.month, parsed.rules);
+      await writeActionLog(tx, {
+        month: parsed.month,
+        entityType: "import_batch",
+        entityId: batch.id,
+        action: "import_excel",
+        payload: {
+          batchNo: batch.batchNo,
+          fileName: parsed.fileName,
+          sheetName: parsed.sheetName,
+          importedRows: parsed.importedRows,
+          importedOrders: createdOrders.length,
+          logisticsOrders: createdOrders.filter((order) => !order.isServiceBusiness).length,
+          serviceOrders: createdOrders.filter((order) => order.isServiceBusiness).length,
+          totalReceivable: parsed.totalReceivable,
+          totalPayable: parsed.totalPayable,
+          totalGrossProfit: parsed.totalGrossProfit,
+          chargeLineCount,
+          sourceFileSha256,
+          sourceFileSize: buffer.length,
+          auditSummary: auditReport.auditSummary,
+          chargeLineSummary: auditReport.chargeLineSummary,
+          warningIssues: auditReport.warningIssues
+        }
+      });
+
+      return {
+        batchId: batch.id,
         batchNo: batch.batchNo,
         fileName: parsed.fileName,
         sheetName: parsed.sheetName,
+        month: parsed.month,
         importedRows: parsed.importedRows,
         importedOrders: createdOrders.length,
-        logisticsOrders: createdOrders.filter((order) => !order.isServiceBusiness).length,
         serviceOrders: createdOrders.filter((order) => order.isServiceBusiness).length,
-        totalReceivable: parsed.totalReceivable,
-        totalPayable: parsed.totalPayable,
-        totalGrossProfit: parsed.totalGrossProfit,
+        logisticsOrders: createdOrders.filter((order) => !order.isServiceBusiness).length,
+        audit: parsed.audit,
+        qualityReport: parsed.qualityReport,
         chargeLineCount,
-        auditSummary: auditReport.auditSummary,
-        chargeLineSummary: auditReport.chargeLineSummary,
-        warningIssues: auditReport.warningIssues
-      }
-    });
-
-    return {
-      batchId: batch.id,
-      batchNo: batch.batchNo,
-      fileName: parsed.fileName,
-      sheetName: parsed.sheetName,
-      month: parsed.month,
-      importedRows: parsed.importedRows,
-      importedOrders: createdOrders.length,
-      serviceOrders: createdOrders.filter((order) => order.isServiceBusiness).length,
-      logisticsOrders: createdOrders.filter((order) => !order.isServiceBusiness).length,
-      audit: parsed.audit,
-      qualityReport: parsed.qualityReport,
-      chargeLineCount,
-      ...auditReport
-    };
+        sourceFileSha256,
+        sourceFileSize: buffer.length,
+        ...auditReport
+      };
+    }, { timeout: 120_000 });
   },
 
   async listImportBatches(month?: string) {
     return prisma.importBatch.findMany({
       where: month ? { month } : undefined,
+      select: {
+        id: true,
+        batchNo: true,
+        month: true,
+        fileName: true,
+        sheetName: true,
+        importMode: true,
+        status: true,
+        importedRows: true,
+        importedOrders: true,
+        logisticsOrders: true,
+        serviceOrders: true,
+        totalReceivable: true,
+        totalPayable: true,
+        totalGrossProfit: true,
+        riskOrderCount: true,
+        abnormalHighProfitCount: true,
+        templateAuditJson: true,
+        previewJson: true,
+        sourceFileSha256: true,
+        sourceFileSize: true,
+        createdBy: true,
+        createdAt: true,
+        updatedAt: true,
+        revertedAt: true
+      },
       orderBy: { createdAt: "desc" },
       take: 20
     });
+  },
+
+  async getImportBatchSource(id: number) {
+    const batch = await prisma.importBatch.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        fileName: true,
+        sourceFileData: true,
+        sourceFileSha256: true,
+        sourceFileSize: true
+      }
+    });
+    if (!batch) throw new Error("导入批次不存在。");
+    if (!batch.sourceFileData) throw new Error("该历史批次未保存原始 Excel 文件本体。");
+    return {
+      fileName: batch.fileName,
+      data: Buffer.from(batch.sourceFileData),
+      sha256: batch.sourceFileSha256,
+      size: batch.sourceFileSize
+    };
   },
 
   async listRawLedgerLines(params: { month?: string; orderNo?: string; batchId?: number }) {
@@ -1457,28 +1515,31 @@ export const excelService = {
     if (!batch) throw new Error("导入批次不存在。");
     if (batch.status === "reverted") throw new Error("导入批次已回滚。");
     await assertMonthOpen(batch.month, "回滚导入批次");
+    const rules = await loadImportRules();
 
-    await prisma.serviceBusinessRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
-    await prisma.settlementRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
-    await prisma.costAdjustment.deleteMany({ where: { financeOrder: { importBatchId: id } } });
-    await prisma.riskRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
-    await prisma.commissionRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
-    await prisma.financeChargeLine.deleteMany({ where: { importBatchId: id } });
-    await prisma.financeOrder.deleteMany({ where: { importBatchId: id } });
-    await prisma.importBatch.update({ where: { id }, data: { status: "reverted", revertedAt: new Date() } });
-    await rebuildFinanceSummary(batch.month);
-    await writeActionLog({
-      month: batch.month,
-      entityType: "import_batch",
-      entityId: id,
-      action: "rollback_import_batch",
-      payload: {
-        batchNo: batch.batchNo,
-        fileName: batch.fileName,
-        importedOrders: batch.importedOrders,
-        importedRows: batch.importedRows
-      }
-    });
+    await prisma.$transaction(async (tx) => {
+      await tx.serviceBusinessRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
+      await tx.settlementRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
+      await tx.costAdjustment.deleteMany({ where: { financeOrder: { importBatchId: id } } });
+      await tx.riskRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
+      await tx.commissionRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
+      await tx.financeChargeLine.deleteMany({ where: { importBatchId: id } });
+      await tx.financeOrder.deleteMany({ where: { importBatchId: id } });
+      await tx.importBatch.update({ where: { id }, data: { status: "reverted", revertedAt: new Date() } });
+      await rebuildFinanceSummary(tx, batch.month, rules);
+      await writeActionLog(tx, {
+        month: batch.month,
+        entityType: "import_batch",
+        entityId: id,
+        action: "rollback_import_batch",
+        payload: {
+          batchNo: batch.batchNo,
+          fileName: batch.fileName,
+          importedOrders: batch.importedOrders,
+          importedRows: batch.importedRows
+        }
+      });
+    }, { timeout: 120_000 });
 
     return { id, month: batch.month, status: "reverted" };
   }

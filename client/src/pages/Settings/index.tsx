@@ -5,10 +5,12 @@ import {
   getAuthContext,
   getImportBatches,
   getImportTemplates,
+  importBatchSourcePath,
   getParameterRules,
   rollbackImportBatch,
   updateParameterRule
 } from "../../api/finance.api";
+import { downloadAuthenticatedFile } from "../../api/download";
 import { getReadiness } from "../../api/health.api";
 import { changePassword, createUser, getNotificationStatus, getUsers, login, updateUser, type ManagedUser } from "../../api/auth.api";
 import {
@@ -88,6 +90,7 @@ export default function Settings() {
   const [logFilters, setLogFilters] = useState({ entityType: "", entityId: "", action: "", operator: "" });
   const [savingRuleKey, setSavingRuleKey] = useState<string | null>(null);
   const [rollingBackId, setRollingBackId] = useState<number | null>(null);
+  const [downloadingBatchId, setDownloadingBatchId] = useState<number | null>(null);
   const [selectedBatch, setSelectedBatch] = useState<ImportBatch | null>(null);
   const [backupLoading, setBackupLoading] = useState<"month" | "all" | null>(null);
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
@@ -439,11 +442,29 @@ export default function Settings() {
     },
     {
       title: "操作",
-      width: 170,
+      width: 250,
       fixed: "right",
       render: (_, row) => (
         <Space size={6}>
           <Button size="small" onClick={() => setSelectedBatch(row)}>详情</Button>
+          <Button
+            size="small"
+            disabled={!row.sourceFileSize}
+            loading={downloadingBatchId === row.id}
+            onClick={async () => {
+              setDownloadingBatchId(row.id);
+              try {
+                await downloadAuthenticatedFile(importBatchSourcePath(row.id), row.fileName);
+                message.success("原始 Excel 存档已下载");
+              } catch {
+                message.error("原始 Excel 存档下载失败");
+              } finally {
+                setDownloadingBatchId(null);
+              }
+            }}
+          >
+            下载原文件
+          </Button>
           <Popconfirm
             title="确认回滚该导入批次？"
             description="回滚会删除该批次写入的订单、提成、风险和服务确认记录，并重新计算月度汇总。"
@@ -878,6 +899,12 @@ export default function Settings() {
                 <Descriptions.Item label="总应收">{money(selectedBatch.totalReceivable)}</Descriptions.Item>
                 <Descriptions.Item label="总应付">{money(selectedBatch.totalPayable)}</Descriptions.Item>
                 <Descriptions.Item label="毛利">{money(selectedBatch.totalGrossProfit)}</Descriptions.Item>
+                <Descriptions.Item label="原文件存档">{selectedBatch.sourceFileSize ? `${selectedBatch.sourceFileSize} 字节` : "历史批次未保存文件本体"}</Descriptions.Item>
+                <Descriptions.Item label="SHA-256" span={2}>
+                  <Typography.Text copyable={Boolean(selectedBatch.sourceFileSha256)}>
+                    {selectedBatch.sourceFileSha256 ?? "-"}
+                  </Typography.Text>
+                </Descriptions.Item>
               </Descriptions>
 
               <Alert

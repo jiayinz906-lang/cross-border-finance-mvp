@@ -177,6 +177,7 @@ export function ImportButton({ targetMonth, onImported }: Props) {
         cancelText="取消"
         width={1040}
         confirmLoading={importing}
+        okButtonProps={{ disabled: (preview?.blockingIssues?.length ?? 0) > 0 }}
         onOk={confirmImport}
         onCancel={() => setPreviewOpen(false)}
       >

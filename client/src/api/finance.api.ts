@@ -62,6 +62,10 @@ export function getImportBatches(month?: string) {
   return request.get("/finance/import-batches", params(month));
 }
 
+export function importBatchSourcePath(id: number) {
+  return `/finance/import-batches/${id}/source`;
+}
+
 export function getRawLedgerLines(filters: { month?: string; orderNo?: string; batchId?: number }) {
   return request.get("/finance/raw-ledger-lines", { params: filters });
 }

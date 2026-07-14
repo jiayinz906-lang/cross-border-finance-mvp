@@ -155,6 +155,8 @@ export type ImportResult = {
 
 export type ImportPreviewResult = ImportResult & {
   sourceMonths?: string[];
+  blockingIssues?: Array<{ key: string; level: string; title: string; count: number; orderNos: string[]; message: string }>;
+  warningIssues?: Array<{ key: string; level: string; title: string; count: number; orderNos: string[]; message: string }>;
   totalReceivable: number;
   totalPayable: number;
   totalGrossProfit: number;
@@ -196,6 +198,8 @@ export type ImportBatch = {
   abnormalHighProfitCount: number;
   templateAuditJson?: string | null;
   previewJson?: string | null;
+  sourceFileSha256?: string | null;
+  sourceFileSize?: number | null;
   createdAt: string;
   revertedAt?: string | null;
 };

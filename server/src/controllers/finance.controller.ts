@@ -69,6 +69,22 @@ export async function importBatchesController(req: Request, res: Response) {
   res.json({ rows: await excelService.listImportBatches(req.query.month as string | undefined) });
 }
 
+export async function importBatchSourceController(req: Request, res: Response) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ message: "导入批次 ID 无效" });
+    return;
+  }
+
+  const source = await excelService.getImportBatchSource(id);
+  const encodedName = encodeURIComponent(source.fileName).replace(/'/g, "%27");
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodedName}`);
+  res.setHeader("Content-Length", String(source.data.length));
+  if (source.sha256) res.setHeader("X-File-Sha256", source.sha256);
+  res.send(source.data);
+}
+
 export async function rawLedgerLinesController(req: Request, res: Response) {
   const batchId = req.query.batchId ? Number(req.query.batchId) : undefined;
   if (batchId !== undefined && !Number.isInteger(batchId)) {
