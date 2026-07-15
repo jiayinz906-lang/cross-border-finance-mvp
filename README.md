@@ -12,6 +12,7 @@
 - 汇率严格按原始表格标注：人民币按 1，美金 / 美元 / USD / 汇率未出按 6.85，其余按表格标注。
 - 参数规则、导入批次、确认单、签名证据、操作日志和系统备份均写入数据库。
 - 员工个人确认单支持生成、签名 token、员工签收、主管确认和证据留存。
+- ERPNext 通过独立服务的 REST API 接入，可只读查看客户、供应商、销售发票和采购发票摘要。
 - 一键验收覆盖构建、导入、表头模板、应收应付、风险复查、提成、确认单、月结锁账和前后端可用性。
 
 ## 技术栈
@@ -51,6 +52,20 @@ cd D:\Users\DELL\Documents\财务系统\cross-border-finance-mvp
 - 后端 API：http://localhost:4000/api
 - 健康检查：http://localhost:4000/api/health
 - 就绪检查：http://localhost:4000/api/health/ready?month=2026-06
+- ERPNext 工作台：http://localhost:5173/#/erpnext
+
+## ERPNext 接入
+
+ERPNext 以独立服务运行，XJD 后端使用官方 REST API 连接，不复制 ERPNext 的 GPLv3 前端代码。连接密钥只保存在后端环境变量：
+
+```text
+ERPNEXT_BASE_URL=https://erp.example.com
+ERPNEXT_API_KEY=your_api_key
+ERPNEXT_API_SECRET=your_api_secret
+ERPNEXT_TIMEOUT_MS=15000
+```
+
+详细部署、授权和许可边界见 [docs/erpnext-integration.md](docs/erpnext-integration.md)。
 
 ## 首次安装或数据库同步
 

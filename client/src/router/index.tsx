@@ -17,6 +17,7 @@ const Risks = lazy(() => import("../pages/Risks"));
 const ServiceConfirm = lazy(() => import("../pages/ServiceConfirm"));
 const Settings = lazy(() => import("../pages/Settings"));
 const SignatureConfirm = lazy(() => import("../pages/SignatureConfirm"));
+const Erpnext = lazy(() => import("../pages/Erpnext"));
 
 function page(element: ReactNode) {
   return <Suspense fallback={<div className="route-loading">正在加载页面...</div>}>{element}</Suspense>;
@@ -40,6 +41,7 @@ export const routes: RouteObject[] = [
       { path: "risks", element: page(<Risks />) },
       { path: "reports", element: page(<Reports />) },
       { path: "agent-rules", element: page(<AgentRules />) },
+      { path: "erpnext", element: page(<Erpnext />) },
       { path: "settings", element: page(<Settings />) }
     ]
   }

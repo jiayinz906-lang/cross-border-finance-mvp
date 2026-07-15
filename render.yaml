@@ -33,6 +33,14 @@ services:
         sync: false
       - key: DINGTALK_ROBOT_CODE
         sync: false
+      - key: ERPNEXT_BASE_URL
+        sync: false
+      - key: ERPNEXT_API_KEY
+        sync: false
+      - key: ERPNEXT_API_SECRET
+        sync: false
+      - key: ERPNEXT_TIMEOUT_MS
+        value: 15000
       - key: AUTH_TOKEN_SECRET
         generateValue: true
 

@@ -31,6 +31,7 @@ const menuItems: MenuProps["items"] = [
   { key: "/risks", icon: <MenuMark />, label: "风险复查" },
   { key: "/receivables", icon: <MenuMark />, label: "应收管理" },
   { key: "/payables", icon: <MenuMark />, label: "上游应付" },
+  { key: "/erpnext", icon: <MenuMark />, label: "ERPNext" },
   { key: "/settings", icon: <MenuMark />, label: "参数规则" }
 ];
 

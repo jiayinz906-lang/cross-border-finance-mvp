@@ -26,5 +26,9 @@ export const env = {
   dingtalkWebhookSecret: process.env.DINGTALK_WEBHOOK_SECRET?.trim() || "",
   dingtalkAppKey: process.env.DINGTALK_APP_KEY?.trim() || "",
   dingtalkAppSecret: process.env.DINGTALK_APP_SECRET?.trim() || "",
-  dingtalkRobotCode: process.env.DINGTALK_ROBOT_CODE?.trim() || ""
+  dingtalkRobotCode: process.env.DINGTALK_ROBOT_CODE?.trim() || "",
+  erpnextBaseUrl: (process.env.ERPNEXT_BASE_URL?.trim() || "").replace(/\/$/, ""),
+  erpnextApiKey: process.env.ERPNEXT_API_KEY?.trim() || "",
+  erpnextApiSecret: process.env.ERPNEXT_API_SECRET?.trim() || "",
+  erpnextTimeoutMs: Number(process.env.ERPNEXT_TIMEOUT_MS || 15000)
 };
