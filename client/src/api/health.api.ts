@@ -1,6 +1,6 @@
 import { request } from "./request";
 
-export function getReadiness(month = "2026-06") {
+export function getReadiness(month?: string) {
   return request.get("/health/ready", { params: { month } });
 }
 

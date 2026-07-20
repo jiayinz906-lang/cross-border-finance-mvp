@@ -20,9 +20,10 @@ function MenuMark() {
   return <span className="menu-mark" aria-hidden="true" />;
 }
 
-const menuItems: MenuProps["items"] = [
+const menuItemConfig = [
   { key: "/dashboard", icon: <MenuMark />, label: "经营总览" },
   { key: "/raw-entry", icon: <MenuMark />, label: "原始数据录入" },
+  { key: "/finance-operations", icon: <MenuMark />, label: "财务工作台", permission: "operations:read" },
   { key: "/profit-analysis", icon: <MenuMark />, label: "业务利润" },
   { key: "/commission", icon: <MenuMark />, label: "物流提成" },
   { key: "/service-confirm", icon: <MenuMark />, label: "注册提成" },
@@ -53,6 +54,9 @@ export function BasicLayout() {
   const isMobile = !screens.md;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { user, logout } = useAuth();
+  const menuItems: MenuProps["items"] = menuItemConfig
+    .filter((item) => !("permission" in item) || user?.auth?.permissions?.includes(item.permission!))
+    .map(({ permission: _permission, ...item }) => item);
 
   const handleNavigate: MenuProps["onClick"] = ({ key }) => {
     navigate(key);

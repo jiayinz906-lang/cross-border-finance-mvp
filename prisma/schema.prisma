@@ -73,6 +73,7 @@ model FinanceOrder {
   costAdjustments             CostAdjustment[]
   serviceBusinessRecords      ServiceBusinessRecord[]
   settlementRecords           SettlementRecord[]
+  invoices                    FinanceInvoice[]
 
   @@unique([month, orderNo])
   @@index([orderNo])
@@ -119,6 +120,7 @@ model SettlementRecord {
   voidedAt        DateTime?
   voidReason      String?
   createdAt       DateTime     @default(now())
+  invoiceAllocations FinanceInvoiceAllocation[]
 
   @@index([month, direction])
   @@index([financeOrderId, direction])
@@ -145,6 +147,150 @@ model RawLedgerLine {
   @@index([month, orderNo])
   @@index([importBatchId, rowIndex])
   @@unique([importBatchId, rowIndex])
+}
+
+model BusinessPartner {
+  id              Int      @id @default(autoincrement())
+  partnerCode     String   @unique
+  partnerType     String
+  name            String
+  taxNumber       String?
+  contactName     String?
+  contactPhone    String?
+  currency        String   @default("CNY")
+  creditLimit     Float    @default(0)
+  paymentTermDays Int      @default(30)
+  isActive        Boolean  @default(true)
+  source          String   @default("manual")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  invoices        FinanceInvoice[]
+  bankTransactions BankTransaction[]
+
+  @@index([partnerType, isActive])
+  @@index([name])
+}
+
+model FinanceInvoice {
+  id              Int      @id @default(autoincrement())
+  invoiceNo       String   @unique
+  month           String
+  invoiceType     String
+  partnerId       Int?
+  partner         BusinessPartner? @relation(fields: [partnerId], references: [id])
+  financeOrderId  Int?
+  financeOrder    FinanceOrder? @relation(fields: [financeOrderId], references: [id])
+  orderNo         String?
+  currency        String   @default("CNY")
+  exchangeRate    Float    @default(1)
+  originalAmount  Float    @default(0)
+  localAmount     Float    @default(0)
+  allocatedAmount Float    @default(0)
+  issuedAt        DateTime
+  dueAt           DateTime
+  status          String   @default("open")
+  source          String   @default("finance_order")
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  allocations     FinanceInvoiceAllocation[]
+  reconciliationMatches ReconciliationMatch[]
+
+  @@unique([month, invoiceType, financeOrderId])
+  @@index([month, invoiceType, status])
+  @@index([partnerId, dueAt])
+}
+
+model FinanceInvoiceAllocation {
+  id                 Int      @id @default(autoincrement())
+  invoiceId          Int
+  invoice             FinanceInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  settlementRecordId Int?
+  settlementRecord   SettlementRecord? @relation(fields: [settlementRecordId], references: [id])
+  bankTransactionId  Int?
+  bankTransaction    BankTransaction? @relation(fields: [bankTransactionId], references: [id])
+  amount             Float
+  status             String   @default("active")
+  createdBy          String   @default("finance")
+  createdAt          DateTime @default(now())
+
+  @@index([invoiceId, status])
+  @@index([settlementRecordId])
+  @@index([bankTransactionId])
+  @@unique([invoiceId, settlementRecordId])
+}
+
+model BankTransaction {
+  id              Int      @id @default(autoincrement())
+  transactionNo   String   @unique
+  month           String
+  transactionDate DateTime
+  direction       String
+  partnerId       Int?
+  partner         BusinessPartner? @relation(fields: [partnerId], references: [id])
+  manualLedgerEntryId Int? @unique
+  manualLedgerEntry ManualLedgerEntry? @relation(fields: [manualLedgerEntryId], references: [id])
+  counterparty    String
+  bankReference   String?
+  currency        String   @default("CNY")
+  exchangeRate    Float    @default(1)
+  originalAmount  Float
+  localAmount     Float
+  matchedAmount   Float    @default(0)
+  status          String   @default("unmatched")
+  source          String   @default("manual")
+  note            String?
+  createdBy       String   @default("finance")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  allocations     FinanceInvoiceAllocation[]
+  reconciliationMatches ReconciliationMatch[]
+
+  @@index([month, direction, status])
+  @@index([transactionDate])
+}
+
+model ReconciliationMatch {
+  id                Int      @id @default(autoincrement())
+  bankTransactionId Int
+  bankTransaction   BankTransaction @relation(fields: [bankTransactionId], references: [id], onDelete: Cascade)
+  invoiceId         Int
+  invoice           FinanceInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  suggestedAmount   Float
+  score             Float
+  matchReason       String
+  status            String   @default("suggested")
+  confirmedBy       String?
+  confirmedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([bankTransactionId, invoiceId])
+  @@index([status, score])
+}
+
+model WorkflowTask {
+  id          Int      @id @default(autoincrement())
+  sourceKey   String   @unique
+  month       String
+  taskType    String
+  entityType  String
+  entityId    String
+  title       String
+  description String?
+  ownerRole   String
+  ownerName   String?
+  priority    String   @default("normal")
+  status      String   @default("pending")
+  route       String?
+  dueAt       DateTime?
+  resolvedBy  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([month, status, priority])
+  @@index([ownerRole, ownerName, status])
 }
 
 model FinanceChargeLine {
@@ -422,6 +568,7 @@ model ManualLedgerEntry {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   attachments         LedgerAttachment[]
+  bankTransaction     BankTransaction?
 
   @@index([month, transactionDate])
   @@index([month, direction, status])

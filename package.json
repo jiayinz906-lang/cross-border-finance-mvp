@@ -20,6 +20,7 @@
     "verify:import": "tsx scripts/verify-import.ts",
     "verify:ui": "tsx scripts/verify-ui-smoke.ts",
     "verify:manual-ledger": "tsx scripts/verify-manual-ledger.ts",
+    "verify:finance-operations": "tsx scripts/verify-finance-operations.ts",
     "verify:operations": "tsx scripts/verify-operations.ts",
     "doctor": "tsx scripts/doctor.ts",
     "backup:system": "tsx scripts/export-system-backup.ts",
@@ -27,7 +28,7 @@
     "reset:business-data": "tsx scripts/reset-business-data.ts",
     "prisma:generate": "prisma generate",
     "prisma:prepare-import-archive": "prisma db execute --file prisma/import-archive-schema.sql --schema prisma/schema.prisma",
-    "prisma:deploy": "prisma generate && pnpm prisma:prepare-import-archive && prisma db push",
+    "prisma:deploy": "prisma generate && tsx scripts/deploy-prisma-schema.ts && pnpm prisma:prepare-import-archive",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:seed": "tsx prisma/seed.ts"
   },

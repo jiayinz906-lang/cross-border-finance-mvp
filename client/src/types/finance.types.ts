@@ -44,6 +44,7 @@ export type FinanceSummary = {
 
 export type BusinessSummary = {
   businessType: string;
+  category: "logistics" | "service";
   orderCount: number;
   receivable: number;
   payable: number;

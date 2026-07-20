@@ -1,5 +1,6 @@
 import type { FinanceOrder } from "@prisma/client";
 import { prisma } from "../prisma/client.js";
+import { resolveMonth } from "../utils/month.js";
 
 type CustomerRow = {
   customerName: string;
@@ -172,7 +173,8 @@ function operatorRows(operatorName: string, orders: FinanceOrder[], overrides: M
 }
 
 export const analyticsService = {
-  async customerProfit(month = "2026-06") {
+  async customerProfit(month?: string) {
+    month = resolveMonth(month);
     const orders = await prisma.financeOrder.findMany({ where: { month, isServiceBusiness: false } });
     const map = new Map<string, CustomerRow>();
     for (const order of orders) {
@@ -193,7 +195,8 @@ export const analyticsService = {
     };
   },
 
-  async operatorPerformance(month = "2026-06") {
+  async operatorPerformance(month?: string) {
+    month = resolveMonth(month);
     const overrides = await prisma.operatorPerformanceOverride.findMany({ where: { month } });
     const overrideMap = new Map<string, PerformanceOverride>(
       overrides.map((row) => [overrideKey(row.operatorName, row.category), row])
@@ -214,7 +217,8 @@ export const analyticsService = {
       .sort((a, b) => b.totalCommission - a.totalCommission);
   },
 
-  async operatorPerformanceWithSettings(month = "2026-06") {
+  async operatorPerformanceWithSettings(month?: string) {
+    month = resolveMonth(month);
     const [rows, setting] = await Promise.all([
       this.operatorPerformance(month),
       prisma.operatorPerformanceMonthSetting.findUnique({ where: { month } })

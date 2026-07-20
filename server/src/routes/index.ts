@@ -11,6 +11,7 @@ import { receivablesRoutes } from "./receivables.routes.js";
 import { reportsRoutes } from "./reports.routes.js";
 import { risksRoutes } from "./risks.routes.js";
 import { workflowRoutes } from "./workflow.routes.js";
+import { operationsRoutes } from "./operations.routes.js";
 
 export const routes = Router();
 
@@ -25,4 +26,5 @@ routes.use("/commissions", commissionsRoutes);
 routes.use("/risks", risksRoutes);
 routes.use("/reports", reportsRoutes);
 routes.use("/workflow", workflowRoutes);
+routes.use("/operations", operationsRoutes);
 routes.get("/agent/rules", agentRulesController);

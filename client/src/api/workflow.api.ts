@@ -65,23 +65,23 @@ export type ActionLogRow = {
   createdAt: string;
 };
 
-export function getDocuments(month = "2026-06", documentType?: string) {
+export function getDocuments(month?: string, documentType?: string) {
   return request.get("/workflow/documents", { params: { month, documentType } });
 }
 
-export function generateLogisticsDocuments(month = "2026-06") {
+export function generateLogisticsDocuments(month?: string) {
   return request.post("/workflow/documents/logistics/generate", { month });
 }
 
-export function generateServiceDocuments(month = "2026-06") {
+export function generateServiceDocuments(month?: string) {
   return request.post("/workflow/documents/service/generate", { month });
 }
 
-export function generateOperatorDocuments(month = "2026-06") {
+export function generateOperatorDocuments(month?: string) {
   return request.post("/workflow/documents/operator/generate", { month });
 }
 
-export function generateSalaryDocuments(month = "2026-06") {
+export function generateSalaryDocuments(month?: string) {
   return request.post("/workflow/documents/salary/generate", { month });
 }
 
@@ -135,7 +135,7 @@ export function voidDocument(id: number, voidReason: string) {
   return request.post(`/workflow/documents/${id}/void`, { voidReason });
 }
 
-export function createExportJob(exportType: string, fileFormat = "xlsx", month = "2026-06", payload?: unknown) {
+export function createExportJob(exportType: string, fileFormat = "xlsx", month?: string, payload?: unknown) {
   return request.post("/workflow/exports", { month, exportType, fileFormat, payload });
 }
 
@@ -163,7 +163,8 @@ export function downloadSystemBackup(month?: string) {
   return downloadAuthenticatedFile("/workflow/backup/export", month ? `${month}-system-backup.xlsx` : "xjd-finance-system-backup.xlsx", month ? { month } : undefined);
 }
 
-export function monthlyReportExportUrl(month = "2026-06") {
+export function monthlyReportExportUrl(month?: string) {
+  month ??= new Date().toISOString().slice(0, 7);
   return `${request.defaults.baseURL}/reports/monthly/export?month=${encodeURIComponent(month)}`;
 }
 
@@ -180,23 +181,23 @@ export function confirmServiceRecord(id: number, finalCommission: number) {
   return request.post(`/workflow/service-records/${id}/confirm`, { finalCommission });
 }
 
-export function confirmSalespersonCommission(salespersonName: string, month = "2026-06", manualRate?: number, adjustReason?: string) {
+export function confirmSalespersonCommission(salespersonName: string, month?: string, manualRate?: number, adjustReason?: string) {
   return request.post(`/workflow/commissions/${encodeURIComponent(salespersonName)}/confirm`, { month, manualRate, adjustReason });
 }
 
-export function getMonthCloseStatus(month = "2026-06") {
+export function getMonthCloseStatus(month?: string) {
   return request.get("/workflow/month-close", { params: { month } });
 }
 
-export function getMonthWorkflowStatus(month = "2026-06") {
+export function getMonthWorkflowStatus(month?: string) {
   return request.get<MonthWorkflowStatus>("/workflow/month-status", { params: { month } });
 }
 
-export function lockMonth(month = "2026-06", note?: string) {
+export function lockMonth(month?: string, note?: string) {
   return request.post("/workflow/month-close/lock", { month, note, operator: "主管" });
 }
 
-export function unlockMonth(month = "2026-06", note?: string) {
+export function unlockMonth(month?: string, note?: string) {
   return request.post("/workflow/month-close/unlock", { month, note, operator: "主管" });
 }
 

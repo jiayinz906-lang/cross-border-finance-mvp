@@ -46,5 +46,9 @@ export const env = {
   dingtalkWebhookSecret: process.env.DINGTALK_WEBHOOK_SECRET?.trim() || "",
   dingtalkAppKey: process.env.DINGTALK_APP_KEY?.trim() || "",
   dingtalkAppSecret: process.env.DINGTALK_APP_SECRET?.trim() || "",
-  dingtalkRobotCode: process.env.DINGTALK_ROBOT_CODE?.trim() || ""
+  dingtalkRobotCode: process.env.DINGTALK_ROBOT_CODE?.trim() || "",
+  bootstrapAdminUsername: process.env.BOOTSTRAP_ADMIN_USERNAME?.trim() || "admin",
+  bootstrapAdminDisplayName: process.env.BOOTSTRAP_ADMIN_DISPLAY_NAME?.trim() || "系统管理员",
+  bootstrapAdminPassword: process.env.BOOTSTRAP_ADMIN_PASSWORD || "",
+  enableLegacyDefaultUsers: nodeEnv !== "production" && process.env.ENABLE_LEGACY_DEFAULT_USERS === "true"
 };

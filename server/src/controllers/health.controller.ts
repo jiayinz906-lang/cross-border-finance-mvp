@@ -3,6 +3,7 @@ import { prisma } from "../prisma/client.js";
 import { env } from "../config/env.js";
 import { getOperationsSnapshot, recordOperationalError } from "../runtime/operations.js";
 import { currentIsoTimestamp } from "../utils/date.js";
+import { resolveMonth } from "../utils/month.js";
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string) {
   return new Promise<T>((resolve, reject) => {
@@ -52,7 +53,7 @@ export function healthController(_req: Request, res: Response) {
 }
 
 export async function readinessController(req: Request, res: Response) {
-  const month = typeof req.query.month === "string" ? req.query.month : "2026-06";
+  const month = resolveMonth(typeof req.query.month === "string" ? req.query.month : undefined);
   const checks = {
     database: false,
     importTemplate: false,

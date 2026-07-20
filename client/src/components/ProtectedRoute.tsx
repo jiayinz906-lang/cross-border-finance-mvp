@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useSelectedMonth } from "../contexts/MonthContext";
 
 export function ProtectedRoute() {
-  const { token, ready } = useAuth();
+  const { token, user, ready } = useAuth();
   const month = useSelectedMonth();
   const location = useLocation();
 
@@ -13,6 +13,9 @@ export function ProtectedRoute() {
   }
   if (!token) {
     return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
+  }
+  if (user?.mustChangePassword && location.pathname !== "/settings") {
+    return <Navigate to="/settings" replace state={{ passwordChangeRequired: true }} />;
   }
   return <Outlet />;
 }

@@ -2976,3 +2976,70 @@ body {
     height: 240px;
   }
 }
+/* Unified finance operations workspace */
+.finance-operations-page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.operations-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.operations-header h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+}
+
+.operations-header p,
+.muted-cell {
+  margin: 0;
+  color: #71809a;
+}
+
+.operations-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.operations-stat-grid .ant-card,
+.operations-main-card {
+  border-radius: 6px;
+}
+
+.operations-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.operations-main-card .ant-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.match-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+@media (max-width: 1100px) {
+  .operations-stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 767px) {
+  .operations-header { align-items: flex-start; }
+  .operations-header h1 { font-size: 22px; }
+  .operations-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .operations-stat-grid .ant-statistic-content { font-size: 20px; }
+  .operations-main-card .ant-card-body { padding: 12px; }
+}

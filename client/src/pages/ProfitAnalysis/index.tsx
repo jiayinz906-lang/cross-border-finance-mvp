@@ -26,14 +26,8 @@ type ProfitSplit = {
   note: string;
 };
 
-const serviceKeywords = ["注册", "证书", "店铺", "商标", "注销", "EAC"];
-
-function isServiceType(type: string) {
-  return serviceKeywords.some((keyword) => type.includes(keyword));
-}
-
-function commissionBasis(type: string) {
-  return isServiceType(type) ? "主管确认提成" : "物流阶梯提成";
+function commissionBasis(category: BusinessSummary["category"]) {
+  return category === "service" ? "主管确认提成" : "物流阶梯提成";
 }
 
 function toPlainMoney(value?: number | null) {
@@ -64,8 +58,8 @@ export default function ProfitAnalysis() {
 
   const summary = data?.summary;
   const businessRows = data?.businessSummary ?? [];
-  const logisticsRows = businessRows.filter((item) => !isServiceType(item.businessType));
-  const serviceRows = businessRows.filter((item) => isServiceType(item.businessType));
+  const logisticsRows = businessRows.filter((item) => item.category === "logistics");
+  const serviceRows = businessRows.filter((item) => item.category === "service");
 
   function sumRows(rows: BusinessSummary[]) {
     const receivable = rows.reduce((sum, item) => sum + item.receivable, 0);
@@ -158,9 +152,9 @@ export default function ProfitAnalysis() {
       title: "分类",
       dataIndex: "businessType",
       width: 120,
-      render: (type: string) => (
-        <Tag bordered={false} color={isServiceType(type) ? "purple" : "blue"}>
-          {isServiceType(type) ? "注册/服务" : "物流"}
+      render: (_type: string, row) => (
+        <Tag bordered={false} color={row.category === "service" ? "purple" : "blue"}>
+          {row.category === "service" ? "注册/服务" : "物流"}
         </Tag>
       )
     },
@@ -170,7 +164,7 @@ export default function ProfitAnalysis() {
     { title: "调整后应付", dataIndex: "payable", align: "right", render: toPlainMoney },
     { title: "调整后毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
     { title: "毛利率", dataIndex: "grossProfitRate", align: "right", render: formatPercent },
-    { title: "提成口径", dataIndex: "businessType", render: commissionBasis }
+    { title: "提成口径", dataIndex: "category", render: commissionBasis }
   ];
 
   return (
@@ -178,10 +172,10 @@ export default function ProfitAnalysis() {
       <header className="profit-hero">
         <div>
           <h1>{selectedMonth} 跨境物流财务管理</h1>
-          <p>基于 6月数据 Excel 汇总，统一汇率、倒推成本、物流提成和风险复核口径。</p>
+          <p>基于当前选择月份的有效导入批次汇总，统一财务、提成和风险复核口径。</p>
         </div>
         <Space size={12} wrap>
-          <div className="profit-source">数据源：<b>6月数据 Excel</b></div>
+          <div className="profit-source">数据源：<b>{selectedMonth} 数据库</b></div>
           <Button type="primary" className="profit-month-btn">{selectedMonth}</Button>
           <Button className="profit-print-btn" onClick={() => window.print()}>打印 / 导出 PDF</Button>
           <Button onClick={loadData}>刷新</Button>
@@ -238,7 +232,7 @@ export default function ProfitAnalysis() {
       >
         {showBusinessSummary ? (
           <Table
-            rowKey="businessType"
+            rowKey={(row) => `${row.category}:${row.businessType}`}
             loading={loading}
             columns={columns}
             dataSource={businessRows}

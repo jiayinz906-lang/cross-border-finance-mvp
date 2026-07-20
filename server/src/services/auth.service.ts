@@ -15,6 +15,7 @@ type TokenPayload = {
   displayName: string;
   role: UserRole;
   mustChangePassword: boolean;
+  iat: number;
   exp: number;
 };
 
@@ -25,7 +26,7 @@ type UserInput = {
   password: string;
 };
 
-const defaultUsers: UserInput[] = [
+const legacyDefaultUsers: UserInput[] = [
   { username: "admin", displayName: "系统管理员", role: "admin", password: "admin123" },
   { username: "finance", displayName: "财务", role: "finance", password: "finance123" },
   { username: "supervisor", displayName: "主管", role: "supervisor", password: "supervisor123" },
@@ -87,6 +88,7 @@ function createSession(user: AppUser) {
     displayName: user.displayName,
     role,
     mustChangePassword: user.mustChangePassword,
+    iat: Date.now(),
     exp: Date.now() + tokenTtlMs
   };
   return {
@@ -103,15 +105,34 @@ export function parseAuthToken(token?: string | null): TokenPayload | null {
   if (!body || !signature || sign(body) !== signature) return null;
   try {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as TokenPayload;
-    if (!payload.exp || payload.exp < Date.now()) return null;
+    if (!payload.iat || !payload.exp || payload.exp < Date.now()) return null;
     return { ...payload, role: resolveRole(payload.role), mustChangePassword: Boolean(payload.mustChangePassword) };
   } catch {
     return null;
   }
 }
 
-async function ensureDefaultUsers() {
-  for (const user of defaultUsers) {
+async function ensureBootstrapUsers() {
+  if (await prisma.appUser.count()) return;
+  const users: UserInput[] = env.enableLegacyDefaultUsers
+    ? legacyDefaultUsers
+    : env.bootstrapAdminPassword
+      ? [{
+          username: env.bootstrapAdminUsername,
+          displayName: env.bootstrapAdminDisplayName,
+          role: "admin",
+          password: env.bootstrapAdminPassword
+        }]
+      : [];
+  if (!users.length) {
+    throw new AppError(
+      503,
+      "ADMIN_BOOTSTRAP_REQUIRED",
+      "系统尚未创建管理员账号，请先在后端配置 BOOTSTRAP_ADMIN_PASSWORD 后重启服务。"
+    );
+  }
+  for (const user of users) {
+    validatePassword(user.password);
     const existing = await prisma.appUser.findUnique({ where: { username: user.username } });
     if (existing) continue;
     const password = makePassword(user.password);
@@ -128,6 +149,15 @@ async function ensureDefaultUsers() {
   }
 }
 
+export async function verifyAuthToken(token?: string | null) {
+  const payload = parseAuthToken(token);
+  if (!payload) return null;
+  const user = await prisma.appUser.findUnique({ where: { id: payload.sub } });
+  if (!user || !user.isActive || user.username !== payload.username) return null;
+  if (user.passwordChangedAt && user.passwordChangedAt.getTime() > payload.iat) return null;
+  return { payload, user, publicUser: publicUser(user) };
+}
+
 async function authLog(action: string, entityId: string, payload: unknown) {
   await prisma.actionLog.create({
     data: {
@@ -142,7 +172,7 @@ async function authLog(action: string, entityId: string, payload: unknown) {
 
 export const authService = {
   async login(username: string, password: string) {
-    await ensureDefaultUsers();
+    await ensureBootstrapUsers();
     const user = await prisma.appUser.findUnique({ where: { username } });
     if (!user || !user.isActive || hashPassword(password, user.passwordSalt) !== user.passwordHash) {
       await authLog("login_failed", username || "unknown", { username, reason: "invalid_credentials" });
@@ -158,15 +188,11 @@ export const authService = {
   },
 
   async context(token?: string | null) {
-    const payload = parseAuthToken(token);
-    if (!payload) return null;
-    const user = await prisma.appUser.findUnique({ where: { id: payload.sub } });
-    if (!user || !user.isActive) return null;
-    return publicUser(user);
+    return (await verifyAuthToken(token))?.publicUser ?? null;
   },
 
   async listUsers() {
-    await ensureDefaultUsers();
+    await ensureBootstrapUsers();
     const users = await prisma.appUser.findMany({ orderBy: [{ role: "asc" }, { username: "asc" }] });
     return users.map(publicUser);
   },

@@ -42,6 +42,11 @@ const steps: Step[] = [
     name: "Verify running frontend and API",
     command: pnpm,
     args: ["verify:ui"]
+  },
+  {
+    name: "Verify finance operations workspace",
+    command: pnpm,
+    args: ["verify:finance-operations"]
   }
 ];
 

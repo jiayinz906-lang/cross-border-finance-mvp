@@ -1,5 +1,27 @@
 # XJD Finance UI
 
+## 生产能力概览（2026-07）
+
+- 新增“财务工作台”：统一处理待办任务、客户/供应商主数据、应收应付账单和银行流水对账。
+- 账单由当前月份最新有效 Excel 批次自动同步，原始金额仍以 `RawLedgerLine` / `FinanceChargeLine` 为唯一追溯来源。
+- 图片流水和手工流水可自动进入银行流水池，通过金额与往来单位推荐匹配；确认匹配后复用现有收付款核销记录。
+- 客户、供应商、账单、流水和待办列表使用后端分页，避免数据量增长后一次加载全部记录。
+- 生产环境不再自动创建弱口令账号。空数据库首次启动前必须配置 `BOOTSTRAP_ADMIN_PASSWORD`，首次登录必须修改密码。
+- 数据库使用 Prisma 迁移。已有 PostgreSQL 首次部署会同步当前结构并登记迁移基线，之后只执行待发布迁移。
+
+生产环境至少配置：
+
+```env
+DATABASE_URL=<PostgreSQL connection string>
+AUTH_REQUIRE_TOKEN=true
+ALLOW_HEADER_ROLE=false
+AUTH_TOKEN_SECRET=<long random secret>
+BOOTSTRAP_ADMIN_USERNAME=admin
+BOOTSTRAP_ADMIN_DISPLAY_NAME=系统管理员
+BOOTSTRAP_ADMIN_PASSWORD=<strong initial password>
+ENABLE_LEGACY_DEFAULT_USERS=false
+```
+
 跨境物流 / 注册服务月度财务分析系统。系统把 Excel 原始台账导入数据库，并生成经营总览、业务利润、物流提成、注册确认、电子签名确认、操作员绩效、客户利润分析、风险复查、上游应付、参数规则和原始数据追溯。
 
 ## 当前能力

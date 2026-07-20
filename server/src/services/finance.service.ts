@@ -235,6 +235,7 @@ export const financeService = {
     const logisticsPayableTotal = payableDashboard.totals.totalPayable;
     const businessMap = new Map<string, {
       businessType: string;
+      category: "logistics" | "service";
       orderCount: number;
       receivable: number;
       payable: number;
@@ -271,8 +272,11 @@ export const financeService = {
     }
 
     for (const order of orders) {
-      const item = businessMap.get(order.businessType) ?? {
+      const category = order.isServiceBusiness ? "service" : "logistics";
+      const businessKey = `${category}:${order.businessType}`;
+      const item = businessMap.get(businessKey) ?? {
         businessType: order.businessType,
+        category,
         orderCount: 0,
         receivable: 0,
         payable: 0,
@@ -284,7 +288,7 @@ export const financeService = {
       item.payable += order.adjustedPayable;
       item.grossProfit += order.adjustedGrossProfit;
       if (!order.isServiceBusiness) item.logisticsProfit += order.adjustedGrossProfit;
-      businessMap.set(order.businessType, item);
+      businessMap.set(businessKey, item);
 
       if (!order.isServiceBusiness) {
         const salesperson = salespersonMap.get(order.salespersonName) ?? {

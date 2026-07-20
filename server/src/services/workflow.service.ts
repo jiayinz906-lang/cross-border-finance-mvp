@@ -4,6 +4,7 @@ import { prisma } from "../prisma/client.js";
 import { analyticsService } from "./analytics.service.js";
 import { env } from "../config/env.js";
 import { renderConfirmationPdf, renderConfirmationPng } from "./confirmation-renderer.js";
+import { resolveMonth } from "../utils/month.js";
 
 type DocumentType = "logistics_commission" | "service_commission" | "operator_performance" | "sales_salary" | "customer_service_salary";
 
@@ -17,7 +18,7 @@ type SignatureEvidenceInput = {
 };
 
 function monthOrDefault(month?: string) {
-  return month ?? "2026-06";
+  return resolveMonth(month);
 }
 
 function formatMonthLabel(month: string) {
@@ -1574,7 +1575,8 @@ startxref
     return record;
   },
 
-  async confirmSalespersonCommission(month = "2026-06", salespersonName: string, manualRate?: number, adjustReason?: string) {
+  async confirmSalespersonCommission(month: string | undefined, salespersonName: string, manualRate?: number, adjustReason?: string) {
+    month = resolveMonth(month);
     const reason = manualRate !== undefined
       ? requireReason(adjustReason, "Adjust reason is required when changing commission rate.")
       : undefined;

@@ -2,9 +2,21 @@ import type { NextFunction, Request, Response } from "express";
 import { can, resolveRole } from "../config/rbac.js";
 import type { Permission } from "../config/rbac.js";
 import { env } from "../config/env.js";
-import { parseAuthToken } from "../services/auth.service.js";
+import { parseAuthToken, verifyAuthToken } from "../services/auth.service.js";
+
+type AuthenticatedRequest = Request & {
+  financeAuth?: {
+    id: number;
+    username: string;
+    displayName: string;
+    role: ReturnType<typeof resolveRole>;
+    mustChangePassword: boolean;
+  };
+};
 
 export function currentRole(req: Request) {
+  const authenticated = (req as AuthenticatedRequest).financeAuth;
+  if (authenticated) return authenticated.role;
   const payload = parseAuthToken(req.header("authorization"));
   if (payload) return payload.role;
   if (!env.allowHeaderRole) return "sales";
@@ -12,6 +24,8 @@ export function currentRole(req: Request) {
 }
 
 export function currentUser(req: Request) {
+  const authenticated = (req as AuthenticatedRequest).financeAuth;
+  if (authenticated) return authenticated;
   const payload = parseAuthToken(req.header("authorization"));
   if (!payload) return null;
   return {
@@ -47,20 +61,38 @@ function isPublicRequest(req: Request) {
   return false;
 }
 
-export function requireAuthToken(req: Request, res: Response, next: NextFunction) {
+export async function requireAuthToken(req: Request, res: Response, next: NextFunction) {
   if (!env.authRequireToken || isPublicRequest(req)) {
     next();
     return;
   }
 
-  const payload = parseAuthToken(req.header("authorization"));
-  if (!payload) {
-    res.status(401).json({
-      message: "Please log in before accessing finance system data.",
-      code: "AUTH_TOKEN_REQUIRED"
-    });
-    return;
-  }
+  try {
+    const verified = await verifyAuthToken(req.header("authorization"));
+    if (!verified) {
+      res.status(401).json({
+        message: "登录状态已失效，请重新登录。",
+        code: "AUTH_TOKEN_REQUIRED"
+      });
+      return;
+    }
 
-  next();
+    (req as AuthenticatedRequest).financeAuth = {
+      id: verified.user.id,
+      username: verified.user.username,
+      displayName: verified.user.displayName,
+      role: resolveRole(verified.user.role),
+      mustChangePassword: verified.user.mustChangePassword
+    };
+    if (verified.user.mustChangePassword && !["/auth/me", "/auth/change-password"].includes(req.path)) {
+      res.status(403).json({
+        message: "首次登录必须先修改初始密码。",
+        code: "PASSWORD_CHANGE_REQUIRED"
+      });
+      return;
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
 }
