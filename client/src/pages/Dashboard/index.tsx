@@ -72,6 +72,7 @@ function MetricCard({ item }: { item: Kpi }) {
 }
 
 function TrendPanel({ data }: { data: MonthlyTrend[] }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const months = data.length ? data : [];
   const max = Math.max(...months.flatMap((item) => [item.receivable, item.payable, item.grossProfit]), 1);
   const width = 650;
@@ -79,6 +80,13 @@ function TrendPanel({ data }: { data: MonthlyTrend[] }) {
   const xAt = (index: number) => 42 + (index * (width - 78)) / Math.max(months.length - 1, 1);
   const yAt = (value: number) => height - 40 - (value / max) * 190;
   const line = (key: keyof MonthlyTrend) => months.map((item, index) => `${index === 0 ? "M" : "L"} ${xAt(index)} ${yAt(Number(item[key] ?? 0))}`).join(" ");
+  const activeMonth = activeIndex === null ? null : months[activeIndex];
+  const hoverBounds = (index: number) => {
+    const current = xAt(index);
+    const left = index === 0 ? 28 : (xAt(index - 1) + current) / 2;
+    const right = index === months.length - 1 ? width - 28 : (current + xAt(index + 1)) / 2;
+    return { left, width: Math.max(right - left, 1) };
+  };
 
   return (
     <Card className="overview-card" title="月度经营趋势图（近12个月）">
@@ -88,20 +96,71 @@ function TrendPanel({ data }: { data: MonthlyTrend[] }) {
         <span><i className="legend-orange" />调整后毛利（元）</span>
         <span><i className="legend-purple" />毛利率（%）</span>
       </div>
-      <svg className="overview-trend-svg" viewBox={`0 0 ${width} ${height}`}>
-        {[0, 1, 2, 3, 4].map((tick) => (
-          <line key={tick} x1="42" x2={width - 28} y1={35 + tick * 48} y2={35 + tick * 48} className="overview-grid" />
-        ))}
-        {months.map((item, index) => (
-          <g key={item.month}>
-            <rect x={xAt(index) - 7} y={yAt(item.payable)} width="14" height={height - 40 - yAt(item.payable)} rx="3" fill="#47bf95" opacity="0.78" />
-            <text x={xAt(index)} y={height - 14} textAnchor="middle" className="overview-axis">{item.month.slice(5)}</text>
-          </g>
-        ))}
-        <path d={line("receivable")} fill="none" stroke="#3769d7" strokeWidth="3" />
-        <path d={line("grossProfit")} fill="none" stroke="#f59a23" strokeWidth="3" />
-        <path d={line("grossProfitRate")} fill="none" stroke="#7567cc" strokeWidth="2.5" strokeDasharray="5 5" />
-      </svg>
+      <div className="overview-trend-stage" onMouseLeave={() => setActiveIndex(null)}>
+        <svg className="overview-trend-svg" viewBox={`0 0 ${width} ${height}`}>
+          {[0, 1, 2, 3, 4].map((tick) => (
+            <line key={tick} x1="42" x2={width - 28} y1={35 + tick * 48} y2={35 + tick * 48} className="overview-grid" />
+          ))}
+          {activeIndex !== null ? (() => {
+            const bounds = hoverBounds(activeIndex);
+            return <rect x={bounds.left} y="22" width={bounds.width} height={height - 52} rx="6" className="overview-hover-column" />;
+          })() : null}
+          {months.map((item, index) => (
+            <g key={item.month} className={activeIndex !== null && activeIndex !== index ? "overview-month-dimmed" : ""}>
+              <rect x={xAt(index) - 7} y={yAt(item.payable)} width="14" height={height - 40 - yAt(item.payable)} rx="3" className={activeIndex === index ? "overview-payable-bar is-active" : "overview-payable-bar"} />
+              <text x={xAt(index)} y={height - 14} textAnchor="middle" className={activeIndex === index ? "overview-axis is-active" : "overview-axis"}>{item.month.slice(5)}</text>
+            </g>
+          ))}
+          <path d={line("receivable")} fill="none" stroke="#3769d7" strokeWidth="3" />
+          <path d={line("grossProfit")} fill="none" stroke="#f59a23" strokeWidth="3" />
+          <path d={line("grossProfitRate")} fill="none" stroke="#7567cc" strokeWidth="2.5" strokeDasharray="5 5" />
+          {activeMonth && activeIndex !== null ? (
+            <g className="overview-active-points">
+              <circle cx={xAt(activeIndex)} cy={yAt(activeMonth.receivable)} r="6" fill="#3769d7" />
+              <circle cx={xAt(activeIndex)} cy={yAt(activeMonth.grossProfit)} r="6" fill="#f59a23" />
+              <circle cx={xAt(activeIndex)} cy={yAt(Number(activeMonth.grossProfitRate ?? 0))} r="5" fill="#7567cc" />
+            </g>
+          ) : null}
+          {months.map((item, index) => {
+            const bounds = hoverBounds(index);
+            return (
+              <rect
+                key={`hover-${item.month}`}
+                x={bounds.left}
+                y="20"
+                width={bounds.width}
+                height={height - 46}
+                fill="#fff"
+                fillOpacity="0.001"
+                className="overview-hover-target"
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseMove={() => setActiveIndex(index)}
+                onPointerEnter={() => setActiveIndex(index)}
+                onClick={() => setActiveIndex(index)}
+                onFocus={() => setActiveIndex(index)}
+                onBlur={() => setActiveIndex(null)}
+                tabIndex={0}
+                aria-label={`${item.month}经营数据`}
+              />
+            );
+          })}
+        </svg>
+        {activeMonth && activeIndex !== null ? (
+          <div
+            className="overview-trend-tooltip"
+            style={{
+              left: `${(xAt(activeIndex) / width) * 100}%`,
+              transform: activeIndex >= months.length / 2 ? "translateX(-100%)" : "translateX(0)"
+            }}
+          >
+            <strong>{activeMonth.month}</strong>
+            <span><i className="legend-blue" />总应收<b>{toMoney(activeMonth.receivable)}</b></span>
+            <span><i className="legend-green" />总应付<b>{toMoney(activeMonth.payable)}</b></span>
+            <span><i className="legend-orange" />调整后毛利<b>{toMoney(activeMonth.grossProfit)}</b></span>
+            <span><i className="legend-purple" />毛利率<b>{formatPercent(activeMonth.grossProfitRate)}</b></span>
+          </div>
+        ) : null}
+      </div>
     </Card>
   );
 }
