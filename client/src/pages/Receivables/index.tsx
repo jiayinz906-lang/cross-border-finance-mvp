@@ -1,8 +1,10 @@
-import { Alert, Button, Card, Col, DatePicker, Input, InputNumber, Modal, Popconfirm, Row, Segmented, Space, Statistic, Table, Tag, message } from "antd";
+import { DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Col, DatePicker, Input, InputNumber, Modal, Popconfirm, Progress, Row, Segmented, Select, Space, Statistic, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState } from "react";
 import { getChargeLines } from "../../api/finance.api";
-import { getReceivables, getReceiptRecords, recordReceipt, voidReceipt } from "../../api/receivables.api";
+import { exportReceivables, getReceivables, getReceiptRecords, recordReceipt, voidReceipt } from "../../api/receivables.api";
+import { BillingStatusTag, type BillingStatus } from "../../components/BillingStatusTag";
 import { OrderNoPopup } from "../../components/OrderNoPopup";
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
@@ -33,20 +35,33 @@ export default function Receivables() {
   const [receiptNote, setReceiptNote] = useState("");
   const [searchText, setSearchText] = useState("");
   const [quickFilter, setQuickFilter] = useState<"all" | "outstanding" | "overdue" | "aging90">("all");
+  const [statusFilter, setStatusFilter] = useState<BillingStatus | "all">("all");
+  const [dateRange, setDateRange] = useState<[string, string] | null>(null);
+  const [filterResetKey, setFilterResetKey] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [savingReceipt, setSavingReceipt] = useState(false);
   const [chargeLines, setChargeLines] = useState<Record<string, FinanceChargeLine[]>>({});
   const [loadingChargeOrder, setLoadingChargeOrder] = useState<string | null>(null);
   const { selectedMonth } = useSelectedMonth();
 
-  const loadData = () => {
-    Promise.all([
-      getReceivables(selectedMonth),
-      getReceiptRecords(selectedMonth)
-    ]).then(([receivableRes, settlementRes]) => {
+  const loadData = async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const [receivableRes, settlementRes] = await Promise.all([
+        getReceivables(selectedMonth),
+        getReceiptRecords(selectedMonth)
+      ]);
       setData(receivableRes.data);
       setSettlements(settlementRes.data.rows ?? []);
       setChargeLines({});
-    });
+    } catch {
+      setLoadError("应收账单加载失败，请检查后端服务或登录状态后重试。");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -69,9 +84,12 @@ export default function Receivables() {
         (quickFilter === "outstanding" && row.outstandingReceivable > 0) ||
         (quickFilter === "overdue" && row.overdue) ||
         (quickFilter === "aging90" && row.agingBucket === "90+");
-      return matchedKeyword && matchedFilter;
+      const matchedStatus = statusFilter === "all" || row.billingStatus === statusFilter;
+      const orderDate = String(row.orderDate).slice(0, 10);
+      const matchedDate = !dateRange || (orderDate >= dateRange[0] && orderDate <= dateRange[1]);
+      return matchedKeyword && matchedFilter && matchedStatus && matchedDate;
     });
-  }, [quickFilter, rows, searchText]);
+  }, [dateRange, quickFilter, rows, searchText, statusFilter]);
   const topOverdueCustomer = data?.customerAging.find((item) => item.overdueOutstanding > 0);
   const customerColumns: ColumnsType<CustomerReceivableAging> = [
     { title: "客户", dataIndex: "customerName" },
@@ -87,14 +105,30 @@ export default function Receivables() {
     { title: "订单编号", dataIndex: "orderNo", fixed: "left", width: 150, render: (_, row) => <OrderNoPopup order={row} /> },
     { title: "原始订单号", dataIndex: "customerOrderNo", width: 150, render: (value) => value || "-" },
     { title: "客户", dataIndex: "customerName", width: 160 },
+    { title: "日期", dataIndex: "orderDate", width: 110, render: (value) => String(value).slice(0, 10) },
     { title: "业务类型", dataIndex: "businessType", width: 150 },
+    { title: "销售代表", dataIndex: "salespersonName", width: 100 },
     { title: "应收金额", dataIndex: "adjustedReceivable", align: "right", render: formatMoney },
+    { title: "已登记回款", dataIndex: "registeredReceiptAmount", align: "right", render: formatMoney },
     { title: "已回款", dataIndex: "receivedAmount", align: "right", render: formatMoney },
-    { title: "未回款", dataIndex: "outstandingReceivable", align: "right", render: formatMoney },
+    {
+      title: "剩余未回款/需退款",
+      width: 160,
+      align: "right",
+      render: (_, row) => row.refundableReceiptAmount > 0
+        ? <Tag color="orange">需退款 {formatMoney(row.refundableReceiptAmount)}</Tag>
+        : formatMoney(row.outstandingReceivable)
+    },
+    {
+      title: "结算进度",
+      dataIndex: "settlementRate",
+      width: 150,
+      render: (value, row) => <Progress percent={Math.round(Number(value) * 100)} size="small" status={row.billingStatus === "refund_due" ? "exception" : undefined} />
+    },
     { title: "账龄", dataIndex: "agingDays", width: 90, align: "right", render: (value) => `${value}天` },
     { title: "账龄段", dataIndex: "agingBucket", width: 100, render: (value) => <Tag color={value === "90+" ? "red" : value === "61-90" ? "orange" : "blue"}>{value}</Tag> },
     { title: "风险", dataIndex: "overdue", width: 100, render: (value) => value ? <Tag color="red">逾期</Tag> : <Tag color="green">正常</Tag> },
-    { title: "状态", dataIndex: "receivableStatus", width: 110, render: (value) => <Tag>{value}</Tag> },
+    { title: "结算状态", dataIndex: "billingStatus", width: 120, render: (value) => <BillingStatusTag status={value} /> },
     {
       title: "操作",
       fixed: "right",
@@ -115,6 +149,26 @@ export default function Receivables() {
       )
     }
   ];
+
+  const resetFilters = () => {
+    setSearchText("");
+    setQuickFilter("all");
+    setStatusFilter("all");
+    setDateRange(null);
+    setFilterResetKey((value) => value + 1);
+  };
+
+  const downloadBills = async () => {
+    setExporting(true);
+    try {
+      await exportReceivables(selectedMonth);
+      message.success("客户应收账单已导出");
+    } catch {
+      message.error("账单导出失败，请检查登录权限或后端服务");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const chargeColumns: ColumnsType<FinanceChargeLine> = [
     { title: "Excel行", dataIndex: "rowIndex", width: 80 },
@@ -200,6 +254,8 @@ export default function Receivables() {
     <>
       <PageHeader title="应收管理" description="按订单编号追踪客户应收、回款状态和未回款金额。" />
 
+      {loadError ? <Alert type="error" showIcon message={loadError} action={<Button size="small" onClick={() => void loadData()}>重试</Button>} style={{ marginBottom: 16 }} /> : null}
+
       <Alert
         type={data?.totals.overdueOutstanding ? "warning" : "success"}
         showIcon
@@ -233,6 +289,7 @@ export default function Receivables() {
           size="small"
           dataSource={data?.customerAging ?? []}
           columns={customerColumns}
+          loading={loading}
           pagination={{ pageSize: 6 }}
           scroll={{ x: 900 }}
         />
@@ -260,11 +317,30 @@ export default function Receivables() {
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
           />
+          <Select
+            value={statusFilter}
+            style={{ width: 140 }}
+            onChange={setStatusFilter}
+            options={[
+              { label: "全部结算状态", value: "all" },
+              { label: "待结算", value: "unsettled" },
+              { label: "部分结算", value: "partial" },
+              { label: "已结清", value: "settled" },
+              { label: "待退款/冲销", value: "refund_due" }
+            ]}
+          />
+          <DatePicker.RangePicker
+            key={filterResetKey}
+            onChange={(_, values) => setDateRange(values[0] && values[1] ? [values[0], values[1]] : null)}
+          />
+          <Button icon={<ReloadOutlined />} onClick={resetFilters}>重置</Button>
+          <Button type="primary" icon={<DownloadOutlined />} loading={exporting} onClick={() => void downloadBills()}>导出账单</Button>
         </Space>
         <Table
           rowKey="id"
           dataSource={filteredRows}
           columns={detailColumns}
+          loading={loading}
           expandable={{
             expandedRowRender: (row) => (
               <Table
@@ -281,7 +357,7 @@ export default function Receivables() {
               if (expanded) void loadChargeLines(row.orderNo);
             }
           }}
-          scroll={{ x: 1480 }}
+          scroll={{ x: 2050 }}
         />
       </Card>
 

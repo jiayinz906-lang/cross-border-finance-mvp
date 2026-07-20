@@ -3,7 +3,12 @@ import type { FinanceOrder } from "./finance.types";
 export type AgingBucket = "0-30" | "31-60" | "61-90" | "90+";
 
 export type PayableRow = FinanceOrder & {
+  registeredPaymentAmount: number;
   outstandingPayable: number;
+  refundablePaymentAmount: number;
+  settlementRate: number;
+  billingStatus: "unsettled" | "partial" | "settled" | "refund_due";
+  supplierNames: string[];
   agingDays: number;
   agingBucket: AgingBucket;
   overdue: boolean;
@@ -15,6 +20,7 @@ export type SupplierPayableAging = {
   payable: number;
   paid: number;
   outstanding: number;
+  refundAmount: number;
   overdueOutstanding: number;
   maxAgingDays: number;
 };
@@ -25,7 +31,9 @@ export type PayableResponse = {
   totals: {
     totalPayable: number;
     totalPaid: number;
+    totalRegistered: number;
     totalOutstanding: number;
+    totalRefund: number;
     overdueOutstanding: number;
     overdueOrderCount: number;
   };

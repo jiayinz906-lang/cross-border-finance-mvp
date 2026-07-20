@@ -1,7 +1,12 @@
 import { request } from "./request";
+import { downloadAuthenticatedFile } from "./download";
 
 export function getReceivables(month?: string) {
   return request.get("/receivables", month ? { params: { month } } : undefined);
+}
+
+export function exportReceivables(month: string) {
+  return downloadAuthenticatedFile("/receivables/export", `${month}-customer-receivables.xlsx`, { month });
 }
 
 export function recordReceipt(orderId: number, data: { amount: number; settledAt?: string; operator?: string; note?: string }) {

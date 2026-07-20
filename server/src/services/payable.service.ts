@@ -1,9 +1,10 @@
 import { payableRepository } from "../repositories/payable.repository.js";
 import { financeRepository } from "../repositories/finance.repository.js";
 import { prisma } from "../prisma/client.js";
+import * as XLSX from "xlsx";
 
 type AgingBucket = "0-30" | "31-60" | "61-90" | "90+";
-type CanonicalLine = Record<string, unknown>;
+type BillingStatus = "unsettled" | "partial" | "settled" | "refund_due";
 
 type SupplierAccumulator = {
   supplierName: string;
@@ -11,6 +12,7 @@ type SupplierAccumulator = {
   payable: number;
   paid: number;
   outstanding: number;
+  refundAmount: number;
   overdueOutstanding: number;
   maxAgingDays: number;
 };
@@ -32,54 +34,62 @@ function bucket(days: number): AgingBucket {
   return "90+";
 }
 
-function parseCanonical(raw?: string | null): CanonicalLine {
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed as CanonicalLine : {};
-  } catch {
-    return {};
+function settlementSnapshot(total: number, persistedAmount: number, records: Array<{ amount: number }>) {
+  const recordedAmount = records.reduce((sum, record) => sum + record.amount, 0);
+  const registeredAmount = Math.max(persistedAmount, recordedAmount);
+  const settledAmount = Math.min(total, registeredAmount);
+  const outstandingAmount = Math.max(0, total - registeredAmount);
+  const refundAmount = Math.max(0, registeredAmount - total);
+  const settlementRate = total > 0 ? Math.min(1, settledAmount / total) : 0;
+  const billingStatus: BillingStatus = refundAmount > 0
+    ? "refund_due"
+    : outstandingAmount <= 0
+      ? "settled"
+      : settledAmount > 0
+        ? "partial"
+        : "unsettled";
+
+  return { registeredAmount, settledAmount, outstandingAmount, refundAmount, settlementRate, billingStatus };
+}
+
+function statusLabel(status: BillingStatus) {
+  if (status === "settled") return "已结清";
+  if (status === "partial") return "部分付款";
+  if (status === "refund_due") return "待退款/冲销";
+  return "待付款";
+}
+
+function addSupplierAmount(
+  supplierMap: Map<string, SupplierAccumulator>,
+  input: {
+    supplierName: string;
+    orderNo: string;
+    payable: number;
+    paid: number;
+    agingDays: number;
   }
-}
-
-function text(value: unknown) {
-  return String(value ?? "").trim();
-}
-
-function number(value: unknown) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const normalized = String(value ?? "")
-    .replace(/,/g, "")
-    .replace(/￥|¥|元|RMB|CNY/gi, "")
-    .trim();
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function isPayableDirection(value: string) {
-  const direction = value.toLowerCase();
-  return direction.includes("应付") || direction.includes("payable") || direction === "付";
-}
-
-function isCompensationFee(value: string) {
-  return value.includes("赔付") || value.includes("赔偿") || value.toLowerCase().includes("compensation");
-}
-
-function payableAmountFromRawLine(canonical: CanonicalLine) {
-  const direction = text(canonical.direction);
-  if (!isPayableDirection(direction)) return 0;
-
-  const convertedAmount = number(canonical.convertedAmount);
-  const localAmount = number(canonical.localAmount);
-  const originalAmount = number(canonical.amount);
-  const rawAmount = convertedAmount !== 0 ? convertedAmount : localAmount !== 0 ? localAmount : originalAmount;
-  if (rawAmount === 0) return 0;
-
-  const feeType = text(canonical.feeType);
-  if (convertedAmount !== 0 || isCompensationFee(feeType)) {
-    return -rawAmount;
-  }
-  return Math.abs(rawAmount);
+) {
+  const balance = input.payable - input.paid;
+  const outstanding = Math.max(0, balance);
+  const refundAmount = Math.max(0, -balance);
+  const supplier = supplierMap.get(input.supplierName) ?? {
+    supplierName: input.supplierName,
+    orderNos: new Set<string>(),
+    payable: 0,
+    paid: 0,
+    outstanding: 0,
+    refundAmount: 0,
+    overdueOutstanding: 0,
+    maxAgingDays: 0
+  };
+  supplier.orderNos.add(input.orderNo);
+  supplier.payable += input.payable;
+  supplier.paid += input.paid;
+  supplier.outstanding += outstanding;
+  supplier.refundAmount += refundAmount;
+  supplier.overdueOutstanding += input.agingDays > 30 ? outstanding : 0;
+  supplier.maxAgingDays = Math.max(supplier.maxAgingDays, input.agingDays);
+  supplierMap.set(input.supplierName, supplier);
 }
 
 export const payableService = {
@@ -89,72 +99,83 @@ export const payableService = {
     const asOfDate = monthEnd(selectedMonth);
     const agingBuckets: Record<AgingBucket, number> = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
     const supplierMap = new Map<string, SupplierAccumulator>();
-    const orderByNo = new Map(rows.map((order) => [order.orderNo, order]));
+
+    const activeBatch = selectedMonth
+      ? await prisma.importBatch.findFirst({
+        where: { month: selectedMonth, status: "active" },
+        orderBy: { id: "desc" }
+      })
+      : null;
+    const chargeLines = activeBatch && rows.length
+      ? await prisma.financeChargeLine.findMany({
+        where: {
+          importBatchId: activeBatch.id,
+          isServiceBusiness: false,
+          direction: { contains: "应付" },
+          orderNo: { in: rows.map((order) => order.orderNo) }
+        },
+        orderBy: [{ orderNo: "asc" }, { rowIndex: "asc" }]
+      })
+      : [];
+    const chargesByOrder = new Map<string, typeof chargeLines>();
+    for (const line of chargeLines) {
+      const list = chargesByOrder.get(line.orderNo) ?? [];
+      list.push(line);
+      chargesByOrder.set(line.orderNo, list);
+    }
 
     const enrichedRows = rows.map((order) => {
-      const outstanding = Math.max(0, order.adjustedPayable - order.paidAmount);
+      const { settlementRecords, ...financeOrder } = order;
+      const settlement = settlementSnapshot(order.adjustedPayable, order.paidAmount, settlementRecords);
       const agingDays = daysBetween(order.orderDate, asOfDate);
       const agingBucket = bucket(agingDays);
-      agingBuckets[agingBucket] += outstanding;
+      agingBuckets[agingBucket] += settlement.outstandingAmount;
+
+      const supplierAmounts = new Map<string, number>();
+      for (const line of chargesByOrder.get(order.orderNo) ?? []) {
+        const supplierName = line.supplierName?.trim() || "未指定供应商";
+        supplierAmounts.set(supplierName, (supplierAmounts.get(supplierName) ?? 0) + line.localAmount);
+      }
+      if (!supplierAmounts.size) {
+        supplierAmounts.set(order.supplierName?.trim() || "未指定供应商", order.adjustedPayable);
+      }
+
+      const positivePayableBasis = Array.from(supplierAmounts.values())
+        .reduce((sum, amount) => sum + Math.max(0, amount), 0);
+      for (const [supplierName, payable] of supplierAmounts.entries()) {
+        const paid = positivePayableBasis > 0
+          ? settlement.settledAmount * (Math.max(0, payable) / positivePayableBasis)
+          : 0;
+        addSupplierAmount(supplierMap, {
+          supplierName,
+          orderNo: order.orderNo,
+          payable,
+          paid,
+          agingDays
+        });
+      }
 
       return {
-        ...order,
-        outstandingPayable: outstanding,
+        ...financeOrder,
+        supplierName: Array.from(supplierAmounts.keys()).join("、"),
+        supplierNames: Array.from(supplierAmounts.keys()),
+        paidAmount: settlement.settledAmount,
+        registeredPaymentAmount: settlement.registeredAmount,
+        outstandingPayable: settlement.outstandingAmount,
+        refundablePaymentAmount: settlement.refundAmount,
+        settlementRate: settlement.settlementRate,
+        billingStatus: settlement.billingStatus,
         agingDays,
         agingBucket,
-        overdue: outstanding > 0 && agingDays > 30
+        overdue: settlement.outstandingAmount > 0 && agingDays > 30
       };
     });
 
-    if (selectedMonth && rows.length > 0) {
-      const activeBatch = await prisma.importBatch.findFirst({
-        where: { month: selectedMonth, status: "active" },
-        orderBy: { id: "desc" }
-      });
-
-      const rawLines = activeBatch
-        ? await prisma.rawLedgerLine.findMany({
-          where: {
-            importBatchId: activeBatch.id,
-            parseStatus: "parsed",
-            orderNo: { in: rows.map((order) => order.orderNo) }
-          },
-          orderBy: { rowIndex: "asc" }
-        })
-        : [];
-
-      for (const rawLine of rawLines) {
-        if (!rawLine.orderNo) continue;
-        const order = orderByNo.get(rawLine.orderNo);
-        if (!order) continue;
-
-        const canonical = parseCanonical(rawLine.canonicalJson);
-        const payableAmount = payableAmountFromRawLine(canonical);
-        if (payableAmount === 0) continue;
-
-        const supplierName = text(canonical.supplier) || "未指定供应商";
-        const agingDays = daysBetween(order.orderDate, asOfDate);
-        const supplier = supplierMap.get(supplierName) ?? {
-          supplierName,
-          orderNos: new Set<string>(),
-          payable: 0,
-          paid: 0,
-          outstanding: 0,
-          overdueOutstanding: 0,
-          maxAgingDays: 0
-        };
-        supplier.orderNos.add(order.orderNo);
-        supplier.payable += payableAmount;
-        supplier.outstanding += payableAmount;
-        supplier.overdueOutstanding += agingDays > 30 ? payableAmount : 0;
-        supplier.maxAgingDays = Math.max(supplier.maxAgingDays, agingDays);
-        supplierMap.set(supplierName, supplier);
-      }
-    }
-
     const totalPayable = enrichedRows.reduce((sum, order) => sum + order.adjustedPayable, 0);
     const totalPaid = enrichedRows.reduce((sum, order) => sum + order.paidAmount, 0);
+    const totalRegistered = enrichedRows.reduce((sum, order) => sum + order.registeredPaymentAmount, 0);
     const totalOutstanding = enrichedRows.reduce((sum, order) => sum + order.outstandingPayable, 0);
+    const totalRefund = enrichedRows.reduce((sum, order) => sum + order.refundablePaymentAmount, 0);
 
     return {
       month: selectedMonth,
@@ -162,7 +183,9 @@ export const payableService = {
       totals: {
         totalPayable,
         totalPaid,
+        totalRegistered,
         totalOutstanding,
+        totalRefund,
         overdueOutstanding: enrichedRows.filter((order) => order.overdue).reduce((sum, order) => sum + order.outstandingPayable, 0),
         overdueOrderCount: enrichedRows.filter((order) => order.overdue).length
       },
@@ -174,11 +197,39 @@ export const payableService = {
           payable: supplier.payable,
           paid: supplier.paid,
           outstanding: supplier.outstanding,
+          refundAmount: supplier.refundAmount,
           overdueOutstanding: supplier.overdueOutstanding,
           maxAgingDays: supplier.maxAgingDays
         }))
         .sort((a, b) => b.outstanding - a.outstanding),
       rows: enrichedRows
+    };
+  },
+
+  async exportPayables(month?: string) {
+    const result = await payableService.listPayables(month);
+    const rows = result.rows.map((row) => ({
+      供应商: row.supplierName || "未指定供应商",
+      系统订单号: row.orderNo,
+      原始订单号: row.customerOrderNo || "-",
+      业务类型: row.businessType,
+      销售代表: row.salespersonName,
+      订单日期: new Date(row.orderDate).toISOString().slice(0, 10),
+      应付金额: row.adjustedPayable,
+      已登记付款: row.registeredPaymentAmount,
+      已核销付款: row.paidAmount,
+      剩余未付款: row.outstandingPayable,
+      待退款或冲销: row.refundablePaymentAmount,
+      结算进度: `${(row.settlementRate * 100).toFixed(2)}%`,
+      结算状态: statusLabel(row.billingStatus),
+      账龄天数: row.agingDays,
+      账龄段: row.agingBucket
+    }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows.length ? rows : [{ 说明: "无应付账单" }]), "供应商应付账单");
+    return {
+      buffer: XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer,
+      fileName: `${result.month || "finance"}-supplier-payables.xlsx`
     };
   }
 };

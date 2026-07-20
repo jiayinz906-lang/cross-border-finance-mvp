@@ -6,6 +6,13 @@ export async function payablesController(req: Request, res: Response) {
   res.json(await payableService.listPayables(req.query.month as string | undefined));
 }
 
+export async function exportPayablesController(req: Request, res: Response) {
+  const file = await payableService.exportPayables(req.query.month as string | undefined);
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
+  res.send(file.buffer);
+}
+
 export async function recordPaymentController(req: Request, res: Response) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {

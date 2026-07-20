@@ -1,8 +1,10 @@
-import { Alert, Button, Card, Col, DatePicker, Input, InputNumber, Modal, Popconfirm, Row, Segmented, Space, Statistic, Table, Tag, message } from "antd";
+import { DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Col, DatePicker, Input, InputNumber, Modal, Popconfirm, Progress, Row, Segmented, Select, Space, Statistic, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState } from "react";
 import { getChargeLines } from "../../api/finance.api";
-import { getPayables, getPaymentRecords, recordPayment, voidPayment } from "../../api/payables.api";
+import { exportPayables, getPayables, getPaymentRecords, recordPayment, voidPayment } from "../../api/payables.api";
+import { BillingStatusTag, type BillingStatus } from "../../components/BillingStatusTag";
 import { OrderNoPopup } from "../../components/OrderNoPopup";
 import { PageHeader } from "../../components/PageHeader";
 import { useSelectedMonth } from "../../contexts/MonthContext";
@@ -33,20 +35,33 @@ export default function Payables() {
   const [paymentNote, setPaymentNote] = useState("");
   const [searchText, setSearchText] = useState("");
   const [quickFilter, setQuickFilter] = useState<"all" | "outstanding" | "overdue" | "aging90">("all");
+  const [statusFilter, setStatusFilter] = useState<BillingStatus | "all">("all");
+  const [dateRange, setDateRange] = useState<[string, string] | null>(null);
+  const [filterResetKey, setFilterResetKey] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
   const [chargeLines, setChargeLines] = useState<Record<string, FinanceChargeLine[]>>({});
   const [loadingChargeOrder, setLoadingChargeOrder] = useState<string | null>(null);
   const { selectedMonth } = useSelectedMonth();
 
-  const loadData = () => {
-    Promise.all([
-      getPayables(selectedMonth),
-      getPaymentRecords(selectedMonth)
-    ]).then(([payableRes, settlementRes]) => {
+  const loadData = async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const [payableRes, settlementRes] = await Promise.all([
+        getPayables(selectedMonth),
+        getPaymentRecords(selectedMonth)
+      ]);
       setData(payableRes.data);
       setSettlements(settlementRes.data.rows ?? []);
       setChargeLines({});
-    });
+    } catch {
+      setLoadError("供应商应付账单加载失败，请检查后端服务或登录状态后重试。");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -69,9 +84,12 @@ export default function Payables() {
         (quickFilter === "outstanding" && row.outstandingPayable > 0) ||
         (quickFilter === "overdue" && row.overdue) ||
         (quickFilter === "aging90" && row.agingBucket === "90+");
-      return matchedKeyword && matchedFilter;
+      const matchedStatus = statusFilter === "all" || row.billingStatus === statusFilter;
+      const orderDate = String(row.orderDate).slice(0, 10);
+      const matchedDate = !dateRange || (orderDate >= dateRange[0] && orderDate <= dateRange[1]);
+      return matchedKeyword && matchedFilter && matchedStatus && matchedDate;
     });
-  }, [quickFilter, rows, searchText]);
+  }, [dateRange, quickFilter, rows, searchText, statusFilter]);
   const topOverdueSupplier = data?.supplierAging.find((item) => item.overdueOutstanding > 0);
   const supplierColumns: ColumnsType<SupplierPayableAging> = [
     { title: "供应商", dataIndex: "supplierName" },
@@ -79,6 +97,7 @@ export default function Payables() {
     { title: "应付", dataIndex: "payable", align: "right", render: formatMoney },
     { title: "已付款", dataIndex: "paid", align: "right", render: formatMoney },
     { title: "未付款", dataIndex: "outstanding", align: "right", render: formatMoney },
+    { title: "待退款/冲销", dataIndex: "refundAmount", align: "right", render: (value) => Number(value) > 0 ? <Tag color="orange">{formatMoney(value)}</Tag> : "-" },
     { title: "逾期未付款", dataIndex: "overdueOutstanding", align: "right", render: formatMoney },
     { title: "最大账龄", dataIndex: "maxAgingDays", width: 100, align: "right", render: (value) => `${value}天` }
   ];
@@ -87,14 +106,30 @@ export default function Payables() {
     { title: "订单编号", dataIndex: "orderNo", fixed: "left", width: 150, render: (_, row) => <OrderNoPopup order={row} /> },
     { title: "原始订单号", dataIndex: "customerOrderNo", width: 150, render: (value) => value || "-" },
     { title: "供应商", dataIndex: "supplierName", width: 160, render: (value) => value || "未指定供应商" },
+    { title: "日期", dataIndex: "orderDate", width: 110, render: (value) => String(value).slice(0, 10) },
     { title: "业务类型", dataIndex: "businessType", width: 150 },
+    { title: "销售代表", dataIndex: "salespersonName", width: 100 },
     { title: "应付金额", dataIndex: "adjustedPayable", align: "right", render: formatMoney },
+    { title: "已登记付款", dataIndex: "registeredPaymentAmount", align: "right", render: formatMoney },
     { title: "已付款", dataIndex: "paidAmount", align: "right", render: formatMoney },
-    { title: "未付款", dataIndex: "outstandingPayable", align: "right", render: formatMoney },
+    {
+      title: "剩余未付款/待冲销",
+      width: 160,
+      align: "right",
+      render: (_, row) => row.refundablePaymentAmount > 0
+        ? <Tag color="orange">待冲销 {formatMoney(row.refundablePaymentAmount)}</Tag>
+        : formatMoney(row.outstandingPayable)
+    },
+    {
+      title: "结算进度",
+      dataIndex: "settlementRate",
+      width: 150,
+      render: (value, row) => <Progress percent={Math.round(Number(value) * 100)} size="small" status={row.billingStatus === "refund_due" ? "exception" : undefined} />
+    },
     { title: "账龄", dataIndex: "agingDays", width: 90, align: "right", render: (value) => `${value}天` },
     { title: "账龄段", dataIndex: "agingBucket", width: 100, render: (value) => <Tag color={value === "90+" ? "red" : value === "61-90" ? "orange" : "blue"}>{value}</Tag> },
     { title: "风险", dataIndex: "overdue", width: 100, render: (value) => value ? <Tag color="red">逾期</Tag> : <Tag color="green">正常</Tag> },
-    { title: "状态", dataIndex: "payableStatus", width: 110, render: (value) => <Tag>{value}</Tag> },
+    { title: "结算状态", dataIndex: "billingStatus", width: 120, render: (value) => <BillingStatusTag status={value} /> },
     {
       title: "操作",
       fixed: "right",
@@ -115,6 +150,26 @@ export default function Payables() {
       )
     }
   ];
+
+  const resetFilters = () => {
+    setSearchText("");
+    setQuickFilter("all");
+    setStatusFilter("all");
+    setDateRange(null);
+    setFilterResetKey((value) => value + 1);
+  };
+
+  const downloadBills = async () => {
+    setExporting(true);
+    try {
+      await exportPayables(selectedMonth);
+      message.success("供应商应付账单已导出");
+    } catch {
+      message.error("账单导出失败，请检查登录权限或后端服务");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const chargeColumns: ColumnsType<FinanceChargeLine> = [
     { title: "Excel行", dataIndex: "rowIndex", width: 80 },
@@ -200,6 +255,8 @@ export default function Payables() {
     <>
       <PageHeader title="上游应付" description="按订单编号追踪供应商应付、付款状态和未付款金额。" />
 
+      {loadError ? <Alert type="error" showIcon message={loadError} action={<Button size="small" onClick={() => void loadData()}>重试</Button>} style={{ marginBottom: 16 }} /> : null}
+
       <Alert
         type="info"
         showIcon
@@ -241,6 +298,7 @@ export default function Payables() {
           size="small"
           dataSource={data?.supplierAging ?? []}
           columns={supplierColumns}
+          loading={loading}
           pagination={{ pageSize: 6 }}
           scroll={{ x: 900 }}
         />
@@ -268,11 +326,30 @@ export default function Payables() {
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
           />
+          <Select
+            value={statusFilter}
+            style={{ width: 140 }}
+            onChange={setStatusFilter}
+            options={[
+              { label: "全部结算状态", value: "all" },
+              { label: "待结算", value: "unsettled" },
+              { label: "部分结算", value: "partial" },
+              { label: "已结清", value: "settled" },
+              { label: "待退款/冲销", value: "refund_due" }
+            ]}
+          />
+          <DatePicker.RangePicker
+            key={filterResetKey}
+            onChange={(_, values) => setDateRange(values[0] && values[1] ? [values[0], values[1]] : null)}
+          />
+          <Button icon={<ReloadOutlined />} onClick={resetFilters}>重置</Button>
+          <Button type="primary" icon={<DownloadOutlined />} loading={exporting} onClick={() => void downloadBills()}>导出账单</Button>
         </Space>
         <Table
           rowKey="id"
           dataSource={filteredRows}
           columns={detailColumns}
+          loading={loading}
           expandable={{
             expandedRowRender: (row) => (
               <Table
@@ -289,7 +366,7 @@ export default function Payables() {
               if (expanded) void loadChargeLines(row.orderNo);
             }
           }}
-          scroll={{ x: 1480 }}
+          scroll={{ x: 2050 }}
         />
       </Card>
 

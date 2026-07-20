@@ -373,9 +373,11 @@ async function verifySalaryDocuments(checks: Check[], month: string) {
 }
 
 async function verifyAging(checks: Check[], month: string) {
-  const [receivables, payables] = await Promise.all([
+  const [receivables, payables, receivableExport, payableExport] = await Promise.all([
     receivableService.listReceivables(month),
-    payableService.listPayables(month)
+    payableService.listPayables(month),
+    receivableService.exportReceivables(month),
+    payableService.exportPayables(month)
   ]);
   const receivableOutstanding = receivables.rows.reduce((sum, row) => sum + row.outstandingReceivable, 0);
   const receivableBuckets = Object.values(receivables.agingBuckets).reduce((sum, value) => sum + value, 0);
@@ -391,6 +393,8 @@ async function verifyAging(checks: Check[], month: string) {
   assertCheck(checks, "Payable supplier aging generated", payables.supplierAging.length > 0, String(payables.supplierAging.length));
   assertCheck(checks, "Payable outstanding matches rows", closeEnough(payables.totals.totalOutstanding, payableOutstanding), `${payables.totals.totalOutstanding} / ${payableOutstanding}`);
   assertCheck(checks, "Payable buckets match outstanding", closeEnough(payableBuckets, payableOutstanding), `${payableBuckets} / ${payableOutstanding}`);
+  assertCheck(checks, "Receivable bill export returns xlsx", receivableExport.fileName.endsWith(".xlsx") && receivableExport.buffer.length > 1000, `${receivableExport.fileName} / ${receivableExport.buffer.length}`);
+  assertCheck(checks, "Payable bill export returns xlsx", payableExport.fileName.endsWith(".xlsx") && payableExport.buffer.length > 1000, `${payableExport.fileName} / ${payableExport.buffer.length}`);
 }
 
 async function verifySettlements(checks: Check[], month: string) {
@@ -432,8 +436,10 @@ async function verifySettlements(checks: Check[], month: string) {
 
   const receivableRow = receivables.rows.find((row) => row.id === order.id);
   const payableRow = payables.rows.find((row) => row.id === order.id);
+  const supplierPaid = payables.supplierAging.reduce((sum, supplier) => sum + supplier.paid, 0);
   assertCheck(checks, "Receivable aging reflects receipt", closeEnough(receivableRow?.outstandingReceivable ?? 0, order.adjustedReceivable - 100), `${receivableRow?.outstandingReceivable}`);
   assertCheck(checks, "Payable aging reflects payment", closeEnough(payableRow?.outstandingPayable ?? 0, order.adjustedPayable - 80), `${payableRow?.outstandingPayable}`);
+  assertCheck(checks, "Supplier summary reflects payment allocation", closeEnough(supplierPaid, 80), String(supplierPaid));
   assertCheck(checks, "Settlement action logs written", logs.some((log) => log.action === "record_receipt") && logs.some((log) => log.action === "record_payment"), logs.map((log) => log.action).join(","));
 
   await settlementService.voidReceipt(receipt.record.id, {

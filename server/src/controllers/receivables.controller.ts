@@ -6,6 +6,13 @@ export async function receivablesController(req: Request, res: Response) {
   res.json(await receivableService.listReceivables(req.query.month as string | undefined));
 }
 
+export async function exportReceivablesController(req: Request, res: Response) {
+  const file = await receivableService.exportReceivables(req.query.month as string | undefined);
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
+  res.send(file.buffer);
+}
+
 export async function recordReceiptController(req: Request, res: Response) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {

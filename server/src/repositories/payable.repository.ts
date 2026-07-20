@@ -4,6 +4,12 @@ export const payableRepository = {
   listPayables(month?: string) {
     return prisma.financeOrder.findMany({
       where: { adjustedPayable: { gt: 0 }, isServiceBusiness: false, ...(month ? { month } : {}) },
+      include: {
+        settlementRecords: {
+          where: { direction: "payable", status: "active" },
+          select: { amount: true }
+        }
+      },
       orderBy: { orderNo: "asc" }
     });
   }
