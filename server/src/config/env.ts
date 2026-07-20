@@ -35,6 +35,7 @@ export const env = {
   authRequireToken,
   allowHeaderRole,
   uploadMaxMb: positiveNumber(process.env.UPLOAD_MAX_MB, 25, "UPLOAD_MAX_MB"),
+  imageUploadMaxMb: positiveNumber(process.env.IMAGE_UPLOAD_MAX_MB, 10, "IMAGE_UPLOAD_MAX_MB"),
   healthDbTimeoutMs: positiveNumber(process.env.HEALTH_DB_TIMEOUT_MS, 5000, "HEALTH_DB_TIMEOUT_MS"),
   slowRequestThresholdMs: positiveNumber(process.env.SLOW_REQUEST_THRESHOLD_MS, 2000, "SLOW_REQUEST_THRESHOLD_MS"),
   httpRequestTimeoutMs: positiveNumber(process.env.HTTP_REQUEST_TIMEOUT_MS, 120000, "HTTP_REQUEST_TIMEOUT_MS"),
@@ -45,9 +46,5 @@ export const env = {
   dingtalkWebhookSecret: process.env.DINGTALK_WEBHOOK_SECRET?.trim() || "",
   dingtalkAppKey: process.env.DINGTALK_APP_KEY?.trim() || "",
   dingtalkAppSecret: process.env.DINGTALK_APP_SECRET?.trim() || "",
-  dingtalkRobotCode: process.env.DINGTALK_ROBOT_CODE?.trim() || "",
-  erpnextBaseUrl: (process.env.ERPNEXT_BASE_URL?.trim() || "").replace(/\/$/, ""),
-  erpnextApiKey: process.env.ERPNEXT_API_KEY?.trim() || "",
-  erpnextApiSecret: process.env.ERPNEXT_API_SECRET?.trim() || "",
-  erpnextTimeoutMs: Number(process.env.ERPNEXT_TIMEOUT_MS || 15000)
+  dingtalkRobotCode: process.env.DINGTALK_ROBOT_CODE?.trim() || ""
 };

@@ -12,6 +12,8 @@ export async function resetBusinessData(operator: string, reason: string): Promi
     // Delete children before their parent orders and import batches. PostgreSQL
     // enforces these links, so this sequence is deliberate rather than parallel.
     const settlementRecords = await tx.settlementRecord.deleteMany();
+    const ledgerAttachments = await tx.ledgerAttachment.deleteMany();
+    const manualLedgerEntries = await tx.manualLedgerEntry.deleteMany();
     const serviceBusinessRecords = await tx.serviceBusinessRecord.deleteMany();
     const costAdjustments = await tx.costAdjustment.deleteMany();
     const riskRecords = await tx.riskRecord.deleteMany();
@@ -30,6 +32,8 @@ export async function resetBusinessData(operator: string, reason: string): Promi
 
     return {
       settlementRecords: settlementRecords.count,
+      ledgerAttachments: ledgerAttachments.count,
+      manualLedgerEntries: manualLedgerEntries.count,
       serviceBusinessRecords: serviceBusinessRecords.count,
       costAdjustments: costAdjustments.count,
       riskRecords: riskRecords.count,

@@ -343,10 +343,10 @@ export type OperationsStatus = {
     authRequired: boolean;
     headerRoleAllowed: boolean;
     uploadMaxMb: number;
+    imageUploadMaxMb: number;
     slowRequestThresholdMs: number;
     httpRequestTimeoutMs: number;
     dingtalkConfigured: boolean;
-    erpnextConfigured: boolean;
   };
 };
 

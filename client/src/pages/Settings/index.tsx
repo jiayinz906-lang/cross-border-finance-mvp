@@ -759,9 +759,9 @@ export default function Settings() {
               <Descriptions.Item label="进程内存">{operations?.runtime.memory.rssMb ?? "-"} MB</Descriptions.Item>
               <Descriptions.Item label="运行错误">{operations?.runtime.errors.total ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="Excel上传限制">{operations?.configuration.uploadMaxMb ?? "-"} MB</Descriptions.Item>
+              <Descriptions.Item label="图片上传限制">{operations?.configuration.imageUploadMaxMb ?? "-"} MB</Descriptions.Item>
               <Descriptions.Item label="请求超时">{operations ? `${Math.round(operations.configuration.httpRequestTimeoutMs / 1000)} 秒` : "-"}</Descriptions.Item>
               <Descriptions.Item label="钉钉通知">{operations ? configurationTag(operations.configuration.dingtalkConfigured) : "-"}</Descriptions.Item>
-              <Descriptions.Item label="ERPNext">{operations ? configurationTag(operations.configuration.erpnextConfigured) : "-"}</Descriptions.Item>
             </Descriptions>
             {readiness?.details?.error && <Alert type="error" showIcon message="就绪检查错误" description={readiness.details.error} />}
             {operations?.database?.error && <Alert type="error" showIcon message="数据库探针失败" description={operations.database.error} />}

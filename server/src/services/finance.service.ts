@@ -115,7 +115,7 @@ export const financeService = {
   },
 
   async listMonths() {
-    const [summaries, activeBatches] = await Promise.all([
+    const [summaries, activeBatches, manualMonths] = await Promise.all([
       financeRepository.listMonths(),
       prisma.importBatch.findMany({
         where: { status: "active" },
@@ -126,12 +126,20 @@ export const financeService = {
           totalGrossProfit: true
         },
         orderBy: { month: "desc" }
+      }),
+      prisma.manualLedgerEntry.findMany({
+        distinct: ["month"],
+        select: { month: true, updatedAt: true },
+        orderBy: [{ month: "desc" }, { updatedAt: "desc" }]
       })
     ]);
     const rows = new Map<string, { month: string; updatedAt: Date; totalReceivable: number; totalGrossProfit: number }>();
     for (const item of [...summaries, ...activeBatches]) {
       const current = rows.get(item.month);
       if (!current || item.updatedAt > current.updatedAt) rows.set(item.month, item);
+    }
+    for (const item of manualMonths) {
+      if (!rows.has(item.month)) rows.set(item.month, { month: item.month, updatedAt: item.updatedAt, totalReceivable: 0, totalGrossProfit: 0 });
     }
     return {
       rows: Array.from(rows.values()).sort((left, right) => right.month.localeCompare(left.month)).map((item) => ({

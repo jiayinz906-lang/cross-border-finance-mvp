@@ -23,6 +23,8 @@ services:
         value: https://jiayinz906-lang.github.io/cross-border-finance-mvp/
       - key: UPLOAD_MAX_MB
         value: 25
+      - key: IMAGE_UPLOAD_MAX_MB
+        value: 10
       - key: HEALTH_DB_TIMEOUT_MS
         value: 5000
       - key: SLOW_REQUEST_THRESHOLD_MS
@@ -41,14 +43,6 @@ services:
         sync: false
       - key: DINGTALK_ROBOT_CODE
         sync: false
-      - key: ERPNEXT_BASE_URL
-        sync: false
-      - key: ERPNEXT_API_KEY
-        sync: false
-      - key: ERPNEXT_API_SECRET
-        sync: false
-      - key: ERPNEXT_TIMEOUT_MS
-        value: 15000
       - key: AUTH_TOKEN_SECRET
         generateValue: true
 

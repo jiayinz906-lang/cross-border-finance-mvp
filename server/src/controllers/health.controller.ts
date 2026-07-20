@@ -137,10 +137,10 @@ export async function operationsController(_req: Request, res: Response) {
       authRequired: env.authRequireToken,
       headerRoleAllowed: env.allowHeaderRole,
       uploadMaxMb: env.uploadMaxMb,
+      imageUploadMaxMb: env.imageUploadMaxMb,
       slowRequestThresholdMs: env.slowRequestThresholdMs,
       httpRequestTimeoutMs: env.httpRequestTimeoutMs,
-      dingtalkConfigured: Boolean(env.dingtalkAppKey && env.dingtalkAppSecret && env.dingtalkRobotCode) || Boolean(env.dingtalkWebhookUrl),
-      erpnextConfigured: Boolean(env.erpnextBaseUrl && env.erpnextApiKey && env.erpnextApiSecret)
+      dingtalkConfigured: Boolean(env.dingtalkAppKey && env.dingtalkAppSecret && env.dingtalkRobotCode) || Boolean(env.dingtalkWebhookUrl)
     }
   });
 }

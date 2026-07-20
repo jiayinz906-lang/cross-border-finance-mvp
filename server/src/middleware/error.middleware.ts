@@ -27,7 +27,9 @@ export function errorMiddleware(error: Error, req: Request, res: Response, _next
   res.status(status).json({
     code,
     message: uploadTooLarge
-      ? `Excel 文件超过 ${env.uploadMaxMb}MB 上传限制，请压缩或拆分后重新导入。`
+      ? req.path.includes("manual-entries")
+        ? `图片超过 ${env.imageUploadMaxMb}MB 上传限制，请压缩后重新上传。`
+        : `Excel 文件超过 ${env.uploadMaxMb}MB 上传限制，请压缩或拆分后重新导入。`
       : status === 500 && env.nodeEnv === "production" ? "系统暂时无法完成该操作，请稍后重试。" : error.message,
     fieldErrors: error instanceof AppError ? error.fieldErrors : undefined,
     requestId

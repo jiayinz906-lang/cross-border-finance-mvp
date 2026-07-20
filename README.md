@@ -7,12 +7,12 @@
 - Excel 自动表头映射、导入预检、确认写入数据库。
 - 后台保存固定表头模板，只保存表头规范，不写入模板业务数据。
 - 原始 Excel 每一行写入 `RawLedgerLine`，订单汇总可追溯回原始台账。
+- 支持手工原始流水与图片凭证录入，图片直接持久化到 PostgreSQL，并保留确认、作废和操作审计。
 - 应收、应付、毛利、风险、提成按单票明细聚合。
 - 物流业务和注册 / 证书 / 店铺租赁等服务类业务分开核算。
 - 汇率严格按原始表格标注：人民币按 1，美金 / 美元 / USD / 汇率未出按 6.85，其余按表格标注。
 - 参数规则、导入批次、确认单、签名证据、操作日志和系统备份均写入数据库。
 - 员工个人确认单支持生成、签名 token、员工签收、主管确认和证据留存。
-- ERPNext 通过独立服务的 REST API 接入，可按月份只读查询客户、供应商、销售/采购发票、未结金额和收付款记录。
 - 一键验收覆盖构建、导入、表头模板、应收应付、风险复查、提成、确认单、月结锁账和前后端可用性。
 - 运行状态包含数据库延迟、请求耗时、慢请求、内存、最近错误和部署版本；日志使用请求 ID 串联且自动隐藏签名 token 与敏感配置。
 
@@ -50,24 +50,11 @@ cd D:\Users\DELL\Documents\财务系统\cross-border-finance-mvp
 
 - 前端网页：http://localhost:5173/
 - 经营总览：http://localhost:5173/#/dashboard
+- 原始数据录入：http://localhost:5173/#/raw-entry
 - 后端 API：http://localhost:4000/api
 - 健康检查：http://localhost:4000/api/health
 - 就绪检查：http://localhost:4000/api/health/ready?month=2026-06
 - 运维状态（登录后）：http://localhost:4000/api/health/status
-- ERPNext 工作台：http://localhost:5173/#/erpnext
-
-## ERPNext 接入
-
-ERPNext 以独立服务运行，XJD 后端使用官方 REST API 连接，不复制 ERPNext 的 GPLv3 前端代码。连接密钥只保存在后端环境变量：
-
-```text
-ERPNEXT_BASE_URL=https://erp.example.com
-ERPNEXT_API_KEY=your_api_key
-ERPNEXT_API_SECRET=your_api_secret
-ERPNEXT_TIMEOUT_MS=15000
-```
-
-详细部署、授权和许可边界见 [docs/erpnext-integration.md](docs/erpnext-integration.md)。
 
 ## 首次安装或数据库同步
 

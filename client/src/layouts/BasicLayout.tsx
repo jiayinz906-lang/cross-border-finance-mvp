@@ -22,6 +22,7 @@ function MenuMark() {
 
 const menuItems: MenuProps["items"] = [
   { key: "/dashboard", icon: <MenuMark />, label: "经营总览" },
+  { key: "/raw-entry", icon: <MenuMark />, label: "原始数据录入" },
   { key: "/profit-analysis", icon: <MenuMark />, label: "业务利润" },
   { key: "/commission", icon: <MenuMark />, label: "物流提成" },
   { key: "/service-confirm", icon: <MenuMark />, label: "注册提成" },
@@ -31,7 +32,6 @@ const menuItems: MenuProps["items"] = [
   { key: "/risks", icon: <MenuMark />, label: "风险复查" },
   { key: "/receivables", icon: <MenuMark />, label: "应收管理" },
   { key: "/payables", icon: <MenuMark />, label: "上游应付" },
-  { key: "/erpnext", icon: <MenuMark />, label: "ERPNext" },
   { key: "/settings", icon: <MenuMark />, label: "参数规则" }
 ];
 

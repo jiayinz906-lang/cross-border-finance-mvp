@@ -22,6 +22,14 @@ import {
   summaryController,
   updateParameterRuleController
 } from "../controllers/finance.controller.js";
+import {
+  confirmManualLedgerController,
+  createManualLedgerController,
+  listManualLedgerController,
+  manualLedgerAttachmentController,
+  manualLedgerSummaryController,
+  voidManualLedgerController
+} from "../controllers/manual-ledger.controller.js";
 
 export const financeRoutes = Router();
 const upload = multer({
@@ -31,6 +39,16 @@ const upload = multer({
     const validExtension = /\.(xlsx|xls)$/i.test(file.originalname);
     if (validExtension) callback(null, true);
     else callback(new Error("仅支持 .xlsx 或 .xls 文件。"));
+  }
+});
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: env.imageUploadMaxMb * 1024 * 1024, files: 6 },
+  fileFilter: (_req, file, callback) => {
+    const validExtension = /\.(jpe?g|png|webp)$/i.test(file.originalname);
+    const validMime = ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype);
+    if (validExtension && validMime) callback(null, true);
+    else callback(new Error("仅支持 JPG、PNG 或 WebP 图片。"));
   }
 });
 
@@ -46,6 +64,12 @@ financeRoutes.get("/import-batches", importBatchesController);
 financeRoutes.get("/import-batches/:id/source", importBatchSourceController);
 financeRoutes.get("/raw-ledger-lines", rawLedgerLinesController);
 financeRoutes.get("/charge-lines", chargeLinesController);
+financeRoutes.get("/manual-entries", listManualLedgerController);
+financeRoutes.get("/manual-entries/summary", manualLedgerSummaryController);
+financeRoutes.get("/manual-entries/:id/attachments/:attachmentId", manualLedgerAttachmentController);
+financeRoutes.post("/manual-entries", requirePermission("finance:import"), imageUpload.array("files", 6), createManualLedgerController);
+financeRoutes.post("/manual-entries/:id/confirm", requirePermission("finance:import"), confirmManualLedgerController);
+financeRoutes.post("/manual-entries/:id/void", requirePermission("finance:import"), voidManualLedgerController);
 financeRoutes.post("/import-preview", upload.single("file"), importPreviewController);
 financeRoutes.post("/import", requirePermission("finance:import"), upload.single("file"), importExcelController);
 financeRoutes.post("/import-template", requirePermission("finance:import"), upload.single("file"), importTemplateController);

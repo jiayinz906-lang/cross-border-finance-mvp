@@ -393,6 +393,57 @@ model ExportJob {
   @@index([month, exportType])
 }
 
+model ManualLedgerEntry {
+  id                  Int                @id @default(autoincrement())
+  entryNo             String             @unique
+  month               String
+  transactionDate     DateTime
+  sourceType          String             @default("manual")
+  direction           String
+  counterparty        String
+  originalAmount      Float
+  currency            String             @default("CNY")
+  exchangeRate        Float              @default(1)
+  localAmount         Float
+  businessType        String?
+  orderNo             String?
+  customerOrderNo     String?
+  salespersonName     String?
+  customerServiceName String?
+  supplierName        String?
+  note                String?
+  status              String             @default("draft")
+  createdBy           String
+  confirmedBy         String?
+  confirmedAt         DateTime?
+  voidedBy            String?
+  voidedAt            DateTime?
+  voidReason          String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  attachments         LedgerAttachment[]
+
+  @@index([month, transactionDate])
+  @@index([month, direction, status])
+  @@index([orderNo])
+  @@index([customerOrderNo])
+}
+
+model LedgerAttachment {
+  id          Int               @id @default(autoincrement())
+  entryId     Int
+  entry       ManualLedgerEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  fileName    String
+  contentType String
+  fileSize    Int
+  sha256      String
+  fileData    Bytes
+  createdAt   DateTime          @default(now())
+
+  @@index([entryId])
+  @@unique([entryId, sha256])
+}
+
 model ActionLog {
   id          Int      @id @default(autoincrement())
   month       String?
