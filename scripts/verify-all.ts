@@ -33,6 +33,11 @@ const steps: Step[] = [
     env: { DATABASE_URL: process.env.DATABASE_URL || defaultDatabaseUrl }
   },
   {
+    name: "Verify ERPNext read-only connector",
+    command: pnpm,
+    args: ["verify:erpnext"]
+  },
+  {
     name: "Verify running frontend and API",
     command: pnpm,
     args: ["verify:ui"]

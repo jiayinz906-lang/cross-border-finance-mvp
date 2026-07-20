@@ -19,6 +19,7 @@
     "verify:all": "tsx scripts/verify-all.ts",
     "verify:import": "tsx scripts/verify-import.ts",
     "verify:ui": "tsx scripts/verify-ui-smoke.ts",
+    "verify:erpnext": "tsx scripts/verify-erpnext.ts",
     "verify:operations": "tsx scripts/verify-operations.ts",
     "doctor": "tsx scripts/doctor.ts",
     "backup:system": "tsx scripts/export-system-backup.ts",

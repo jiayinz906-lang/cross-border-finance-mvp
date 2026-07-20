@@ -15,14 +15,16 @@ ERPNext 应作为独立服务部署。XJD Finance 仅通过 ERPNext/Frappe 的 R
 ## 当前能力
 
 - 测试 ERPNext API 连接和远程用户。
-- 查看 Customer、Supplier、Sales Invoice、Purchase Invoice 数量。
-- 查看最近十张销售发票和采购发票。
+- 按 XJD 当前月份查看 Customer、Supplier、Sales Invoice、Purchase Invoice、Payment Entry 数量。
+- 分页查询销售发票、采购发票、收付款记录、客户和供应商。
+- 按单据号、客户/供应商、结算状态、收付款类型筛选。
+- 查看总额、已结金额、未结金额、到期日和结算进度，并跳转 ERPNext 原始单据。
 - 全程只读，不会在 ERPNext 创建或修改单据。
 
 ## ERPNext 端配置
 
 1. 在 ERPNext 创建专用 API 用户，不要使用 Administrator。
-2. 只授予 Customer、Supplier、Sales Invoice、Purchase Invoice 的读取权限。
+2. 只授予 Customer、Supplier、Sales Invoice、Purchase Invoice、Payment Entry 的读取权限。
 3. 在该用户的 API Access 中生成 API Key 和 API Secret。
 4. 将 ERPNext 地址和密钥写入 XJD 后端环境变量。
 
@@ -38,6 +40,17 @@ ERPNEXT_TIMEOUT_MS=15000
 ```
 
 重启后端，然后访问 `http://localhost:5173/#/erpnext`。
+
+## 接口清单
+
+- `GET /api/integrations/erpnext/status`：配置状态，不返回密钥。
+- `POST /api/integrations/erpnext/test`：测试连接和响应时间。
+- `GET /api/integrations/erpnext/overview`：月份财务总览。
+- `GET /api/integrations/erpnext/invoices`：销售/采购发票分页查询。
+- `GET /api/integrations/erpnext/payments`：收付款记录分页查询。
+- `GET /api/integrations/erpnext/parties`：客户/供应商分页查询。
+
+以上接口均要求 XJD 登录和 `finance:read` 权限。
 
 ## Render 配置
 
