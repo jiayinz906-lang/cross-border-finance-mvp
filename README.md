@@ -14,6 +14,7 @@
 - 员工个人确认单支持生成、签名 token、员工签收、主管确认和证据留存。
 - ERPNext 通过独立服务的 REST API 接入，可只读查看客户、供应商、销售发票和采购发票摘要。
 - 一键验收覆盖构建、导入、表头模板、应收应付、风险复查、提成、确认单、月结锁账和前后端可用性。
+- 运行状态包含数据库延迟、请求耗时、慢请求、内存、最近错误和部署版本；日志使用请求 ID 串联且自动隐藏签名 token 与敏感配置。
 
 ## 技术栈
 
@@ -52,6 +53,7 @@ cd D:\Users\DELL\Documents\财务系统\cross-border-finance-mvp
 - 后端 API：http://localhost:4000/api
 - 健康检查：http://localhost:4000/api/health
 - 就绪检查：http://localhost:4000/api/health/ready?month=2026-06
+- 运维状态（登录后）：http://localhost:4000/api/health/status
 - ERPNext 工作台：http://localhost:5173/#/erpnext
 
 ## ERPNext 接入
@@ -161,8 +163,13 @@ pnpm backup:db
 pnpm verify:all
 pnpm verify:import
 pnpm verify:ui
+pnpm verify:operations
 pnpm prisma:deploy
 ```
+
+`pnpm verify:operations` 验证敏感信息脱敏、签名链接隐藏、请求耗时统计和错误计数。参数规则页的“系统运行与就绪状态”用于查看数据库延迟、P95 请求耗时、慢请求、内存和最近错误请求 ID。
+
+运行稳定性与运维设计参考了 MIT 许可的 [BaiLongma](https://github.com/xiaoyuanda666-ship-it/BaiLongma)，许可说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 系统备份
 

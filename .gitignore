@@ -12,3 +12,4 @@ outputs/
 .codex-server.err.log
 .codex-client.log
 .codex-client.err.log
+*.log

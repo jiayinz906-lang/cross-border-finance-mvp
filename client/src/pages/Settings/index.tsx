@@ -11,7 +11,7 @@ import {
   updateParameterRule
 } from "../../api/finance.api";
 import { downloadAuthenticatedFile } from "../../api/download";
-import { getReadiness } from "../../api/health.api";
+import { getOperationsStatus, getReadiness } from "../../api/health.api";
 import { changePassword, createUser, getNotificationStatus, getUsers, login, updateUser, type ManagedUser } from "../../api/auth.api";
 import {
   getActionLogs,
@@ -26,7 +26,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { MonthWorkflowStatus } from "../../components/MonthWorkflowStatus";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import { apiBaseUrl } from "../../api/request";
-import type { AuthContext, ImportBatch, ImportTemplate, ParameterRule, ReadinessStatus } from "../../types/finance.types";
+import type { AuthContext, ImportBatch, ImportTemplate, OperationsStatus, ParameterRule, ReadinessStatus } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -64,6 +64,20 @@ function readinessTag(value?: boolean) {
   return <Tag color="red">异常</Tag>;
 }
 
+function configurationTag(value?: boolean) {
+  if (value) return <Tag color="green">已配置</Tag>;
+  return <Tag color="orange">未配置</Tag>;
+}
+
+function formatUptime(seconds?: number) {
+  if (!Number.isFinite(seconds)) return "-";
+  const total = Math.max(0, Math.floor(seconds ?? 0));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return `${days ? `${days}天 ` : ""}${hours}小时 ${minutes}分钟`;
+}
+
 export default function Settings() {
   const { selectedMonth } = useSelectedMonth();
   const currentAccount = useAuth();
@@ -77,12 +91,14 @@ export default function Settings() {
   const [templates, setTemplates] = useState<ImportTemplate[]>([]);
   const [rules, setRules] = useState<ParameterRule[]>([]);
   const [readiness, setReadiness] = useState<ReadinessStatus | null>(null);
+  const [operations, setOperations] = useState<OperationsStatus | null>(null);
   const [monthClose, setMonthClose] = useState<MonthCloseStatus | null>(null);
   const [actionLogs, setActionLogs] = useState<ActionLogRow[]>([]);
   const [ruleDrafts, setRuleDrafts] = useState<RuleDraft>({});
   const [loading, setLoading] = useState(false);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [readinessLoading, setReadinessLoading] = useState(false);
+  const [operationsLoading, setOperationsLoading] = useState(false);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
   const [closeLoading, setCloseLoading] = useState(false);
@@ -182,6 +198,20 @@ export default function Settings() {
     }
   }, [selectedMonth]);
 
+  const loadOperations = useCallback(async () => {
+    setOperationsLoading(true);
+    try {
+      const res = await getOperationsStatus();
+      setOperations(res.data as OperationsStatus);
+    } catch (error: unknown) {
+      const data = (error as { response?: { data?: OperationsStatus } })?.response?.data;
+      if (data) setOperations(data);
+      else message.error("运行状态加载失败，请确认后端服务可用");
+    } finally {
+      setOperationsLoading(false);
+    }
+  }, []);
+
   const loadRules = useCallback(async () => {
     setRulesLoading(true);
     try {
@@ -242,6 +272,10 @@ export default function Settings() {
   useEffect(() => {
     loadReadiness();
   }, [loadReadiness]);
+
+  useEffect(() => {
+    loadOperations();
+  }, [loadOperations]);
 
   useEffect(() => {
     loadRules();
@@ -677,13 +711,23 @@ export default function Settings() {
           </Space>
         </Card>
 
-        <Card title={`系统就绪状态（${selectedMonth}）`} extra={<Button onClick={loadReadiness} loading={readinessLoading}>刷新就绪状态</Button>}>
+        <Card
+          title={`系统运行与就绪状态（${selectedMonth}）`}
+          extra={(
+            <Button
+              onClick={() => void Promise.all([loadReadiness(), loadOperations()])}
+              loading={readinessLoading || operationsLoading}
+            >
+              刷新运行状态
+            </Button>
+          )}
+        >
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Alert
-              type={readiness?.status === "ready" ? "success" : "warning"}
+              type={readiness?.status === "ready" && operations?.status === "healthy" ? "success" : "warning"}
               showIcon
-              message={readiness?.status === "ready" ? "系统已就绪，可以进行导入、分析和确认流程" : "系统未完全就绪，请检查下方异常项"}
-              description={`检查时间：${readiness?.timestamp ? String(readiness.timestamp).replace("T", " ").slice(0, 19) : "未获取"}；接口：/api/health/ready?month=${selectedMonth}`}
+              message={readiness?.status === "ready" && operations?.status === "healthy" ? "系统运行正常，可以进行导入、分析和确认流程" : "系统存在异常，请检查下方运行指标"}
+              description={`检查时间：${operations?.timestamp ? String(operations.timestamp).replace("T", " ").slice(0, 19) : "未获取"}；版本：${operations?.version ?? readiness?.details?.version ?? "-"}`}
             />
             <Descriptions bordered size="small" column={4}>
               <Descriptions.Item label="数据库">{readinessTag(readiness?.checks.database)}</Descriptions.Item>
@@ -692,6 +736,8 @@ export default function Settings() {
               <Descriptions.Item label="月度汇总">{readinessTag(readiness?.checks.financeSummary)}</Descriptions.Item>
               <Descriptions.Item label="运行环境">{readiness?.details?.environment ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="版本">{readiness?.details?.version ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="数据库延迟">{operations?.database?.latencyMs ?? readiness?.details?.databaseLatencyMs ?? "-"} ms</Descriptions.Item>
+              <Descriptions.Item label="连续运行">{formatUptime(operations?.runtime.uptimeSeconds ?? readiness?.details?.uptimeSeconds)}</Descriptions.Item>
               <Descriptions.Item label="模板数">{readiness?.details?.templateCount ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="规则数">{readiness?.details?.activeRuleCount ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="总应收">{money(readiness?.details?.summary?.totalReceivable)}</Descriptions.Item>
@@ -703,7 +749,30 @@ export default function Settings() {
                 {readiness?.details?.latestImportBatch?.createdAt ? String(readiness.details.latestImportBatch.createdAt).replace("T", " ").slice(0, 19) : "-"}
               </Descriptions.Item>
             </Descriptions>
+            <Descriptions bordered size="small" column={4} title="本进程运维指标">
+              <Descriptions.Item label="请求总数">{operations?.runtime.requests.total ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="当前请求">{operations?.runtime.requests.active ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="失败请求">{operations?.runtime.requests.failed ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="慢请求">{operations?.runtime.requests.slow ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="平均耗时">{operations?.runtime.requests.averageMs ?? "-"} ms</Descriptions.Item>
+              <Descriptions.Item label="P95耗时">{operations?.runtime.requests.p95Ms ?? "-"} ms</Descriptions.Item>
+              <Descriptions.Item label="进程内存">{operations?.runtime.memory.rssMb ?? "-"} MB</Descriptions.Item>
+              <Descriptions.Item label="运行错误">{operations?.runtime.errors.total ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="Excel上传限制">{operations?.configuration.uploadMaxMb ?? "-"} MB</Descriptions.Item>
+              <Descriptions.Item label="请求超时">{operations ? `${Math.round(operations.configuration.httpRequestTimeoutMs / 1000)} 秒` : "-"}</Descriptions.Item>
+              <Descriptions.Item label="钉钉通知">{operations ? configurationTag(operations.configuration.dingtalkConfigured) : "-"}</Descriptions.Item>
+              <Descriptions.Item label="ERPNext">{operations ? configurationTag(operations.configuration.erpnextConfigured) : "-"}</Descriptions.Item>
+            </Descriptions>
             {readiness?.details?.error && <Alert type="error" showIcon message="就绪检查错误" description={readiness.details.error} />}
+            {operations?.database?.error && <Alert type="error" showIcon message="数据库探针失败" description={operations.database.error} />}
+            {(operations?.runtime.errors.total ?? 0) > 0 && operations?.runtime.errors.recent?.[0] && (
+              <Alert
+                type="warning"
+                showIcon
+                message={`本次启动后记录到 ${operations.runtime.errors.total} 个运行错误`}
+                description={`最近错误：${operations.runtime.errors.recent[0].key}；${operations.runtime.errors.recent[0].message}；请求ID：${operations.runtime.errors.recent[0].requestId ?? "-"}`}
+              />
+            )}
           </Space>
         </Card>
 

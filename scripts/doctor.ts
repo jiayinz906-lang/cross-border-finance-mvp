@@ -103,6 +103,14 @@ async function main() {
   const hasImportBatch = Boolean(readiness.details?.latestImportBatch?.batchNo);
   push(checks, "Import batch state is valid", hasImportBatch || readiness.details?.latestImportBatch === null, JSON.stringify(readiness.details?.latestImportBatch));
 
+  const operations = await requestJson<{
+    status?: string;
+    database?: { ok?: boolean; latencyMs?: number };
+    configuration?: { authRequired?: boolean; headerRoleAllowed?: boolean };
+  }>(`${apiUrl}/health/status`, authHeaders);
+  push(checks, "Operational status is healthy", operations.status === "healthy" && operations.database?.ok === true, JSON.stringify(operations.database));
+  push(checks, "Authentication hardening is enabled", operations.configuration?.authRequired === true && operations.configuration?.headerRoleAllowed === false, JSON.stringify(operations.configuration));
+
   const templates = await requestJson<{ rows?: Array<{ templateKey: string; fileName: string; headerCount: number; headers: string[] }> }>(`${apiUrl}/finance/import-templates`, authHeaders);
   const systemTemplate = templates.rows?.find((row) => row.templateKey === "system_waybill_detail");
   push(checks, "System import template exists", Boolean(systemTemplate), templates.rows?.map((row) => row.templateKey).join(","));

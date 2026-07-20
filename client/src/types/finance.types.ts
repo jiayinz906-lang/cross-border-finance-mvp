@@ -284,6 +284,8 @@ export type ReadinessStatus = {
     month?: string;
     environment?: string;
     version?: string;
+    databaseLatencyMs?: number;
+    uptimeSeconds?: number;
     latestImportBatch?: {
       batchNo: string;
       fileName: string;
@@ -302,6 +304,49 @@ export type ReadinessStatus = {
       updatedAt: string;
     } | null;
     error?: string;
+  };
+};
+
+export type OperationsStatus = {
+  status: "healthy" | "degraded" | string;
+  service: string;
+  timestamp: string;
+  version: string;
+  environment: string;
+  database: {
+    ok: boolean;
+    latencyMs: number;
+    error?: string;
+  };
+  runtime: {
+    startedAt: string;
+    uptimeSeconds: number;
+    memory: { rssMb: number; heapUsedMb: number; heapTotalMb: number };
+    requests: {
+      total: number;
+      active: number;
+      failed: number;
+      slow: number;
+      averageMs: number;
+      p95Ms: number;
+      sampleSize: number;
+      lastRequestAt: string | null;
+      byStatus: Record<string, number>;
+    };
+    errors: {
+      total: number;
+      byKey: Record<string, { count: number; lastErrorAt: string; lastMessage: string }>;
+      recent: Array<{ timestamp: string; key: string; severity: "warn" | "error"; message: string; requestId?: string }>;
+    };
+  };
+  configuration: {
+    authRequired: boolean;
+    headerRoleAllowed: boolean;
+    uploadMaxMb: number;
+    slowRequestThresholdMs: number;
+    httpRequestTimeoutMs: number;
+    dingtalkConfigured: boolean;
+    erpnextConfigured: boolean;
   };
 };
 

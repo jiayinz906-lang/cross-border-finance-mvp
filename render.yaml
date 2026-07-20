@@ -21,6 +21,14 @@ services:
         value: https://jiayinz906-lang.github.io
       - key: PUBLIC_APP_URL
         value: https://jiayinz906-lang.github.io/cross-border-finance-mvp/
+      - key: UPLOAD_MAX_MB
+        value: 25
+      - key: HEALTH_DB_TIMEOUT_MS
+        value: 5000
+      - key: SLOW_REQUEST_THRESHOLD_MS
+        value: 2000
+      - key: HTTP_REQUEST_TIMEOUT_MS
+        value: 120000
       - key: WECOM_WEBHOOK_URL
         sync: false
       - key: DINGTALK_WEBHOOK_URL

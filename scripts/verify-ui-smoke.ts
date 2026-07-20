@@ -88,6 +88,16 @@ async function main() {
   push(checks, "Backend readiness is ok", readiness.status === "ready" && Object.values(readiness.checks ?? {}).every(Boolean), JSON.stringify(readiness.checks));
   push(checks, "Backend readiness includes latest import batch", Boolean(readiness.details?.latestImportBatch?.batchNo) && Number(readiness.details?.latestImportBatch?.importedOrders ?? 0) > 0, JSON.stringify(readiness.details?.latestImportBatch));
 
+  const operations = await requestJson<{
+    status?: string;
+    database?: { ok?: boolean; latencyMs?: number };
+    runtime?: { requests?: { total?: number; p95Ms?: number }; errors?: { total?: number } };
+    configuration?: { authRequired?: boolean; headerRoleAllowed?: boolean; uploadMaxMb?: number };
+  }>(`${apiUrl}/health/status`);
+  push(checks, "Operational status is healthy", operations.status === "healthy" && operations.database?.ok === true, JSON.stringify(operations.database));
+  push(checks, "Operational security settings are production-safe", operations.configuration?.authRequired === true && operations.configuration?.headerRoleAllowed === false, JSON.stringify(operations.configuration));
+  push(checks, "Operational request telemetry is available", Number(operations.runtime?.requests?.total ?? 0) > 0, JSON.stringify(operations.runtime?.requests));
+
   const templates = await requestJson<{ rows?: Array<{ templateKey: string; fileName: string; headerCount: number; headers: string[] }> }>(`${apiUrl}/finance/import-templates`);
   const systemTemplate = templates.rows?.find((row) => row.templateKey === "system_waybill_detail");
   push(checks, "Import template is stored", Boolean(systemTemplate), templates.rows?.map((row) => row.templateKey).join(","));

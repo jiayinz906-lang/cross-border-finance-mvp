@@ -33,7 +33,8 @@ export function importFinanceExcel(file: File, targetMonth?: string) {
   formData.append("file", file);
   if (targetMonth) formData.append("targetMonth", targetMonth);
   return request.post("/finance/import", formData, {
-    headers: { "Content-Type": "multipart/form-data" }
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000
   });
 }
 
@@ -42,7 +43,8 @@ export function previewFinanceExcel(file: File, targetMonth?: string) {
   formData.append("file", file);
   if (targetMonth) formData.append("targetMonth", targetMonth);
   return request.post("/finance/import-preview", formData, {
-    headers: { "Content-Type": "multipart/form-data" }
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000
   });
 }
 
@@ -50,7 +52,8 @@ export function importFinanceTemplate(file: File) {
   const formData = new FormData();
   formData.append("file", file);
   return request.post("/finance/import-template", formData, {
-    headers: { "Content-Type": "multipart/form-data" }
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000
   });
 }
 

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import { env } from "../config/env.js";
 import { requirePermission } from "../middleware/rbac.middleware.js";
 import {
   agentRulesController,
@@ -23,7 +24,15 @@ import {
 } from "../controllers/finance.controller.js";
 
 export const financeRoutes = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: env.uploadMaxMb * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    const validExtension = /\.(xlsx|xls)$/i.test(file.originalname);
+    if (validExtension) callback(null, true);
+    else callback(new Error("仅支持 .xlsx 或 .xls 文件。"));
+  }
+});
 
 financeRoutes.get("/ledger", listLedgerController);
 financeRoutes.get("/auth-context", authContextController);

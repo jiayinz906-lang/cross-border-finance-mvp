@@ -40,7 +40,7 @@ export function requirePermission(permission: Permission) {
 
 function isPublicRequest(req: Request) {
   if (req.method === "OPTIONS") return true;
-  if (req.path.startsWith("/health")) return true;
+  if (req.path === "/health" || req.path === "/health/ready") return true;
   if (req.method === "POST" && req.path === "/auth/login") return true;
   if (req.method === "GET" && /^\/workflow\/signature\/[^/]+$/.test(req.path)) return true;
   if (req.method === "POST" && /^\/workflow\/signature\/[^/]+\/sign$/.test(req.path)) return true;

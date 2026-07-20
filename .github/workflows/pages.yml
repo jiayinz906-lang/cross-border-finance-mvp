@@ -40,6 +40,9 @@ jobs:
       - name: Generate Prisma client
         run: pnpm prisma generate
 
+      - name: Verify operational stability helpers
+        run: pnpm verify:operations
+
       - name: Build server
         run: pnpm --filter cross-border-finance-server build
 
