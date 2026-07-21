@@ -20,6 +20,7 @@ RUN pnpm prisma:generate
 
 FROM dependencies AS development
 
+COPY scripts ./scripts
 COPY server/src ./server/src
 COPY server/assets ./server/assets
 COPY client/src ./client/src

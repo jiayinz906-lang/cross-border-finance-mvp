@@ -39,7 +39,7 @@ flowchart LR
 | `frontend-runtime` | Nginx 提供 React 静态文件并代理 `/api` | 否 |
 | `backend-runtime` | 运行 `node server/dist/index.js` | 启动后通过运行时 `DATABASE_URL` 连接 |
 
-镜像构建过程不会执行 `prisma db push`、`prisma migrate deploy` 或任何数据库写入。
+镜像构建过程不会执行 `prisma db push`、`prisma migrate deploy` 或任何数据库写入。Compose 启动时由一次性 `migrate` 服务在 PostgreSQL 健康后执行 `prisma migrate deploy`，成功后才启动 Backend。
 
 ## 3. 端口
 
@@ -81,6 +81,8 @@ docker compose --env-file .env.docker -f docker-compose.dev.yml up -d --build
 docker compose --env-file .env.docker -f docker-compose.dev.yml ps
 ```
 
+`migrate` 容器正常执行后会显示为 `Exited (0)`，这是一次性迁移任务成功完成的预期状态。
+
 打开：
 
 ```text
@@ -97,6 +99,8 @@ Copy-Item .env.production.example .env.production
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 docker compose --env-file .env.production -f docker-compose.prod.yml ps
 ```
+
+每次启动会先检查并应用仓库中尚未执行的 Prisma migration；已执行的 migration 不会重复写入。
 
 打开：
 
