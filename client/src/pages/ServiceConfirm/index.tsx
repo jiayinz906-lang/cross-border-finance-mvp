@@ -1,8 +1,8 @@
-import { Button, Card, Input, Modal, Space, Table, Tag, message } from "antd";
+import { Button, Card, Input, Modal, Space, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getFinanceDashboard } from "../../api/finance.api";
-import { getMonthlyReport } from "../../api/reports.api";
+import { getServiceRecords } from "../../api/reports.api";
 import {
   type ConfirmationDocument,
   confirmServiceRecord,
@@ -14,6 +14,7 @@ import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
+import { useAuth } from "../../contexts/AuthContext";
 
 type ServiceRecord = {
   id: number;
@@ -109,6 +110,8 @@ function serviceCondition(row: ServiceRecord) {
 }
 
 export default function ServiceConfirm() {
+  const { user } = useAuth();
+  const canApprove = Boolean(user?.auth?.permissions.includes("confirmation:approve"));
   const [rows, setRows] = useState<ServiceRecord[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -122,10 +125,10 @@ export default function ServiceConfirm() {
     setLoading(true);
     try {
       const [reportRes, dashboardRes] = await Promise.all([
-        getMonthlyReport(selectedMonth),
+        getServiceRecords(selectedMonth),
         getFinanceDashboard(selectedMonth)
       ]);
-      setRows(reportRes.data.serviceRecords ?? []);
+      setRows(reportRes.data.rows ?? []);
       setDashboard(dashboardRes.data);
     } catch {
       message.error("注册确认数据加载失败，请确认后端服务可用。");
@@ -276,7 +279,7 @@ export default function ServiceConfirm() {
       render: (value: string) => value || "-"
     },
     {
-      title: "客服代表",
+      title: "操作员（客服代表）",
       dataIndex: ["financeOrder", "customerServiceName"],
       width: 120,
       render: (value: string | null) => value || "-"
@@ -290,6 +293,7 @@ export default function ServiceConfirm() {
       render: (_, row) => (
         <Input
           value={commissionRuleValue(row)}
+          disabled={!canApprove}
           onChange={(event) => updateCommissionEdit(row.id, "rule", event.target.value)}
         />
       )
@@ -299,6 +303,7 @@ export default function ServiceConfirm() {
       render: (_, row) => (
         <Input
           value={commissionAmountValue(row)}
+          disabled={!canApprove}
           onChange={(event) => updateCommissionEdit(row.id, "amount", event.target.value)}
         />
       )
@@ -308,7 +313,7 @@ export default function ServiceConfirm() {
       dataIndex: "confirmStatus",
       render: (status: string) => status === "confirmed" ? <Tag color="green">已确认</Tag> : <Tag color="gold">待主管确认</Tag>
     },
-    { title: "操作", fixed: "right", width: 110, render: (_, row) => <Button size="small" onClick={() => handleSaveConfirm(row)}>保存确认</Button> }
+    { title: "操作", fixed: "right", width: 110, render: (_, row) => canApprove ? <Button size="small" onClick={() => handleSaveConfirm(row)}>保存确认</Button> : <Typography.Text type="secondary">只读</Typography.Text> }
   ];
 
   return (
@@ -346,7 +351,7 @@ export default function ServiceConfirm() {
         extra={(
           <Space size={10} wrap>
             <Tag bordered={false} className="service-policy-tag">按图一红框规则，可手动修改比例</Tag>
-            <Button onClick={handleGenerateServiceDocuments}>生成注册业务确认单</Button>
+            {canApprove ? <Button onClick={handleGenerateServiceDocuments}>生成注册业务确认单</Button> : null}
             <Button onClick={handleViewSignatureStatus}>查看签名状态</Button>
           </Space>
         )}

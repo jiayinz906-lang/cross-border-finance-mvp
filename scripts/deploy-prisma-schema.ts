@@ -1,20 +1,20 @@
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { PrismaClient } from "@prisma/client";
 
 const baselineMigration = "20260720000100_baseline";
-const isWindows = process.platform === "win32";
+const require = createRequire(import.meta.url);
+const prismaCli = require.resolve("prisma/build/index.js");
 
-function runPnpm(args: string[]) {
-  const result = isWindows
-    ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", ["pnpm", ...args].join(" ")], {
-        stdio: "inherit",
-        env: process.env
-      })
-    : spawnSync("pnpm", args, { stdio: "inherit", env: process.env });
+function runPrisma(args: string[]) {
+  const result = spawnSync(process.execPath, [prismaCli, ...args], {
+    stdio: "inherit",
+    env: process.env
+  });
 
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error(`Schema deployment command failed: pnpm ${args.join(" ")}`);
+    throw new Error(`Schema deployment command failed: prisma ${args.join(" ")}`);
   }
 }
 
@@ -42,14 +42,21 @@ async function main() {
   }
 
   if (hasApplicationTables && !hasMigrationHistory) {
-    console.log("Existing finance database detected. Synchronizing once and recording the migration baseline.");
-    runPnpm(["exec", "prisma", "db", "push", "--skip-generate", "--accept-data-loss"]);
-    runPnpm(["exec", "prisma", "migrate", "resolve", "--applied", baselineMigration]);
-    return;
+    console.log("Existing finance database detected. Recording the existing baseline before applying additive migrations.");
+    runPrisma(["migrate", "resolve", "--applied", baselineMigration]);
+  } else {
+    console.log(hasMigrationHistory ? "Applying pending Prisma migrations." : "Initializing a new database from Prisma migrations.");
   }
 
-  console.log(hasMigrationHistory ? "Applying pending Prisma migrations." : "Initializing a new database from Prisma migrations.");
-  runPnpm(["exec", "prisma", "migrate", "deploy"]);
+  runPrisma(["migrate", "deploy"]);
+  runPrisma([
+    "db",
+    "execute",
+    "--file",
+    "prisma/import-archive-schema.sql",
+    "--schema",
+    "prisma/schema.prisma"
+  ]);
 }
 
 main().catch((error) => {

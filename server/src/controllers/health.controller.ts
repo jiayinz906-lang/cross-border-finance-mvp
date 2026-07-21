@@ -4,6 +4,8 @@ import { env } from "../config/env.js";
 import { getOperationsSnapshot, recordOperationalError } from "../runtime/operations.js";
 import { currentIsoTimestamp } from "../utils/date.js";
 import { resolveMonth } from "../utils/month.js";
+import { ensureDefaultImportTemplate } from "../services/excel.service.js";
+import { ensureDefaultParameterRules } from "../services/finance.service.js";
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string) {
   return new Promise<T>((resolve, reject) => {
@@ -65,6 +67,10 @@ export async function readinessController(req: Request, res: Response) {
   try {
     const database = await probeDatabase();
     if (!database.ok) throw new Error(database.error || "Database is unavailable.");
+    await withTimeout(Promise.all([
+      ensureDefaultImportTemplate(),
+      ensureDefaultParameterRules()
+    ]), env.healthDbTimeoutMs, "System defaults initialization");
     const [templateCount, ruleCount, summary, latestBatch] = await withTimeout(Promise.all([
         prisma.excelImportTemplate.count({ where: { templateKey: "system_waybill_detail" } }),
         prisma.parameterRule.count({ where: { isActive: true } }),

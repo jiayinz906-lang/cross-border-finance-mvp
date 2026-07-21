@@ -1,6 +1,8 @@
 import { lazy, Suspense } from "react";
 import type { ReactNode } from "react";
 import type { RouteObject } from "react-router-dom";
+import { PageAccessGuard } from "../components/PageAccessGuard";
+import type { PagePermission } from "../config/access";
 
 const BasicLayout = lazy(() => import("../layouts/BasicLayout").then((module) => ({ default: module.BasicLayout })));
 const AgentRules = lazy(() => import("../pages/AgentRules"));
@@ -24,27 +26,31 @@ function page(element: ReactNode) {
   return <Suspense fallback={<div className="route-loading">正在加载页面...</div>}>{element}</Suspense>;
 }
 
+function protectedPage(permission: PagePermission, element: ReactNode) {
+  return page(<PageAccessGuard permission={permission}>{element}</PageAccessGuard>);
+}
+
 export const routes: RouteObject[] = [
   {
     path: "/",
     element: page(<BasicLayout />),
     children: [
-      { path: "dashboard", element: page(<Dashboard />) },
-      { path: "finance-ledger", element: page(<FinanceLedger />) },
-      { path: "receivables", element: page(<Receivables />) },
-      { path: "payables", element: page(<Payables />) },
-      { path: "profit-analysis", element: page(<ProfitAnalysis />) },
-      { path: "commission", element: page(<Commission />) },
-      { path: "service-confirm", element: page(<ServiceConfirm />) },
-      { path: "signature-confirm", element: page(<SignatureConfirm />) },
-      { path: "operator-performance", element: page(<OperatorPerformance />) },
-      { path: "customer-profit", element: page(<CustomerProfit />) },
-      { path: "risks", element: page(<Risks />) },
-      { path: "reports", element: page(<Reports />) },
-      { path: "agent-rules", element: page(<AgentRules />) },
-      { path: "raw-entry", element: page(<RawEntry />) },
-      { path: "finance-operations", element: page(<FinanceOperations />) },
-      { path: "settings", element: page(<Settings />) }
+      { path: "dashboard", element: protectedPage("dashboard:read", <Dashboard />) },
+      { path: "finance-ledger", element: protectedPage("ledger:read", <FinanceLedger />) },
+      { path: "receivables", element: protectedPage("receivables:read", <Receivables />) },
+      { path: "payables", element: protectedPage("payables:read", <Payables />) },
+      { path: "profit-analysis", element: protectedPage("profit:read", <ProfitAnalysis />) },
+      { path: "commission", element: protectedPage("commission:read", <Commission />) },
+      { path: "service-confirm", element: protectedPage("service:read", <ServiceConfirm />) },
+      { path: "signature-confirm", element: protectedPage("confirmation:read", <SignatureConfirm />) },
+      { path: "operator-performance", element: protectedPage("performance:read", <OperatorPerformance />) },
+      { path: "customer-profit", element: protectedPage("customer-profit:read", <CustomerProfit />) },
+      { path: "risks", element: protectedPage("risk:read", <Risks />) },
+      { path: "reports", element: protectedPage("reports:read", <Reports />) },
+      { path: "agent-rules", element: protectedPage("settings:read", <AgentRules />) },
+      { path: "raw-entry", element: protectedPage("ledger:read", <RawEntry />) },
+      { path: "finance-operations", element: protectedPage("operations:read", <FinanceOperations />) },
+      { path: "settings", element: protectedPage("settings:read", <Settings />) }
     ]
   }
 ];

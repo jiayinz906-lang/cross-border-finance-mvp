@@ -4,5 +4,5 @@ import { requirePermission } from "../middleware/rbac.middleware.js";
 
 export const commissionsRoutes = Router();
 
-commissionsRoutes.get("/", commissionsController);
+commissionsRoutes.get("/", requirePermission("commission:read"), commissionsController);
 commissionsRoutes.patch("/:id/rate", requirePermission("confirmation:approve"), updateCommissionRateController);

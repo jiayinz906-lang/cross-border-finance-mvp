@@ -1,5 +1,10 @@
 import http from "node:http";
 import https from "node:https";
+import {
+  argumentValue,
+  loadEnvironmentFile,
+  resolveVerificationCredentials
+} from "./lib/runtime-config.js";
 
 type Check = {
   name: string;
@@ -12,8 +17,10 @@ type ResponsePayload = {
   body: string;
 };
 
-const clientUrl = process.env.UI_SMOKE_CLIENT_URL || "http://localhost:5173/";
-const apiUrl = process.env.UI_SMOKE_API_URL || "http://localhost:4000/api";
+loadEnvironmentFile(argumentValue("env-file") || process.env.FINANCE_ENV_FILE);
+const clientUrl = argumentValue("client-url") || process.env.UI_SMOKE_CLIENT_URL || "http://localhost:5173/";
+const apiUrl = argumentValue("api-url") || process.env.UI_SMOKE_API_URL || "http://localhost:4000/api";
+const requestedMonth = argumentValue("month") || process.env.FINANCE_TEST_MONTH || process.env.FINANCE_DOCTOR_MONTH;
 let authToken = "";
 
 function requestText(url: string): Promise<ResponsePayload> {
@@ -72,6 +79,7 @@ function push(checks: Check[], name: string, pass: boolean, detail?: string) {
 
 async function main() {
   const checks: Check[] = [];
+  let month = requestedMonth || new Date().toISOString().slice(0, 7);
 
   const frontend = await requestText(clientUrl);
   push(checks, "Frontend returns HTML", frontend.statusCode === 200 && frontend.body.includes("<!doctype html>"), `${frontend.statusCode}`);
@@ -79,14 +87,30 @@ async function main() {
   const health = await requestJson<{ status?: string; service?: string }>(`${apiUrl}/health`);
   push(checks, "Backend health is ok", health.status === "ok", JSON.stringify(health));
 
-  const login = await requestPost(`${apiUrl}/auth/login`, { username: process.env.UI_SMOKE_USERNAME || "admin", password: process.env.UI_SMOKE_PASSWORD || "admin123" });
+  const credentials = resolveVerificationCredentials();
+  if (!credentials.username || !credentials.password) {
+    throw new Error("UI smoke test requires FINANCE_TEST_USERNAME and FINANCE_TEST_PASSWORD, or --env-file=.env.production.");
+  }
+  const login = await requestPost(`${apiUrl}/auth/login`, credentials);
   if (login.statusCode < 200 || login.statusCode >= 300) throw new Error(`Smoke-test login failed: ${login.statusCode} ${login.body.slice(0, 200)}`);
   authToken = JSON.parse(login.body).token as string;
   push(checks, "Authenticated admin session established", Boolean(authToken));
 
-  const readiness = await requestJson<{ status?: string; checks?: Record<string, boolean>; details?: { latestImportBatch?: { batchNo?: string; importedOrders?: number } | null; version?: string } }>(`${apiUrl}/health/ready?month=2026-06`);
+  if (!requestedMonth) {
+    const months = await requestJson<{ rows?: Array<{ month?: string }> }>(`${apiUrl}/finance/months`);
+    month = months.rows?.find((row) => /^\d{4}-\d{2}$/.test(row.month ?? ""))?.month ?? month;
+  }
+  push(checks, "Verification month resolved", true, month);
+
+  const readiness = await requestJson<{ status?: string; checks?: Record<string, boolean>; details?: { latestImportBatch?: { batchNo?: string; importedOrders?: number } | null; version?: string } }>(`${apiUrl}/health/ready?month=${encodeURIComponent(month)}`);
   push(checks, "Backend readiness is ok", readiness.status === "ready" && Object.values(readiness.checks ?? {}).every(Boolean), JSON.stringify(readiness.checks));
-  push(checks, "Backend readiness includes latest import batch", Boolean(readiness.details?.latestImportBatch?.batchNo) && Number(readiness.details?.latestImportBatch?.importedOrders ?? 0) > 0, JSON.stringify(readiness.details?.latestImportBatch));
+  const latestBatch = readiness.details?.latestImportBatch;
+  push(
+    checks,
+    "Import batch state is valid",
+    latestBatch === null || (Boolean(latestBatch?.batchNo) && Number(latestBatch?.importedOrders ?? 0) > 0),
+    JSON.stringify(latestBatch)
+  );
 
   const operations = await requestJson<{
     status?: string;
@@ -105,17 +129,27 @@ async function main() {
   push(checks, "Import template file name is readable", Boolean(systemTemplate?.fileName && systemTemplate.fileName.endsWith(".xlsx")), systemTemplate?.fileName);
 
   const dashboard = await retry(
-    () => requestJson<{ summary?: { totalReceivable?: number; totalPayable?: number }; businessSummary?: unknown[] }>(`${apiUrl}/finance/dashboard?month=2026-06`),
-    (value) => Number(value.summary?.totalReceivable ?? 0) > 0 && Number(value.summary?.totalPayable ?? 0) > 0
+    () => requestJson<{ summary?: { totalReceivable?: number; totalPayable?: number }; businessSummary?: unknown[] }>(`${apiUrl}/finance/dashboard?month=${encodeURIComponent(month)}`),
+    (value) => latestBatch === null || Boolean(value.summary)
   );
-  push(checks, "Dashboard summary loads", Number(dashboard.summary?.totalReceivable ?? 0) > 0 && Number(dashboard.summary?.totalPayable ?? 0) > 0, JSON.stringify(dashboard.summary));
-  push(checks, "Dashboard business summary loads", Array.isArray(dashboard.businessSummary) && dashboard.businessSummary.length > 0, String(dashboard.businessSummary?.length ?? 0));
+  if (latestBatch === null && !dashboard.summary) {
+    push(checks, "Dashboard is ready for first import", true, "No active import batch or finance summary.");
+  } else {
+    push(
+      checks,
+      "Dashboard summary loads",
+      typeof dashboard.summary?.totalReceivable === "number" && typeof dashboard.summary?.totalPayable === "number",
+      JSON.stringify(dashboard.summary)
+    );
+    push(checks, "Dashboard business summary loads", Array.isArray(dashboard.businessSummary) && dashboard.businessSummary.length > 0, String(dashboard.businessSummary?.length ?? 0));
+  }
 
   const failed = checks.filter((check) => !check.pass);
   for (const check of checks) {
     console.log(`${check.pass ? "PASS" : "FAIL"} ${check.name}${check.detail ? `: ${check.detail}` : ""}`);
   }
   if (failed.length) throw new Error(`${failed.length} UI smoke checks failed`);
+  console.log(`UI smoke test passed for month ${month}.`);
 }
 
 main().catch((error) => {

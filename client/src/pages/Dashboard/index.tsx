@@ -18,6 +18,8 @@ import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { BusinessSummary, DashboardData, MonthlyTrend } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
+import { useAuth } from "../../contexts/AuthContext";
+import { hasPermission } from "../../config/access";
 
 type Kpi = {
   title: string;
@@ -260,6 +262,10 @@ const rankingColumns: ColumnsType<RankingRow> = [
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const permissions = user?.auth?.permissions;
+  const canImport = hasPermission(permissions, "finance:import");
+  const canExport = hasPermission(permissions, "reports:export");
   const { selectedMonth, setSelectedMonth } = useSelectedMonth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [monthModalOpen, setMonthModalOpen] = useState(false);
@@ -351,16 +357,16 @@ export default function Dashboard() {
     <div className="overview-page">
       <header className="overview-topbar">
         <div className="overview-title-block">
-          <Button type="text" icon={<MenuOutlined />} className="overview-menu-btn" onClick={() => navigate("/finance-ledger")} />
+          {hasPermission(permissions, "ledger:read") ? <Button type="text" icon={<MenuOutlined />} className="overview-menu-btn" onClick={() => navigate("/finance-ledger")} /> : null}
           <h1>经营总览</h1>
           <span>数据概览与经营分析</span>
         </div>
         <div className="overview-actions">
           <div className="overview-select"><FileExcelOutlined /> 数据源：<b>{summary?.month ? `${summary.month} 数据库` : "Excel 数据"}</b></div>
           <Button className="overview-select" onClick={openMonthModal}>月份：<b>{selectedMonth}</b><CalendarOutlined /></Button>
-          <TemplateImportButton />
-          <ImportButton targetMonth={selectedMonth} onImported={handleImported} />
-          <Button type="primary" loading={reportDownloading} icon={<DownloadOutlined />} onClick={async () => {
+          {canImport ? <TemplateImportButton /> : null}
+          {canImport ? <ImportButton targetMonth={selectedMonth} onImported={handleImported} /> : null}
+          {canExport ? <Button type="primary" loading={reportDownloading} icon={<DownloadOutlined />} onClick={async () => {
             setReportDownloading(true);
             try {
               await downloadMonthlyReport(selectedMonth);
@@ -370,7 +376,7 @@ export default function Dashboard() {
             } finally {
               setReportDownloading(false);
             }
-          }}>导出月报</Button>
+          }}>导出月报</Button> : null}
         </div>
         <div className="overview-refresh"><ReloadOutlined /> 最后更新：导入或切换月份后实时刷新</div>
       </header>
@@ -382,11 +388,11 @@ export default function Dashboard() {
         <Card className="first-import-card">
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={<Space direction="vertical" size={4}><strong>尚未导入业务数据</strong><span>请先上传符合固定表头规范的 Excel，系统会生成原始台账、应收应付、毛利、风险与提成数据。</span></Space>}
+            description={<Space direction="vertical" size={4}><strong>当前月份暂无可查看数据</strong><span>{canImport ? "请上传符合固定表头规范的 Excel，系统会生成原始台账、应收应付、毛利、风险与提成数据。" : "当前账号不能导入数据，请联系财务或主管确认月份及数据范围。"}</span></Space>}
           >
             <Space wrap>
-              <ImportButton targetMonth={selectedMonth} onImported={handleImported} />
-              <TemplateImportButton />
+              {canImport ? <ImportButton targetMonth={selectedMonth} onImported={handleImported} /> : null}
+              {canImport ? <TemplateImportButton /> : null}
               <Button onClick={() => navigate("/settings")}>查看模板与参数规则</Button>
             </Space>
           </Empty>
@@ -397,16 +403,16 @@ export default function Dashboard() {
 
       <section className="overview-main-grid">
         <TrendPanel data={trend} />
-        <Card className="overview-card" title="业务类型利润同比环比变化" extra={<Button type="link" onClick={() => navigate("/profit-analysis")}>查看更多</Button>}>
+        <Card className="overview-card" title="业务类型利润同比环比变化" extra={hasPermission(permissions, "profit:read") ? <Button type="link" onClick={() => navigate("/profit-analysis")}>查看更多</Button> : null}>
           <Table rowKey="businessType" columns={businessColumns} dataSource={businessRows.slice(0, 6)} pagination={false} size="small" />
         </Card>
       </section>
 
       <section className="overview-three-grid">
-        <Card className="overview-card" title="业务员毛利排行（本月）" extra={<Button type="link" onClick={() => navigate("/commission")}>查看更多</Button>}>
+        <Card className="overview-card" title="业务员毛利排行（本月）" extra={hasPermission(permissions, "commission:read") ? <Button type="link" onClick={() => navigate("/commission")}>查看更多</Button> : null}>
           <Table rowKey="rank" columns={rankingColumns} dataSource={rankingRows} pagination={false} size="small" />
         </Card>
-        <Card className="overview-card" title="客户利润概览" extra={<Button type="link" onClick={() => navigate("/customer-profit")}>查看更多</Button>}>
+        <Card className="overview-card" title="客户利润概览" extra={hasPermission(permissions, "customer-profit:read") ? <Button type="link" onClick={() => navigate("/customer-profit")}>查看更多</Button> : null}>
           <div className="customer-summary">
             <CustomerDonut topProfit={topCustomerProfit} otherProfit={otherCustomerProfit} />
             <div className="customer-side-metrics">
@@ -421,7 +427,7 @@ export default function Dashboard() {
             </div>
           </div>
         </Card>
-        <Card className="overview-card" title="上游应付集中度" extra={<Button type="link" onClick={() => navigate("/payables")}>查看更多</Button>}>
+        <Card className="overview-card" title="上游应付集中度" extra={hasPermission(permissions, "payables:read") ? <Button type="link" onClick={() => navigate("/payables")}>查看更多</Button> : null}>
           <Table
             rowKey="supplierName"
             pagination={false}
@@ -443,7 +449,7 @@ export default function Dashboard() {
       </section>
 
       <section className="overview-risk-grid">
-        <Card className="overview-card risk-card" title="风险趋势（本月）" extra={<Button type="link" onClick={() => navigate("/risks")}>查看更多</Button>}>
+        <Card className="overview-card risk-card" title="风险趋势（本月）" extra={hasPermission(permissions, "risk:read") ? <Button type="link" onClick={() => navigate("/risks")}>查看更多</Button> : null}>
           <div className="risk-mini-grid">
             {riskItem("高风险票数", riskOverview?.highRiskCount ?? riskCount, "待复核")}
             {riskItem("中风险票数", riskOverview?.mediumRiskCount ?? 0, "异常高利润")}

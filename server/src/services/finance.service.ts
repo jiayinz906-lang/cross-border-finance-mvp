@@ -3,6 +3,10 @@ import { selfHostedStack } from "../config/selfhosted-stack.js";
 import { prisma } from "../prisma/client.js";
 import { financeRepository } from "../repositories/finance.repository.js";
 import { payableService } from "./payable.service.js";
+import type { FinanceOrder } from "@prisma/client";
+import { allFinanceAccess, ownerAccessWhere, scopedFinanceOrderWhere } from "../security/finance-access.js";
+import type { FinanceAccessScope } from "../security/finance-access.js";
+import { addNumbers, safeRate, sumNumbers } from "../utils/number.js";
 
 const defaultParameterRules = [
   {
@@ -55,7 +59,7 @@ function parseRuleValue(valueJson: string) {
   }
 }
 
-async function ensureDefaultParameterRules() {
+export async function ensureDefaultParameterRules() {
   for (const rule of defaultParameterRules) {
     await prisma.parameterRule.upsert({
       where: { ruleKey: rule.ruleKey },
@@ -69,10 +73,6 @@ async function ensureDefaultParameterRules() {
       }
     });
   }
-}
-
-function safeRate(numerator: number, denominator: number): number | null {
-  return denominator === 0 ? null : numerator / denominator;
 }
 
 function percentChange(current: number, previous: number): number | null {
@@ -99,22 +99,110 @@ function previousYearMonth(month: string): string {
 function grossProfitByBusinessType(orders: Array<{ businessType: string; adjustedGrossProfit: number }>) {
   const map = new Map<string, number>();
   for (const order of orders) {
-    map.set(order.businessType, (map.get(order.businessType) ?? 0) + order.adjustedGrossProfit);
+    map.set(order.businessType, addNumbers(map.get(order.businessType) ?? 0, order.adjustedGrossProfit));
   }
   return map;
 }
 
+function summarizeOrders(month: string, orders: FinanceOrder[], totalCommission = 0) {
+  const totalReceivable = sumNumbers(orders.map((order) => order.adjustedReceivable));
+  const totalPayable = sumNumbers(orders.map((order) => order.adjustedPayable));
+  const totalGrossProfit = sumNumbers(orders.map((order) => order.adjustedGrossProfit));
+  return {
+    month,
+    totalReceivable,
+    totalPayable,
+    totalReceived: sumNumbers(orders.map((order) => order.receivedAmount)),
+    totalPaid: sumNumbers(orders.map((order) => order.paidAmount)),
+    totalGrossProfit,
+    grossProfitRate: safeRate(totalGrossProfit, totalReceivable),
+    totalCommission,
+    riskOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < 0.1 || order.needSupervisorConfirm).length,
+    abnormalHighProfitOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > 0.5).length,
+    pendingSupervisorConfirmCount: orders.filter((order) => order.needSupervisorConfirm).length,
+    updatedAt: orders.reduce((latest, order) => order.updatedAt > latest ? order.updatedAt : latest, new Date(0))
+  };
+}
+
+export async function resolveParameterRules(month?: string) {
+  await ensureDefaultParameterRules();
+  const rows = await prisma.parameterRule.findMany({
+    where: { isActive: true },
+    include: {
+      versions: {
+        where: {
+          isActive: true,
+          ...(month ? { effectiveMonth: { lte: month } } : { id: -1 })
+        },
+        orderBy: [{ effectiveMonth: "desc" }, { id: "desc" }],
+        take: 1
+      }
+    },
+    orderBy: [{ ruleGroup: "asc" }, { id: "asc" }]
+  });
+
+  return rows.map((rule) => {
+    const version = rule.versions[0];
+    const valueJson = version?.valueJson ?? rule.valueJson;
+    return {
+      id: rule.id,
+      ruleKey: rule.ruleKey,
+      ruleGroup: rule.ruleGroup,
+      label: rule.label,
+      value: parseRuleValue(valueJson),
+      valueJson,
+      description: version?.description ?? rule.description,
+      updatedBy: version?.updatedBy ?? rule.updatedBy,
+      updatedAt: version?.updatedAt ?? rule.updatedAt,
+      effectiveMonth: version?.effectiveMonth ?? null,
+      source: version ? "monthly" : "default"
+    };
+  });
+}
+
 export const financeService = {
-  async listLedger(month?: string) {
+  async listLedger(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     const selectedMonth = month ?? (await financeRepository.getLatestSummary())?.month;
-    return financeRepository.listOrders(selectedMonth);
+    return financeRepository.listOrders(selectedMonth, scope);
   },
 
-  getSummary(month?: string) {
-    return financeRepository.getLatestSummary(month);
+  async getSummary(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
+    const persisted = await financeRepository.getLatestSummary(month);
+    if (scope.mode === "all") return persisted;
+    const selectedMonth = month ?? persisted?.month;
+    if (!selectedMonth) return null;
+    const [orders, commissions] = await Promise.all([
+      financeRepository.listOrders(selectedMonth, scope),
+      prisma.commissionRecord.findMany({
+        where: { financeOrder: { is: scopedFinanceOrderWhere({ month: selectedMonth }, scope) } }
+      })
+    ]);
+    return summarizeOrders(
+      selectedMonth,
+      orders,
+      sumNumbers(commissions.map((row) => row.manualCommissionAmount ?? row.commissionAmount))
+    );
   },
 
-  async listMonths() {
+  async listMonths(scope: FinanceAccessScope = allFinanceAccess) {
+    if (scope.mode !== "all") {
+      const orders = await financeRepository.listOrders(undefined, scope);
+      const rows = new Map<string, { month: string; updatedAt: Date; totalReceivable: number; totalGrossProfit: number }>();
+      for (const order of orders) {
+        const current = rows.get(order.month) ?? {
+          month: order.month,
+          updatedAt: order.updatedAt,
+          totalReceivable: 0,
+          totalGrossProfit: 0
+        };
+        current.updatedAt = current.updatedAt > order.updatedAt ? current.updatedAt : order.updatedAt;
+        current.totalReceivable = addNumbers(current.totalReceivable, order.adjustedReceivable);
+        current.totalGrossProfit = addNumbers(current.totalGrossProfit, order.adjustedGrossProfit);
+        rows.set(order.month, current);
+      }
+      return { rows: Array.from(rows.values()).sort((left, right) => right.month.localeCompare(left.month)) };
+    }
+
     const [summaries, activeBatches, manualMonths] = await Promise.all([
       financeRepository.listMonths(),
       prisma.importBatch.findMany({
@@ -151,34 +239,12 @@ export const financeService = {
     };
   },
 
-  async listParameterRules() {
-    await ensureDefaultParameterRules();
-    const rows = await prisma.parameterRule.findMany({
-      where: { isActive: true },
-      orderBy: [{ ruleGroup: "asc" }, { id: "asc" }]
-    });
-
-    return {
-      rows: rows.map((rule) => ({
-        id: rule.id,
-        ruleKey: rule.ruleKey,
-        ruleGroup: rule.ruleGroup,
-        label: rule.label,
-        value: parseRuleValue(rule.valueJson),
-        valueJson: rule.valueJson,
-        description: rule.description,
-        updatedBy: rule.updatedBy,
-        updatedAt: rule.updatedAt
-      }))
-    };
+  async listParameterRules(month?: string) {
+    return { rows: await resolveParameterRules(month) };
   },
 
-  async updateParameterRule(ruleKey: string, payload: { valueJson?: string; description?: string; updatedBy?: string }) {
+  async updateParameterRule(ruleKey: string, payload: { valueJson?: string; description?: string; updatedBy?: string; effectiveMonth?: string }) {
     await ensureDefaultParameterRules();
-    const lockedMonth = await prisma.monthClose.findFirst({ where: { status: "locked" }, orderBy: { updatedAt: "desc" } });
-    if (lockedMonth) {
-      throw new Error(`${lockedMonth.month} 已锁账，不能修改会影响财务口径的参数规则。请先由主管解锁并记录原因。`);
-    }
     const valueJson = payload.valueJson ?? "";
     try {
       JSON.parse(valueJson);
@@ -186,13 +252,92 @@ export const financeService = {
       throw new Error("规则值必须是合法 JSON。");
     }
 
-    const rule = await prisma.parameterRule.update({
-      where: { ruleKey },
-      data: {
-        valueJson,
-        description: payload.description,
-        updatedBy: payload.updatedBy || "finance-admin"
+    const effectiveMonth = payload.effectiveMonth?.trim();
+    if (effectiveMonth && !/^\d{4}-(0[1-9]|1[0-2])$/.test(effectiveMonth)) {
+      throw new Error("生效月份格式必须为 YYYY-MM。");
+    }
+
+    if (effectiveMonth) {
+      const close = await prisma.monthClose.findUnique({ where: { month: effectiveMonth } });
+      if (close?.status === "locked") {
+        throw new Error(`${effectiveMonth} 已锁账，不能修改该月生效的参数规则。请先由主管解锁并记录原因。`);
       }
+      const rule = await prisma.parameterRule.findUnique({ where: { ruleKey } });
+      if (!rule) throw new Error(`参数规则不存在：${ruleKey}`);
+      const existing = await prisma.parameterRuleVersion.findUnique({
+        where: { parameterRuleId_effectiveMonth: { parameterRuleId: rule.id, effectiveMonth } }
+      });
+      const version = await prisma.$transaction(async (tx) => {
+        const saved = await tx.parameterRuleVersion.upsert({
+          where: { parameterRuleId_effectiveMonth: { parameterRuleId: rule.id, effectiveMonth } },
+          create: {
+            parameterRuleId: rule.id,
+            effectiveMonth,
+            valueJson,
+            description: payload.description ?? rule.description,
+            updatedBy: payload.updatedBy || "finance-admin"
+          },
+          update: {
+            valueJson,
+            description: payload.description,
+            isActive: true,
+            updatedBy: payload.updatedBy || "finance-admin"
+          }
+        });
+        await tx.actionLog.create({
+          data: {
+            month: effectiveMonth,
+            entityType: "parameter_rule",
+            entityId: ruleKey,
+            action: "update_parameter_rule_version",
+            operator: payload.updatedBy || "finance-admin",
+            beforeJson: existing ? JSON.stringify(existing) : null,
+            afterJson: JSON.stringify(saved),
+            payloadJson: JSON.stringify({ effectiveMonth })
+          }
+        });
+        return saved;
+      });
+      return {
+        id: rule.id,
+        ruleKey: rule.ruleKey,
+        ruleGroup: rule.ruleGroup,
+        label: rule.label,
+        value: parseRuleValue(version.valueJson),
+        valueJson: version.valueJson,
+        description: version.description,
+        updatedBy: version.updatedBy,
+        updatedAt: version.updatedAt,
+        effectiveMonth: version.effectiveMonth,
+        source: "monthly"
+      };
+    }
+
+    const lockedMonth = await prisma.monthClose.findFirst({ where: { status: "locked" }, orderBy: { updatedAt: "desc" } });
+    if (lockedMonth) {
+      throw new Error(`${lockedMonth.month} 已锁账，不能修改全局默认规则。请使用按月生效规则，或先由主管解锁。`);
+    }
+    const before = await prisma.parameterRule.findUnique({ where: { ruleKey } });
+    const rule = await prisma.$transaction(async (tx) => {
+      const saved = await tx.parameterRule.update({
+        where: { ruleKey },
+        data: {
+          valueJson,
+          description: payload.description,
+          updatedBy: payload.updatedBy || "finance-admin"
+        }
+      });
+      await tx.actionLog.create({
+        data: {
+          entityType: "parameter_rule",
+          entityId: ruleKey,
+          action: "update_parameter_rule_default",
+          operator: payload.updatedBy || "finance-admin",
+          beforeJson: before ? JSON.stringify(before) : null,
+          afterJson: JSON.stringify(saved)
+        }
+      });
+      return saved;
     });
 
     return {
@@ -204,34 +349,62 @@ export const financeService = {
       valueJson: rule.valueJson,
       description: rule.description,
       updatedBy: rule.updatedBy,
-      updatedAt: rule.updatedAt
+      updatedAt: rule.updatedAt,
+      effectiveMonth: null,
+      source: "default"
     };
   },
 
-  async getDashboard(month?: string) {
-    const summary = await financeRepository.getLatestSummary(month);
-    const selectedMonth = month ?? summary?.month;
-    const [orders, summaries, commissions, confirmationDocuments, risks] = await Promise.all([
-      financeRepository.listOrders(selectedMonth),
-      financeRepository.listSummaries(),
+  async getDashboard(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
+    const persistedSummary = await financeRepository.getLatestSummary(month);
+    const selectedMonth = month ?? persistedSummary?.month;
+    const [orders, persistedSummaries, commissions, confirmationDocuments, risks, historyOrders, historyCommissions] = await Promise.all([
+      financeRepository.listOrders(selectedMonth, scope),
+      scope.mode === "all" ? financeRepository.listSummaries() : Promise.resolve([]),
       prisma.commissionRecord.findMany({
-        where: selectedMonth ? { financeOrder: { month: selectedMonth } } : undefined
+        where: { financeOrder: { is: scopedFinanceOrderWhere(selectedMonth ? { month: selectedMonth } : {}, scope) } }
       }),
       prisma.confirmationDocument.findMany({
         where: {
           ...(selectedMonth ? { month: selectedMonth } : {}),
-          documentType: "logistics_commission"
+          documentType: "logistics_commission",
+          ...ownerAccessWhere(scope)
         }
       }),
       prisma.riskRecord.findMany({
-        where: selectedMonth ? { financeOrder: { month: selectedMonth } } : undefined,
+        where: { financeOrder: { is: scopedFinanceOrderWhere(selectedMonth ? { month: selectedMonth } : {}, scope) } },
         include: { financeOrder: true }
+      }),
+      scope.mode === "all" ? Promise.resolve([]) : financeRepository.listOrders(undefined, scope),
+      scope.mode === "all" ? Promise.resolve([]) : prisma.commissionRecord.findMany({
+        where: { financeOrder: { is: scopedFinanceOrderWhere({}, scope) } },
+        include: { financeOrder: { select: { month: true } } }
       })
     ]);
 
+    const summaries = scope.mode === "all"
+      ? persistedSummaries
+      : Array.from(historyOrders.reduce((groups, order) => {
+          groups.set(order.month, [...(groups.get(order.month) ?? []), order]);
+          return groups;
+        }, new Map<string, FinanceOrder[]>()).entries())
+        .map(([summaryMonth, monthOrders]) => summarizeOrders(
+          summaryMonth,
+          monthOrders,
+          historyCommissions
+            .filter((row) => row.financeOrder.month === summaryMonth)
+            .reduce((sum, row) => addNumbers(sum, row.manualCommissionAmount ?? row.commissionAmount), 0)
+        ))
+        .sort((left, right) => left.month.localeCompare(right.month));
+    const summary = scope.mode === "all"
+      ? persistedSummary
+      : selectedMonth
+        ? summaries.find((item) => item.month === selectedMonth) ?? summarizeOrders(selectedMonth, orders)
+        : null;
+
     const logisticsOrders = orders.filter((order) => !order.isServiceBusiness);
     const serviceOrders = orders.filter((order) => order.isServiceBusiness);
-    const payableDashboard = await payableService.listPayables(selectedMonth);
+    const payableDashboard = await payableService.listPayables(selectedMonth, scope);
     const logisticsPayableTotal = payableDashboard.totals.totalPayable;
     const businessMap = new Map<string, {
       businessType: string;
@@ -284,10 +457,10 @@ export const financeService = {
         logisticsProfit: 0
       };
       item.orderCount += 1;
-      item.receivable += order.adjustedReceivable;
-      item.payable += order.adjustedPayable;
-      item.grossProfit += order.adjustedGrossProfit;
-      if (!order.isServiceBusiness) item.logisticsProfit += order.adjustedGrossProfit;
+      item.receivable = addNumbers(item.receivable, order.adjustedReceivable);
+      item.payable = addNumbers(item.payable, order.adjustedPayable);
+      item.grossProfit = addNumbers(item.grossProfit, order.adjustedGrossProfit);
+      if (!order.isServiceBusiness) item.logisticsProfit = addNumbers(item.logisticsProfit, order.adjustedGrossProfit);
       businessMap.set(businessKey, item);
 
       if (!order.isServiceBusiness) {
@@ -301,8 +474,8 @@ export const financeService = {
           signatureStatus: "not_generated"
         };
         salesperson.orderCount += 1;
-        salesperson.receivable += order.adjustedReceivable;
-        salesperson.grossProfit += order.adjustedGrossProfit;
+        salesperson.receivable = addNumbers(salesperson.receivable, order.adjustedReceivable);
+        salesperson.grossProfit = addNumbers(salesperson.grossProfit, order.adjustedGrossProfit);
         salesperson.highRiskOrderCount += order.needSupervisorConfirm || (order.adjustedGrossProfitRate ?? 1) < 0.1 ? 1 : 0;
         salespersonMap.set(order.salespersonName, salesperson);
 
@@ -318,9 +491,9 @@ export const financeService = {
           profitRatio: 0
         };
         customer.orderCount += 1;
-        customer.receivable += order.adjustedReceivable;
-        customer.payable += order.adjustedPayable;
-        customer.grossProfit += order.adjustedGrossProfit;
+        customer.receivable = addNumbers(customer.receivable, order.adjustedReceivable);
+        customer.payable = addNumbers(customer.payable, order.adjustedPayable);
+        customer.grossProfit = addNumbers(customer.grossProfit, order.adjustedGrossProfit);
         customer.grossProfitRate = safeRate(customer.grossProfit, customer.receivable);
         customerMap.set(customerName, customer);
       }
@@ -350,8 +523,8 @@ export const financeService = {
       reviewedRiskCount: risks.filter((risk) => risk.status === "reviewed").length,
       topRiskReason: risks[0]?.riskReasons ?? null
     };
-    const logisticsReceivable = logisticsOrders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
-    const logisticsGrossProfit = logisticsOrders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
+    const logisticsReceivable = sumNumbers(logisticsOrders.map((order) => order.adjustedReceivable));
+    const logisticsGrossProfit = sumNumbers(logisticsOrders.map((order) => order.adjustedGrossProfit));
     const customerProfitSummary = Array.from(customerMap.values())
       .map((item) => ({
         ...item,
@@ -364,10 +537,10 @@ export const financeService = {
     const previous = selectedMonth ? summaries.find((item) => item.month === previousMonth(selectedMonth)) : undefined;
     const previousYear = selectedMonth ? summaries.find((item) => item.month === previousYearMonth(selectedMonth)) : undefined;
     const [previousOrderCount, previousYearOrderCount, previousOrders, previousYearOrders] = await Promise.all([
-      selectedMonth ? prisma.financeOrder.count({ where: { month: previousMonth(selectedMonth) } }) : Promise.resolve(0),
-      selectedMonth ? prisma.financeOrder.count({ where: { month: previousYearMonth(selectedMonth) } }) : Promise.resolve(0),
-      selectedMonth ? financeRepository.listOrders(previousMonth(selectedMonth)) : Promise.resolve([]),
-      selectedMonth ? financeRepository.listOrders(previousYearMonth(selectedMonth)) : Promise.resolve([])
+      selectedMonth ? prisma.financeOrder.count({ where: scopedFinanceOrderWhere({ month: previousMonth(selectedMonth) }, scope) }) : Promise.resolve(0),
+      selectedMonth ? prisma.financeOrder.count({ where: scopedFinanceOrderWhere({ month: previousYearMonth(selectedMonth) }, scope) }) : Promise.resolve(0),
+      selectedMonth ? financeRepository.listOrders(previousMonth(selectedMonth), scope) : Promise.resolve([]),
+      selectedMonth ? financeRepository.listOrders(previousYearMonth(selectedMonth), scope) : Promise.resolve([])
     ]);
     const previousBusinessProfit = grossProfitByBusinessType(previousOrders);
     const previousYearBusinessProfit = grossProfitByBusinessType(previousYearOrders);
@@ -377,8 +550,8 @@ export const financeService = {
       orderCount: orders.length,
       logisticsOrderCount: logisticsOrders.length,
       serviceOrderCount: serviceOrders.length,
-      logisticsProfit: logisticsOrders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0),
-      serviceProfit: serviceOrders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0),
+      logisticsProfit: sumNumbers(logisticsOrders.map((order) => order.adjustedGrossProfit)),
+      serviceProfit: sumNumbers(serviceOrders.map((order) => order.adjustedGrossProfit)),
       businessSummary: Array.from(businessMap.values())
         .map((item) => ({
           ...item,

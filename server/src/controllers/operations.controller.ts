@@ -1,9 +1,12 @@
 import type { Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
-import { currentUser } from "../middleware/rbac.middleware.js";
+import { requiredCurrentUser } from "../middleware/rbac.middleware.js";
 import { operationsService } from "../services/operations.service.js";
 
-const actor = (req: Request) => currentUser(req)?.displayName || currentUser(req)?.username || "system";
+const actor = (req: Request) => {
+  const user = requiredCurrentUser(req);
+  return user.displayName || user.username;
+};
 const idParam = (value: string) => {
   const id = Number(value);
   if (!Number.isInteger(id) || id <= 0) throw new AppError(400, "INVALID_ID", "ID 无效。");

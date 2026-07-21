@@ -1,4 +1,6 @@
 import { financeRepository } from "../repositories/finance.repository.js";
+import { allFinanceAccess } from "../security/finance-access.js";
+import type { FinanceAccessScope } from "../security/finance-access.js";
 
 function rate(profit: number, receivable: number): number | null {
   return receivable === 0 ? null : profit / receivable;
@@ -28,9 +30,9 @@ function values(map: Map<string, Bucket>) {
 }
 
 export const profitService = {
-  async getAnalysis(month?: string) {
+  async getAnalysis(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     const selectedMonth = month ?? (await financeRepository.getLatestSummary())?.month;
-    const orders = await financeRepository.listLogisticsOrders(selectedMonth);
+    const orders = await financeRepository.listLogisticsOrders(selectedMonth, scope);
     const byBusinessType = new Map<string, Bucket>();
     const bySalesperson = new Map<string, Bucket>();
     const byCustomer = new Map<string, Bucket>();

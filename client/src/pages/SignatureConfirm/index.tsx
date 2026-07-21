@@ -20,6 +20,7 @@ import { formatPercent } from "../../utils/formatPercent";
 import { ReasonActionModal } from "../../components/ReasonActionModal";
 import { copyText } from "../../utils/copyText";
 import { externalSignatureUrl, productionAppUrl, usesLocalSignatureBackend } from "../../utils/externalSignatureUrl";
+import { useAuth } from "../../contexts/AuthContext";
 
 type ConfirmationPayloadDetail = {
   orderNo: string;
@@ -117,6 +118,9 @@ function salaryStatusLabel(status?: string | null, signatureStatus?: string | nu
 }
 
 export default function SignatureConfirm() {
+  const { user } = useAuth();
+  const canApprove = Boolean(user?.auth?.permissions.includes("confirmation:approve"));
+  const canExport = Boolean(user?.auth?.permissions.includes("reports:export"));
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
   const [salesSalaryDocuments, setSalesSalaryDocuments] = useState<ConfirmationDocument[]>([]);
   const [customerServiceSalaryDocuments, setCustomerServiceSalaryDocuments] = useState<ConfirmationDocument[]>([]);
@@ -244,7 +248,7 @@ export default function SignatureConfirm() {
   const customerServiceSalaryTotal = customerServiceSalaryDocuments.reduce((sum, row) => sum + row.commissionAmount, 0);
 
   const columns: ColumnsType<ConfirmationDocument> = [
-    { title: "业务员", dataIndex: "ownerName", fixed: "left", width: 110 },
+    { title: "销售代表", dataIndex: "ownerName", fixed: "left", width: 110 },
     { title: "业务类型", dataIndex: "businessType", width: 110, render: () => "物流业务" },
     { title: "订单数量", dataIndex: "orderCount", width: 100 },
     { title: "最终提成金额", dataIndex: "commissionAmount", align: "right", width: 140, render: toPlainMoney },
@@ -271,8 +275,8 @@ export default function SignatureConfirm() {
       render: (_, row) => (
         <Space size={6} wrap>
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看个人确认单</Button>
-          <Button size="small" onClick={() => handleSend(row)}>生成并发送钉钉</Button>
-          <Button size="small" disabled={!row.signatureUrl} onClick={async () => {
+          {canApprove ? <Button size="small" onClick={() => handleSend(row)}>生成并发送钉钉</Button> : null}
+          {canApprove ? <Button size="small" disabled={!row.signatureUrl} onClick={async () => {
             if (usesLocalSignatureBackend()) {
               Modal.warning({
                 title: "这是本机调试链接",
@@ -283,12 +287,12 @@ export default function SignatureConfirm() {
             const url = externalSignatureUrl(row.signatureUrl);
             if (await copyText(url)) message.success("签名链接已复制");
             else Modal.info({ title: "请手动复制签名链接", content: <Typography.Paragraph copyable>{url}</Typography.Paragraph> });
-          }}>复制链接</Button>
-          <Button size="small" disabled={!row.signatureUrl || row.sendStatus === "notified"} onClick={() => handleMarkNotified(row)}>标记手工通知</Button>
+          }}>复制链接</Button> : null}
+          {canApprove ? <Button size="small" disabled={!row.signatureUrl || row.sendStatus === "notified"} onClick={() => handleMarkNotified(row)}>标记手工通知</Button> : null}
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>下载 PDF</Button>
           <Button size="small" onClick={() => handleDownload(row, "png")}>下载 PNG</Button>
-          <Button size="small" disabled={row.supervisorStatus === "confirmed" || row.signatureStatus !== "signed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
-          <Button size="small" onClick={() => handleVoid(row)}>作废重签</Button>
+          {canApprove ? <Button size="small" disabled={row.supervisorStatus === "confirmed" || row.signatureStatus !== "signed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button> : null}
+          {canApprove ? <Button size="small" onClick={() => handleVoid(row)}>作废重签</Button> : null}
         </Space>
       )
     }
@@ -332,11 +336,11 @@ export default function SignatureConfirm() {
       render: (_, row) => (
         <Space size={6} wrap>
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看确认单</Button>
-          <Button size="small" onClick={() => handleSend(row)}>生成并发送钉钉</Button>
+          {canApprove ? <Button size="small" onClick={() => handleSend(row)}>生成并发送钉钉</Button> : null}
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>PDF</Button>
           <Button size="small" onClick={() => handleDownload(row, "png")}>PNG</Button>
-          <Button size="small" disabled={row.supervisorStatus === "confirmed" || row.signatureStatus !== "signed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
-          <Button size="small" danger onClick={() => handleVoid(row)}>作废重签</Button>
+          {canApprove ? <Button size="small" disabled={row.supervisorStatus === "confirmed" || row.signatureStatus !== "signed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button> : null}
+          {canApprove ? <Button size="small" danger onClick={() => handleVoid(row)}>作废重签</Button> : null}
         </Space>
       )
     }
@@ -347,7 +351,7 @@ export default function SignatureConfirm() {
       <Card
         className="signature-confirm-card"
         title={<div className="signature-title-block"><strong>员工电子签名确认中心</strong><span>主管生成个人提成确认单，员工在线签名后回传状态，最终由主管确认发放。</span></div>}
-        extra={<Space size={10} wrap><Button type="primary" onClick={handleBatchGenerate}>批量生成确认单</Button><Button loading={exporting} onClick={handleExport}>导出签名汇总表</Button></Space>}
+        extra={<Space size={10} wrap>{canApprove ? <Button type="primary" onClick={handleBatchGenerate}>批量生成确认单</Button> : null}{canExport ? <Button loading={exporting} onClick={handleExport}>导出签名汇总表</Button> : null}</Space>}
       >
         <div className="signature-stat-grid">
           <div><span>本月需确认人数</span><strong>{needConfirmCount}</strong></div>
@@ -364,7 +368,7 @@ export default function SignatureConfirm() {
       <Card
         className="signature-confirm-card"
         title={<div className="signature-title-block"><strong>薪资汇总与确认单</strong><span>销售代表按物流提成与已主管确认的注册/服务提成汇总；操作员按各绩效板块汇总。金额仅来自当前月份已导入数据，不包含固定工资、社保及个税。</span></div>}
-        extra={<Button type="primary" loading={generatingSalary} onClick={handleGenerateSalaryDocuments}>批量生成薪资确认单</Button>}
+        extra={canApprove ? <Button type="primary" loading={generatingSalary} onClick={handleGenerateSalaryDocuments}>批量生成薪资确认单</Button> : null}
       >
         <Alert
           type="info"

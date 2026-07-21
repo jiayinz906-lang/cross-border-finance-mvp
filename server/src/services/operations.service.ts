@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { AppError } from "../errors/app-error.js";
 import { prisma } from "../prisma/client.js";
 import { resolveMonth } from "../utils/month.js";
-
-const roundMoney = (value: number) => Math.round(value * 100) / 100;
+import { assertMonthOpen } from "./month-lock.service.js";
+import { addNumbers, multiplyNumbers, roundMoney, subtractNumbers, sumNumbers } from "../utils/number.js";
 
 function positiveAmount(value: unknown, field = "amount") {
   const parsed = Number(value);
@@ -18,9 +19,13 @@ function nonNegativeInteger(value: unknown, fallback: number) {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+function normalizePartnerAlias(value: string) {
+  return value.normalize("NFKC").trim().toLocaleLowerCase().replace(/[\s\u3000]+/g, "");
+}
+
 function partnerCode(type: string, name: string) {
   const prefix = type === "customer" ? "CUS" : type === "supplier" ? "SUP" : "BIZ";
-  return `${prefix}-${crypto.createHash("sha1").update(`${type}:${name}`).digest("hex").slice(0, 12).toUpperCase()}`;
+  return `${prefix}-${crypto.createHash("sha1").update(`${type}:${normalizePartnerAlias(name)}`).digest("hex").slice(0, 12).toUpperCase()}`;
 }
 
 function invoiceStatus(localAmount: number, allocatedAmount: number, dueAt: Date) {
@@ -44,11 +49,30 @@ async function audit(input: { month?: string; entityType: string; entityId: stri
 
 async function ensurePartner(type: "customer" | "supplier", name: string, paymentTermDays = 30) {
   const normalized = name.trim() || "待确认";
+  const normalizedAlias = normalizePartnerAlias(normalized);
+  const knownAlias = await prisma.businessPartnerAlias.findUnique({
+    where: { partnerType_normalizedAlias: { partnerType: type, normalizedAlias } },
+    include: { businessPartner: true }
+  });
+  if (knownAlias) {
+    return prisma.businessPartner.update({
+      where: { id: knownAlias.businessPartnerId },
+      data: { isActive: true }
+    });
+  }
   const code = partnerCode(type, normalized);
-  return prisma.businessPartner.upsert({
-    where: { partnerCode: code },
-    create: { partnerCode: code, partnerType: type, name: normalized, paymentTermDays, source: "finance_order" },
-    update: { name: normalized, isActive: true }
+  return prisma.$transaction(async (tx) => {
+    const partner = await tx.businessPartner.upsert({
+      where: { partnerCode: code },
+      create: { partnerCode: code, partnerType: type, name: normalized, paymentTermDays, source: "finance_order" },
+      update: { isActive: true }
+    });
+    await tx.businessPartnerAlias.upsert({
+      where: { partnerType_normalizedAlias: { partnerType: type, normalizedAlias } },
+      create: { businessPartnerId: partner.id, partnerType: type, alias: normalized, normalizedAlias, source: "finance_order" },
+      update: { businessPartnerId: partner.id, alias: normalized }
+    });
+    return partner;
   });
 }
 
@@ -58,7 +82,7 @@ async function refreshInvoice(invoiceId: number) {
     include: { allocations: { where: { status: "active" } } }
   });
   if (!invoice) throw new AppError(404, "INVOICE_NOT_FOUND", "账单不存在。");
-  const allocatedAmount = roundMoney(invoice.allocations.reduce((sum, row) => sum + row.amount, 0));
+  const allocatedAmount = roundMoney(sumNumbers(invoice.allocations.map((row) => row.amount)));
   return prisma.financeInvoice.update({
     where: { id: invoice.id },
     data: { allocatedAmount, status: invoiceStatus(invoice.localAmount, allocatedAmount, invoice.dueAt) }
@@ -71,7 +95,7 @@ async function refreshBankTransaction(transactionId: number) {
     include: { allocations: { where: { status: "active" } } }
   });
   if (!transaction) throw new AppError(404, "BANK_TRANSACTION_NOT_FOUND", "银行流水不存在。");
-  const matchedAmount = roundMoney(transaction.allocations.reduce((sum, row) => sum + row.amount, 0));
+  const matchedAmount = roundMoney(sumNumbers(transaction.allocations.map((row) => row.amount)));
   return prisma.bankTransaction.update({
     where: { id: transaction.id },
     data: {
@@ -206,6 +230,10 @@ function syncInvoices(monthInput?: string) {
 
 async function performTaskSync(monthInput?: string) {
   const month = resolveMonth(monthInput);
+  const close = await prisma.monthClose.findUnique({ where: { month } });
+  if (close?.status === "locked") {
+    return { month, pendingCount: await prisma.workflowTask.count({ where: { month, status: "pending" } }) };
+  }
   await Promise.all([syncInvoices(month), syncManualLedgerTransactions(month)]);
   const [risks, services, documents, invoices, bankTransactions] = await Promise.all([
     prisma.riskRecord.findMany({ where: { status: { not: "reviewed" }, financeOrder: { month } }, include: { financeOrder: true } }),
@@ -219,7 +247,7 @@ async function performTaskSync(monthInput?: string) {
     ...risks.map((row) => ({ sourceKey: `risk:${row.id}`, taskType: "risk_review", entityType: "risk", entityId: String(row.id), title: `复核风险订单 ${row.financeOrder.orderNo}`, description: row.riskReasons, ownerRole: "finance", priority: row.riskLevel === "high" ? "high" : "normal", route: "/risks", dueAt: null as Date | null })),
     ...services.map((row) => ({ sourceKey: `service:${row.id}`, taskType: "service_confirm", entityType: "service_business", entityId: String(row.id), title: `确认注册提成 ${row.financeOrder.orderNo}`, description: row.serviceType, ownerRole: "supervisor", priority: "normal", route: "/service-confirm", dueAt: null as Date | null })),
     ...documents.map((row) => ({ sourceKey: `document:${row.id}`, taskType: "signature", entityType: "confirmation_document", entityId: String(row.id), title: `完成确认单签名：${row.ownerName}`, description: row.documentType, ownerRole: row.signatureStatus !== "signed" ? "sales" : "supervisor", ownerName: row.signatureStatus !== "signed" ? row.ownerName : null, priority: "normal", route: "/signature-confirm", dueAt: null as Date | null })),
-    ...invoices.map((row) => ({ sourceKey: `invoice:${row.id}`, taskType: "settlement", entityType: "finance_invoice", entityId: String(row.id), title: `${row.invoiceType === "receivable" ? "催收" : "付款"} ${row.invoiceNo}`, description: `${row.partner?.name || "待确认往来单位"}，未核销 ¥${roundMoney(row.localAmount - row.allocatedAmount).toFixed(2)}`, ownerRole: "finance", priority: row.status === "overdue" ? "high" : "normal", route: row.invoiceType === "receivable" ? "/receivables" : "/payables", dueAt: row.dueAt })),
+    ...invoices.map((row) => ({ sourceKey: `invoice:${row.id}`, taskType: "settlement", entityType: "finance_invoice", entityId: String(row.id), title: `${row.invoiceType === "receivable" ? "催收" : "付款"} ${row.invoiceNo}`, description: `${row.partner?.name || "待确认往来单位"}，未核销 ¥${roundMoney(subtractNumbers(row.localAmount, row.allocatedAmount)).toFixed(2)}`, ownerRole: "finance", priority: row.status === "overdue" ? "high" : "normal", route: row.invoiceType === "receivable" ? "/receivables" : "/payables", dueAt: row.dueAt })),
     ...bankTransactions.map((row) => ({ sourceKey: `bank:${row.id}`, taskType: "reconciliation", entityType: "bank_transaction", entityId: String(row.id), title: `匹配银行流水 ${row.transactionNo}`, description: `${row.counterparty} ¥${row.localAmount.toFixed(2)}`, ownerRole: "finance", priority: "normal", route: "/finance-operations", dueAt: null as Date | null }))
   ];
 
@@ -254,10 +282,16 @@ export const operationsService = {
     const pageSize = Math.min(100, Math.max(10, nonNegativeInteger(input.pageSize, 20)));
     const where = {
       ...(input.type ? { partnerType: input.type } : {}),
-      ...(input.keyword ? { name: { contains: input.keyword, mode: "insensitive" as const } } : {})
+      ...(input.keyword ? {
+        OR: [
+          { name: { contains: input.keyword, mode: "insensitive" as const } },
+          { partnerCode: { contains: input.keyword, mode: "insensitive" as const } },
+          { aliases: { some: { alias: { contains: input.keyword, mode: "insensitive" as const } } } }
+        ]
+      } : {})
     };
     const [rows, total] = await Promise.all([
-      prisma.businessPartner.findMany({ where, orderBy: [{ isActive: "desc" }, { name: "asc" }], skip: (page - 1) * pageSize, take: pageSize }),
+      prisma.businessPartner.findMany({ where, include: { aliases: { orderBy: { alias: "asc" } } }, orderBy: [{ isActive: "desc" }, { name: "asc" }], skip: (page - 1) * pageSize, take: pageSize }),
       prisma.businessPartner.count({ where })
     ]);
     return { rows, total, page, pageSize };
@@ -280,16 +314,39 @@ export const operationsService = {
       isActive: input.isActive !== false,
       source: "manual"
     };
-    const partner = id
-      ? await prisma.businessPartner.update({ where: { id }, data })
-      : await prisma.businessPartner.create({ data });
+    const rawAliases = Array.isArray(input.aliases)
+      ? input.aliases.map(String)
+      : String(input.aliases || "").split(/[\n,，;；]+/);
+    const aliases = Array.from(new Set([name, ...rawAliases].map((item) => item.trim()).filter(Boolean)));
+    const partner = await prisma.$transaction(async (tx) => {
+      const saved = id
+        ? await tx.businessPartner.update({ where: { id }, data })
+        : await tx.businessPartner.create({ data });
+      await tx.businessPartnerAlias.deleteMany({ where: { businessPartnerId: saved.id } });
+      for (const alias of aliases) {
+        const normalizedAlias = normalizePartnerAlias(alias);
+        const existing = await tx.businessPartnerAlias.findUnique({
+          where: { partnerType_normalizedAlias: { partnerType: type, normalizedAlias } }
+        });
+        if (existing && existing.businessPartnerId !== saved.id) {
+          throw new AppError(409, "PARTNER_ALIAS_CONFLICT", `别名“${alias}”已归属于其他往来单位。`);
+        }
+        await tx.businessPartnerAlias.upsert({
+          where: { partnerType_normalizedAlias: { partnerType: type, normalizedAlias } },
+          create: { businessPartnerId: saved.id, partnerType: type, alias, normalizedAlias, source: "manual" },
+          update: { businessPartnerId: saved.id, alias, source: "manual" }
+        });
+      }
+      return tx.businessPartner.findUniqueOrThrow({ where: { id: saved.id }, include: { aliases: { orderBy: { alias: "asc" } } } });
+    });
     await audit({ entityType: "business_partner", entityId: String(partner.id), action: id ? "update_partner" : "create_partner", operator, payload: data });
     return partner;
   },
 
   async listInvoices(input: { month?: string; invoiceType?: string; status?: string; keyword?: string; page?: unknown; pageSize?: unknown }) {
     const month = resolveMonth(input.month);
-    await syncInvoices(month);
+    const close = await prisma.monthClose.findUnique({ where: { month } });
+    if (close?.status !== "locked") await syncInvoices(month);
     const page = Math.max(1, nonNegativeInteger(input.page, 1));
     const pageSize = Math.min(100, Math.max(10, nonNegativeInteger(input.pageSize, 20)));
     const where = {
@@ -307,7 +364,9 @@ export const operationsService = {
   },
 
   async syncInvoices(month: string | undefined, operator: string) {
-    const result = await syncInvoices(month);
+    const selectedMonth = resolveMonth(month);
+    await assertMonthOpen(prisma, selectedMonth, "同步账单");
+    const result = await syncInvoices(selectedMonth);
     await audit({ month: result.month, entityType: "finance_invoice", entityId: result.month, action: "sync_invoices", operator, payload: result });
     return result;
   },
@@ -326,6 +385,7 @@ export const operationsService = {
 
   async createBankTransaction(input: Record<string, unknown>, operator: string) {
     const month = resolveMonth(String(input.month || ""));
+    await assertMonthOpen(prisma, month, "录入银行流水");
     const direction = String(input.direction || "");
     if (!direction || !["receivable", "payable"].includes(direction)) throw new AppError(400, "INVALID_DIRECTION", "流水方向必须是应收或应付。");
     const originalAmount = positiveAmount(input.originalAmount);
@@ -344,7 +404,7 @@ export const operationsService = {
         currency: String(input.currency || "CNY"),
         exchangeRate,
         originalAmount,
-        localAmount: roundMoney(originalAmount * exchangeRate),
+        localAmount: roundMoney(multiplyNumbers(originalAmount, exchangeRate)),
         note: String(input.note || "").trim() || null,
         createdBy: operator
       }
@@ -357,6 +417,7 @@ export const operationsService = {
   async suggestMatches(transactionId: number, operator: string) {
     const transaction = await prisma.bankTransaction.findUnique({ where: { id: transactionId } });
     if (!transaction) throw new AppError(404, "BANK_TRANSACTION_NOT_FOUND", "银行流水不存在。");
+    await assertMonthOpen(prisma, transaction.month, "生成核销建议");
     const invoices = await prisma.financeInvoice.findMany({
       where: { month: transaction.month, invoiceType: transaction.direction, status: { in: ["open", "partial", "overdue"] } },
       include: { partner: true }
@@ -380,30 +441,99 @@ export const operationsService = {
   },
 
   async confirmMatch(matchId: number, amountInput: unknown, operator: string) {
-    const match = await prisma.reconciliationMatch.findUnique({ where: { id: matchId }, include: { bankTransaction: true, invoice: true } });
-    if (!match || match.status !== "suggested") throw new AppError(404, "MATCH_NOT_FOUND", "待确认的匹配记录不存在。");
-    if (!match.invoice.financeOrderId) throw new AppError(409, "INVOICE_ORDER_MISSING", "该账单未关联财务订单，暂不能自动核销。");
-    const amount = positiveAmount(amountInput || match.suggestedAmount);
-    const invoiceOutstanding = match.invoice.localAmount - match.invoice.allocatedAmount;
-    const bankOutstanding = match.bankTransaction.localAmount - match.bankTransaction.matchedAmount;
-    if (amount > invoiceOutstanding + 0.005 || amount > bankOutstanding + 0.005) throw new AppError(409, "ALLOCATION_EXCEEDS_BALANCE", "核销金额超过账单或流水的未匹配余额。");
-    const settlement = await prisma.settlementRecord.create({
-      data: {
-        financeOrderId: match.invoice.financeOrderId,
-        month: match.invoice.month,
-        direction: match.invoice.invoiceType,
-        amount,
-        settledAt: match.bankTransaction.transactionDate,
-        counterparty: match.bankTransaction.counterparty,
-        operator,
-        note: `银行流水自动核销：${match.bankTransaction.transactionNo}`
+    return prisma.$transaction(async (tx) => {
+      const match = await tx.reconciliationMatch.findUnique({ where: { id: matchId }, include: { bankTransaction: true, invoice: true } });
+      if (!match || match.status !== "suggested") throw new AppError(404, "MATCH_NOT_FOUND", "待确认的匹配记录不存在或状态已变化。");
+      if (!match.invoice.financeOrderId) throw new AppError(409, "INVOICE_ORDER_MISSING", "该账单未关联财务订单，暂不能自动核销。");
+      await assertMonthOpen(tx, match.invoice.month, "确认银行核销");
+
+      const amount = positiveAmount(amountInput || match.suggestedAmount);
+      const invoiceOutstanding = roundMoney(subtractNumbers(match.invoice.localAmount, match.invoice.allocatedAmount));
+      const bankOutstanding = roundMoney(subtractNumbers(match.bankTransaction.localAmount, match.bankTransaction.matchedAmount));
+      if (amount > invoiceOutstanding + 0.005 || amount > bankOutstanding + 0.005) {
+        throw new AppError(409, "ALLOCATION_EXCEEDS_BALANCE", "核销金额超过账单或流水的未匹配余额。");
       }
-    });
-    await prisma.financeInvoiceAllocation.create({ data: { invoiceId: match.invoice.id, settlementRecordId: settlement.id, bankTransactionId: match.bankTransaction.id, amount, createdBy: operator } });
-    await prisma.reconciliationMatch.update({ where: { id: match.id }, data: { status: "confirmed", confirmedBy: operator, confirmedAt: new Date() } });
-    await Promise.all([refreshInvoice(match.invoice.id), refreshBankTransaction(match.bankTransaction.id)]);
-    await audit({ month: match.invoice.month, entityType: "reconciliation_match", entityId: String(match.id), action: "confirm_reconciliation", operator, payload: { amount, settlementRecordId: settlement.id } });
-    return { matchId: match.id, amount, settlementRecordId: settlement.id };
+
+      const order = await tx.financeOrder.findUnique({ where: { id: match.invoice.financeOrderId } });
+      if (!order) throw new AppError(404, "FINANCE_ORDER_NOT_FOUND", "核销关联的财务订单不存在。");
+      const direction = match.invoice.invoiceType === "receivable" ? "receivable" : "payable";
+      const targetTotal = direction === "receivable" ? order.adjustedReceivable : order.adjustedPayable;
+      const currentSettled = direction === "receivable" ? order.receivedAmount : order.paidAmount;
+      const orderOutstanding = roundMoney(subtractNumbers(targetTotal, currentSettled));
+      if (amount > orderOutstanding + 0.005) {
+        throw new AppError(409, "ALLOCATION_EXCEEDS_ORDER_BALANCE", "核销金额超过订单未结余额，请刷新账单后重试。");
+      }
+
+      const settlement = await tx.settlementRecord.create({
+        data: {
+          financeOrderId: order.id,
+          month: match.invoice.month,
+          direction,
+          amount,
+          settledAt: match.bankTransaction.transactionDate,
+          counterparty: match.bankTransaction.counterparty,
+          operator,
+          note: `银行流水自动核销：${match.bankTransaction.transactionNo}`
+        }
+      });
+      await tx.financeInvoiceAllocation.create({
+        data: { invoiceId: match.invoice.id, settlementRecordId: settlement.id, bankTransactionId: match.bankTransaction.id, amount, createdBy: operator }
+      });
+      const confirmed = await tx.reconciliationMatch.updateMany({
+        where: { id: match.id, status: "suggested" },
+        data: { status: "confirmed", confirmedBy: operator, confirmedAt: new Date() }
+      });
+      if (confirmed.count !== 1) throw new AppError(409, "MATCH_CONCURRENT_UPDATE", "匹配记录已被其他操作处理，请刷新后重试。");
+
+      const nextSettled = roundMoney(addNumbers(currentSettled, amount));
+      const orderUpdated = await tx.financeOrder.updateMany({
+        where: direction === "receivable"
+          ? { id: order.id, receivedAmount: currentSettled }
+          : { id: order.id, paidAmount: currentSettled },
+        data: direction === "receivable"
+          ? { receivedAmount: nextSettled, receivableStatus: nextSettled >= targetTotal - 0.005 ? "received" : "partial_received" }
+          : { paidAmount: nextSettled, payableStatus: nextSettled >= targetTotal - 0.005 ? "paid" : "partial_paid" }
+      });
+      if (orderUpdated.count !== 1) throw new AppError(409, "ORDER_CONCURRENT_UPDATE", "订单余额已被其他操作更新，请刷新后重试。");
+
+      const invoiceAllocated = roundMoney(addNumbers(match.invoice.allocatedAmount, amount));
+      const bankMatched = roundMoney(addNumbers(match.bankTransaction.matchedAmount, amount));
+      await Promise.all([
+        tx.financeInvoice.update({
+          where: { id: match.invoice.id },
+          data: { allocatedAmount: invoiceAllocated, status: invoiceStatus(match.invoice.localAmount, invoiceAllocated, match.invoice.dueAt) }
+        }),
+        tx.bankTransaction.update({
+          where: { id: match.bankTransaction.id },
+          data: { matchedAmount: bankMatched, status: bankMatched >= match.bankTransaction.localAmount - 0.005 ? "matched" : "partial" }
+        })
+      ]);
+      const totals = await tx.financeOrder.aggregate({ where: { month: match.invoice.month }, _sum: { receivedAmount: true, paidAmount: true } });
+      await tx.financeSummary.updateMany({
+        where: { month: match.invoice.month },
+        data: { totalReceived: totals._sum.receivedAmount ?? 0, totalPaid: totals._sum.paidAmount ?? 0 }
+      });
+      await tx.actionLog.create({
+        data: {
+          month: match.invoice.month,
+          entityType: "reconciliation_match",
+          entityId: String(match.id),
+          action: "confirm_reconciliation",
+          operator,
+          payloadJson: JSON.stringify({
+            amount,
+            settlementRecordId: settlement.id,
+            invoiceBefore: match.invoice.allocatedAmount,
+            invoiceAfter: invoiceAllocated,
+            bankBefore: match.bankTransaction.matchedAmount,
+            bankAfter: bankMatched,
+            orderBefore: currentSettled,
+            orderAfter: nextSettled
+          })
+        }
+      });
+      return { matchId: match.id, amount, settlementRecordId: settlement.id };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   },
 
   async listTasks(input: { month?: string; status?: string; ownerRole?: string; page?: unknown; pageSize?: unknown }) {
@@ -421,6 +551,9 @@ export const operationsService = {
   },
 
   async resolveTask(id: number, operator: string) {
+    const current = await prisma.workflowTask.findUnique({ where: { id } });
+    if (!current) throw new AppError(404, "TASK_NOT_FOUND", "任务不存在。");
+    await assertMonthOpen(prisma, current.month, "处理月度任务");
     const task = await prisma.workflowTask.update({ where: { id }, data: { status: "resolved", resolvedBy: operator, resolvedAt: new Date() } });
     await audit({ month: task.month, entityType: "workflow_task", entityId: String(task.id), action: "resolve_task", operator });
     return task;

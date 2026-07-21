@@ -11,6 +11,7 @@ import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { FinanceChargeLine } from "../../types/finance.types";
 import type { AgingBucket, CustomerReceivableAging, ReceivableResponse, ReceivableRow } from "../../types/receivable.types";
 import { formatMoney } from "../../utils/formatMoney";
+import { useAuth } from "../../contexts/AuthContext";
 
 const agingOrder: AgingBucket[] = ["0-30", "31-60", "61-90", "90+"];
 
@@ -27,6 +28,10 @@ type SettlementRow = {
 };
 
 export default function Receivables() {
+  const { user } = useAuth();
+  const canRecord = Boolean(user?.auth?.permissions.includes("finance:import"));
+  const canVoid = Boolean(user?.auth?.permissions.includes("finance:rollback"));
+  const canExport = Boolean(user?.auth?.permissions.includes("reports:export"));
   const [data, setData] = useState<ReceivableResponse | null>(null);
   const [settlements, setSettlements] = useState<SettlementRow[]>([]);
   const [selectedRow, setSelectedRow] = useState<ReceivableRow | null>(null);
@@ -134,7 +139,7 @@ export default function Receivables() {
       fixed: "right",
       width: 110,
       render: (_, row) => (
-        <Button
+        canRecord ? <Button
           size="small"
           disabled={row.outstandingReceivable <= 0}
           onClick={() => {
@@ -145,7 +150,7 @@ export default function Receivables() {
           }}
         >
           登记回款
-        </Button>
+        </Button> : <Tag>只读</Tag>
       )
     }
   ];
@@ -176,7 +181,7 @@ export default function Receivables() {
     { title: "收付类型", dataIndex: "direction", width: 90 },
     { title: "对应用户", dataIndex: "customerName", width: 140, render: (value) => value || "-" },
     { title: "销售代表", dataIndex: "salespersonName", width: 100, render: (value) => value || "-" },
-    { title: "客服代表", dataIndex: "customerServiceName", width: 100, render: (value) => value || "-" },
+    { title: "操作员", dataIndex: "customerServiceName", width: 100, render: (value) => value || "-" },
     { title: "供应商", dataIndex: "supplierName", width: 160, render: (value) => value || "-" },
     { title: "原始金额", dataIndex: "originalAmount", align: "right", render: formatMoney },
     { title: "本币费用", dataIndex: "localAmount", align: "right", render: formatMoney },
@@ -243,9 +248,9 @@ export default function Receivables() {
       title: "操作",
       width: 100,
       render: (_, row) => (
-        <Popconfirm title="确认作废该回款记录？" okText="确认作废" cancelText="取消" disabled={row.status === "voided"} onConfirm={() => submitVoidReceipt(row)}>
+        canVoid ? <Popconfirm title="确认作废该回款记录？" okText="确认作废" cancelText="取消" disabled={row.status === "voided"} onConfirm={() => submitVoidReceipt(row)}>
           <Button danger size="small" disabled={row.status === "voided"}>作废</Button>
-        </Popconfirm>
+        </Popconfirm> : <Tag>只读</Tag>
       )
     }
   ];
@@ -334,7 +339,7 @@ export default function Receivables() {
             onChange={(_, values) => setDateRange(values[0] && values[1] ? [values[0], values[1]] : null)}
           />
           <Button icon={<ReloadOutlined />} onClick={resetFilters}>重置</Button>
-          <Button type="primary" icon={<DownloadOutlined />} loading={exporting} onClick={() => void downloadBills()}>导出账单</Button>
+          {canExport ? <Button type="primary" icon={<DownloadOutlined />} loading={exporting} onClick={() => void downloadBills()}>导出账单</Button> : null}
         </Space>
         <Table
           rowKey="id"

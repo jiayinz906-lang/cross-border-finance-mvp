@@ -1,6 +1,8 @@
 import type { FinanceOrder } from "@prisma/client";
 import { prisma } from "../prisma/client.js";
 import { resolveMonth } from "../utils/month.js";
+import { allFinanceAccess, scopedFinanceOrderWhere } from "../security/finance-access.js";
+import type { FinanceAccessScope } from "../security/finance-access.js";
 
 type CustomerRow = {
   customerName: string;
@@ -173,9 +175,9 @@ function operatorRows(operatorName: string, orders: FinanceOrder[], overrides: M
 }
 
 export const analyticsService = {
-  async customerProfit(month?: string) {
+  async customerProfit(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     month = resolveMonth(month);
-    const orders = await prisma.financeOrder.findMany({ where: { month, isServiceBusiness: false } });
+    const orders = await prisma.financeOrder.findMany({ where: scopedFinanceOrderWhere({ month, isServiceBusiness: false }, scope) });
     const map = new Map<string, CustomerRow>();
     for (const order of orders) {
       const customerName = order.customerName || order.customerOrderNo || "待主管确认";
@@ -195,17 +197,17 @@ export const analyticsService = {
     };
   },
 
-  async operatorPerformance(month?: string) {
+  async operatorPerformance(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     month = resolveMonth(month);
     const overrides = await prisma.operatorPerformanceOverride.findMany({ where: { month } });
     const overrideMap = new Map<string, PerformanceOverride>(
       overrides.map((row) => [overrideKey(row.operatorName, row.category), row])
     );
     const orders = await prisma.financeOrder.findMany({
-      where: {
+      where: scopedFinanceOrderWhere({
         month,
         importBatch: { is: { status: "active" } }
-      }
+      }, scope)
     });
     const groups = new Map<string, FinanceOrder[]>();
     for (const order of orders) {
@@ -217,10 +219,10 @@ export const analyticsService = {
       .sort((a, b) => b.totalCommission - a.totalCommission);
   },
 
-  async operatorPerformanceWithSettings(month?: string) {
+  async operatorPerformanceWithSettings(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     month = resolveMonth(month);
     const [rows, setting] = await Promise.all([
-      this.operatorPerformance(month),
+      this.operatorPerformance(month, scope),
       prisma.operatorPerformanceMonthSetting.findUnique({ where: { month } })
     ]);
     return {

@@ -3,6 +3,8 @@ import { financeService } from "./finance.service.js";
 import { payableService } from "./payable.service.js";
 import { receivableService } from "./receivable.service.js";
 import * as XLSX from "xlsx";
+import { allFinanceAccess } from "../security/finance-access.js";
+import type { FinanceAccessScope } from "../security/finance-access.js";
 
 function rate(value?: number | null) {
   return typeof value === "number" ? `${(value * 100).toFixed(2)}%` : "-";
@@ -23,6 +25,10 @@ function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], s
 }
 
 export const reportService = {
+  listServiceRecords(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
+    return reportRepository.listServiceRecords(month, scope);
+  },
+
   getMonthlyReport(month?: string) {
     return reportRepository.getMonthlyReport(month);
   },

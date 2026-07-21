@@ -1,11 +1,11 @@
 import type { Request, Response } from "express";
 import { AppError } from "../errors/app-error.js";
-import { currentRole, currentUser } from "../middleware/rbac.middleware.js";
+import { requiredCurrentUser } from "../middleware/rbac.middleware.js";
 import { manualLedgerService } from "../services/manual-ledger.service.js";
 
 function operator(req: Request) {
-  const user = currentUser(req);
-  return user?.displayName || user?.username || currentRole(req);
+  const user = requiredCurrentUser(req);
+  return user.displayName || user.username;
 }
 
 function positiveId(value: string) {

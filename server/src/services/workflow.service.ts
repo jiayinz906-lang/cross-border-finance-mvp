@@ -1,10 +1,20 @@
 import * as XLSX from "xlsx";
 import crypto from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma/client.js";
 import { analyticsService } from "./analytics.service.js";
 import { env } from "../config/env.js";
 import { renderConfirmationPdf, renderConfirmationPng } from "./confirmation-renderer.js";
 import { resolveMonth } from "../utils/month.js";
+import { allFinanceAccess, ownerAccessWhere } from "../security/finance-access.js";
+import type { FinanceAccessScope } from "../security/finance-access.js";
+import { AppError } from "../errors/app-error.js";
+import { assertMonthOpen } from "./month-lock.service.js";
+import {
+  assertConfirmationSnapshotsMutable,
+  voidDraftConfirmationSnapshots
+} from "./confirmation-snapshot.service.js";
+import { roundMoney, sumNumbers } from "../utils/number.js";
 
 type DocumentType = "logistics_commission" | "service_commission" | "operator_performance" | "sales_salary" | "customer_service_salary";
 
@@ -24,10 +34,6 @@ function monthOrDefault(month?: string) {
 function formatMonthLabel(month: string) {
   const [year, monthNo] = month.split("-");
   return `${year}-${monthNo}`;
-}
-
-function roundMoney(value: number) {
-  return Math.round(value * 100) / 100;
 }
 
 function documentCode(month: string, index: number, documentType: DocumentType) {
@@ -397,6 +403,7 @@ async function logAction(input: {
   entityType: string;
   entityId: string | number;
   action: string;
+  operator?: string;
   payload?: unknown;
 }) {
   return prisma.actionLog.create({
@@ -405,6 +412,7 @@ async function logAction(input: {
       entityType: input.entityType,
       entityId: String(input.entityId),
       action: input.action,
+      operator: input.operator ?? "system",
       payloadJson: input.payload ? JSON.stringify(input.payload) : undefined
     }
   });
@@ -447,12 +455,13 @@ async function writeConfirmationDocument(input: {
 }
 
 export const workflowService = {
-  async listDocuments(month?: string, documentType?: DocumentType, includeHistory = false) {
+  async listDocuments(month?: string, documentType?: DocumentType, includeHistory = false, scope: FinanceAccessScope = allFinanceAccess) {
     const documents = await prisma.confirmationDocument.findMany({
       where: {
         month: monthOrDefault(month),
         ...(documentType ? { documentType } : {}),
-        ...(includeHistory ? {} : { documentStatus: { not: "voided" } })
+        ...(includeHistory ? {} : { documentStatus: { not: "voided" } }),
+        ...ownerAccessWhere(scope)
       },
       orderBy: [{ documentType: "asc" }, { ownerName: "asc" }, { version: "desc" }, { id: "desc" }]
     });
@@ -581,8 +590,9 @@ export const workflowService = {
     };
   },
 
-  async generateLogisticsDocuments(month?: string) {
+  async generateLogisticsDocuments(month?: string, operator = "system") {
     const selectedMonth = monthOrDefault(month);
+    await assertMonthOpen(prisma, selectedMonth, "generate logistics confirmation documents");
     const commissions = await prisma.commissionRecord.findMany({
       where: { financeOrder: { month: selectedMonth } },
       include: { financeOrder: true }
@@ -597,10 +607,10 @@ export const workflowService = {
     const sortedGroups = Array.from(groups.entries()).sort(([left], [right]) => left.localeCompare(right, "zh-Hans-CN"));
     for (const [index, [ownerName, items]] of sortedGroups.entries()) {
       const activeBatch = await latestActiveImportBatch(selectedMonth);
-      const grossProfit = items.reduce((sum, item) => sum + item.grossProfit, 0);
-      const commissionAmount = items.reduce((sum, item) => sum + (item.manualCommissionAmount ?? item.commissionAmount), 0);
-      const totalReceivable = items.reduce((sum, item) => sum + item.financeOrder.adjustedReceivable, 0);
-      const totalPayable = items.reduce((sum, item) => sum + item.financeOrder.adjustedPayable, 0);
+      const grossProfit = roundMoney(sumNumbers(items.map((item) => item.grossProfit)));
+      const commissionAmount = roundMoney(sumNumbers(items.map((item) => item.manualCommissionAmount ?? item.commissionAmount)));
+      const totalReceivable = roundMoney(sumNumbers(items.map((item) => item.financeOrder.adjustedReceivable)));
+      const totalPayable = roundMoney(sumNumbers(items.map((item) => item.financeOrder.adjustedPayable)));
       const highRiskCount = items.filter((item) => item.needSupervisorConfirm || (item.financeOrder.adjustedGrossProfitRate ?? 1) < 0.1).length;
       const orderNos = items.map((item) => item.financeOrder.orderNo);
       const chargeLines = await chargeLineSnapshot(selectedMonth, orderNos);
@@ -674,13 +684,15 @@ export const workflowService = {
       entityType: "confirmation_document",
       entityId: "logistics_commission",
       action: "batch_generate",
+      operator,
       payload: { count: documents.length }
     });
     return documents;
   },
 
-  async generateServiceDocuments(month?: string) {
+  async generateServiceDocuments(month?: string, operator = "system") {
     const selectedMonth = monthOrDefault(month);
+    await assertMonthOpen(prisma, selectedMonth, "generate service confirmation documents");
     const records = await prisma.serviceBusinessRecord.findMany({
       where: { financeOrder: { month: selectedMonth } },
       include: { financeOrder: true }
@@ -745,13 +757,15 @@ export const workflowService = {
       entityType: "confirmation_document",
       entityId: "service_commission",
       action: "batch_generate",
+      operator,
       payload: { count: documents.length }
     });
     return documents;
   },
 
-  async generateOperatorDocuments(month?: string) {
+  async generateOperatorDocuments(month?: string, operator = "system") {
     const selectedMonth = monthOrDefault(month);
+    await assertMonthOpen(prisma, selectedMonth, "generate operator confirmation documents");
     const performance = await analyticsService.operatorPerformanceWithSettings(selectedMonth);
     const groups = performance.rows;
     const documents = [];
@@ -823,13 +837,15 @@ export const workflowService = {
       entityType: "confirmation_document",
       entityId: "operator_performance",
       action: "batch_generate",
+      operator,
       payload: { count: documents.length }
     });
     return documents;
   },
 
-  async generateSalaryDocuments(month?: string) {
+  async generateSalaryDocuments(month?: string, operator = "system") {
     const selectedMonth = monthOrDefault(month);
+    await assertMonthOpen(prisma, selectedMonth, "generate salary confirmation documents");
     const [commissions, confirmedServiceRecords, performance, activeBatch] = await Promise.all([
       prisma.commissionRecord.findMany({
         where: { financeOrder: { month: selectedMonth } },
@@ -849,9 +865,9 @@ export const workflowService = {
         ownerName: item.salespersonName,
         financeOrder: item.financeOrder,
         businessType: item.businessType,
-        grossProfit: item.grossProfit,
+        grossProfit: roundMoney(item.grossProfit),
         commissionRate: item.commissionRate,
-        commissionAmount: item.manualCommissionAmount ?? item.commissionAmount,
+        commissionAmount: roundMoney(item.manualCommissionAmount ?? item.commissionAmount),
         source: "Imported Excel logistics commission"
       })),
       ...confirmedServiceRecords.map((item) => ({
@@ -859,9 +875,9 @@ export const workflowService = {
         ownerName: item.financeOrder.salespersonName || "Pending supervisor confirmation",
         financeOrder: item.financeOrder,
         businessType: item.serviceType,
-        grossProfit: item.grossProfit ?? 0,
+        grossProfit: roundMoney(item.grossProfit ?? 0),
         commissionRate: item.grossProfit ? (item.supervisorFinalCommission ?? item.suggestedCommissionMin ?? 0) / item.grossProfit : null,
-        commissionAmount: item.supervisorFinalCommission ?? item.suggestedCommissionMin ?? 0,
+        commissionAmount: roundMoney(item.supervisorFinalCommission ?? item.suggestedCommissionMin ?? 0),
         source: "Supervisor-confirmed registration/service commission"
       }))
     ];
@@ -1010,13 +1026,15 @@ export const workflowService = {
       entityType: "confirmation_document",
       entityId: "salary_confirmation",
       action: "batch_generate_salary_documents",
+      operator,
       payload: { salesCount: salesGroups.size, customerServiceCount: performance.rows.length }
     });
     return documents;
   },
 
-  async sendSignatureLink(id: number) {
+  async sendSignatureLink(id: number, operator = "system") {
     const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
+    await assertMonthOpen(prisma, current.month, "send confirmation signature link");
     if (current.documentStatus === "voided") {
       throw new Error("Voided documents cannot be sent. Generate a new version first.");
     }
@@ -1051,7 +1069,7 @@ export const workflowService = {
         }))
       }
     });
-    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "generate_signature_link", payload: { signatureUrl, expiresAt } });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "generate_signature_link", operator, payload: { signatureUrl, expiresAt } });
     const notificationTarget = await configuredNotificationChannel(document);
     if (!notificationTarget) return document;
 
@@ -1072,7 +1090,7 @@ export const workflowService = {
           }))
         }
       });
-      await logAction({ month: notified.month, entityType: "confirmation_document", entityId: id, action: "send_signature_notification", payload: { notificationChannel: notificationTarget.channel, notifiedAt } });
+      await logAction({ month: notified.month, entityType: "confirmation_document", entityId: id, action: "send_signature_notification", operator, payload: { notificationChannel: notificationTarget.channel, notifiedAt } });
       return notified;
     } catch (error: any) {
       const notificationError = String(error?.message ?? "通知发送失败").slice(0, 500);
@@ -1088,13 +1106,14 @@ export const workflowService = {
           }))
         }
       });
-      await logAction({ month: failed.month, entityType: "confirmation_document", entityId: id, action: "signature_notification_failed", payload: { notificationChannel: notificationTarget.channel, notificationError } });
+      await logAction({ month: failed.month, entityType: "confirmation_document", entityId: id, action: "signature_notification_failed", operator, payload: { notificationChannel: notificationTarget.channel, notificationError } });
       return failed;
     }
   },
 
-  async markSignatureLinkNotified(id: number, channel: string) {
+  async markSignatureLinkNotified(id: number, channel: string, operator = "system") {
     const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
+    await assertMonthOpen(prisma, current.month, "record confirmation notification");
     if (current.documentStatus === "voided") throw new Error("Voided documents cannot be notified.");
     if (!current.signatureUrl || !current.signatureToken) {
       throw new Error("Generate a valid signature link before recording notification.");
@@ -1121,17 +1140,17 @@ export const workflowService = {
         }))
       }
     });
-    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "record_signature_notification", payload: { notificationChannel, notifiedAt } });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "record_signature_notification", operator, payload: { notificationChannel, notifiedAt } });
     return document;
   },
 
   async publicSignatureDocument(signatureToken: string) {
     const current = await prisma.confirmationDocument.findUnique({ where: { signatureToken } });
     if (!current || current.documentStatus === "voided") {
-      throw new Error("Signature link is invalid. Ask the supervisor to resend it.");
+      throw new AppError(404, "SIGNATURE_LINK_INVALID", "签名链接无效、已使用或确认单已作废，请联系主管重新发送。");
     }
     if (!current.signatureTokenExpiresAt || current.signatureTokenExpiresAt < new Date()) {
-      throw new Error("Signature link has expired. Ask the supervisor to resend it.");
+      throw new AppError(410, "SIGNATURE_LINK_EXPIRED", "签名链接已过期，请联系主管重新发送。");
     }
 
     const payload = safeJson<Record<string, any>>(current.payloadJson, {});
@@ -1160,7 +1179,11 @@ export const workflowService = {
   },
 
   async signByToken(signatureToken: string, evidence: SignatureEvidenceInput = {}) {
-    const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { signatureToken } });
+    const current = await prisma.confirmationDocument.findUnique({ where: { signatureToken } });
+    if (!current) {
+      throw new AppError(404, "SIGNATURE_LINK_INVALID", "签名链接无效、已使用或已失效，请联系主管重新发送。");
+    }
+    await assertMonthOpen(prisma, current.month, "sign confirmation document");
     if (current.documentStatus === "voided") {
       throw new Error("Document is voided. Ask supervisor to resend a new version.");
     }
@@ -1176,8 +1199,13 @@ export const workflowService = {
 
     const signedAt = new Date();
     const proof = signatureEvidence({ ...evidence, action: "employee_sign" });
-    const document = await prisma.confirmationDocument.update({
-      where: { id: current.id },
+    const signed = await prisma.confirmationDocument.updateMany({
+      where: {
+        id: current.id,
+        signatureToken,
+        signatureStatus: { not: "signed" },
+        documentStatus: { not: "voided" }
+      },
       data: {
         signatureStatus: "signed",
         sendStatus: current.sendStatus,
@@ -1203,14 +1231,22 @@ export const workflowService = {
         }))
       }
     });
-    await logAction({ month: document.month, entityType: "confirmation_document", entityId: document.id, action: "employee_sign", payload: proof });
+    if (signed.count !== 1) {
+      throw new AppError(409, "SIGNATURE_LINK_ALREADY_USED", "签名链接已使用或确认单状态已变化，请勿重复提交。");
+    }
+    const document = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id: current.id } });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: document.id, action: "employee_sign", operator: current.ownerName, payload: proof });
     return document;
   },
 
-  async supervisorConfirm(id: number, evidence: SignatureEvidenceInput = {}, adjustReason?: string) {
+  async supervisorConfirm(id: number, evidence: SignatureEvidenceInput = {}, adjustReason?: string, operator = "supervisor") {
     const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
+    await assertMonthOpen(prisma, current.month, "confirm confirmation document");
     if (current.documentStatus === "voided") {
       throw new Error("Voided documents cannot be confirmed.");
+    }
+    if (current.supervisorStatus === "confirmed") {
+      throw new AppError(409, "CONFIRMATION_IMMUTABLE", "Confirmed documents cannot be overwritten. Void the document before generating a new version.");
     }
     if (current.signatureStatus !== "signed") {
       throw new Error("The employee must sign this document before supervisor confirmation.");
@@ -1249,13 +1285,17 @@ export const workflowService = {
         }))
       }
     });
-    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "supervisor_confirm", payload: { proof, adjustReason } });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "supervisor_confirm", operator, payload: { proof, adjustReason } });
     return document;
   },
 
-  async voidDocument(id: number, voidReason?: string) {
+  async voidDocument(id: number, voidReason?: string, operator = "supervisor") {
     const reason = requireReason(voidReason, "Void reason is required.");
     const current = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
+    await assertMonthOpen(prisma, current.month, "void confirmation document");
+    if (current.documentStatus === "voided") {
+      throw new AppError(409, "CONFIRMATION_ALREADY_VOIDED", "This confirmation document is already voided.");
+    }
     const document = await prisma.confirmationDocument.update({
       where: { id },
       data: {
@@ -1280,7 +1320,7 @@ export const workflowService = {
         }))
       }
     });
-    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "void_for_resign", payload: { voidReason: reason } });
+    await logAction({ month: document.month, entityType: "confirmation_document", entityId: id, action: "void_for_resign", operator, payload: { voidReason: reason } });
     return document;
   },
 
@@ -1348,8 +1388,11 @@ startxref
     };
   },
 
-  async downloadConfirmationDocument(id: number, format: "pdf" | "png" = "pdf") {
+  async downloadConfirmationDocument(id: number, format: "pdf" | "png" = "pdf", scope: FinanceAccessScope = allFinanceAccess) {
     const document = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
+    if (scope.mode === "none" || (scope.mode === "self" && !scope.names.includes(document.ownerName))) {
+      throw new AppError(403, "DOCUMENT_ACCESS_DENIED", "只能查看和下载本人的确认单。");
+    }
 
     if (format === "pdf") {
       const buffer = await renderConfirmationPdf(document);
@@ -1546,66 +1589,141 @@ startxref
     };
   },
 
-  async markRiskReviewed(id: number) {
+  async markRiskReviewed(id: number, operator = "supervisor") {
+    const current = await prisma.riskRecord.findUniqueOrThrow({ where: { id }, include: { financeOrder: true } });
+    await assertMonthOpen(prisma, current.financeOrder.month, "review risk");
     const risk = await prisma.riskRecord.update({
       where: { id },
-      data: { status: "reviewed", reviewedAt: new Date(), reviewConclusion: "reviewed" },
+      data: { status: "reviewed", reviewedAt: new Date(), reviewedBy: operator, reviewConclusion: "reviewed" },
       include: { financeOrder: true }
     });
-    await logAction({ month: risk.financeOrder.month, entityType: "risk_record", entityId: id, action: "mark_reviewed" });
+    await logAction({ month: risk.financeOrder.month, entityType: "risk_record", entityId: id, action: "mark_reviewed", operator });
     return risk;
   },
 
-  async confirmServiceRecord(id: number, finalCommission?: number) {
-    const record = await prisma.serviceBusinessRecord.update({
-      where: { id },
-      data: {
-        supervisorFinalCommission: finalCommission,
-        confirmStatus: "confirmed"
-      },
-      include: { financeOrder: true }
-    });
-    await logAction({
-      month: record.financeOrder.month,
-      entityType: "service_business_record",
-      entityId: id,
-      action: "confirm_service_commission",
-      payload: { finalCommission }
-    });
+  async confirmServiceRecord(id: number, finalCommission?: number, operator = "supervisor") {
+    if (finalCommission !== undefined && (!Number.isFinite(finalCommission) || finalCommission < 0)) {
+      throw new AppError(400, "INVALID_COMMISSION_AMOUNT", "Final commission must be a non-negative number.");
+    }
+    const current = await prisma.serviceBusinessRecord.findUniqueOrThrow({ where: { id }, include: { financeOrder: true } });
+    await assertMonthOpen(prisma, current.financeOrder.month, "confirm service commission");
+    const month = current.financeOrder.month;
+    const targets = [
+      { documentType: "service_commission", ownerName: current.financeOrder.orderNo },
+      { documentType: "sales_salary", ownerName: current.financeOrder.salespersonName }
+    ];
+    const staleReason = `注册/服务提成 ${current.financeOrder.orderNo} 已更新，旧确认单自动作废并生成新版本`;
+
+    const record = await prisma.$transaction(async (tx) => {
+      await assertConfirmationSnapshotsMutable(tx, month, targets);
+      const updated = await tx.serviceBusinessRecord.update({
+        where: { id },
+        data: {
+          supervisorFinalCommission: finalCommission,
+          confirmStatus: "confirmed"
+        },
+        include: { financeOrder: true }
+      });
+      const voidedDocumentIds = await voidDraftConfirmationSnapshots(tx, month, targets, staleReason);
+      await tx.actionLog.create({
+        data: {
+          month,
+          entityType: "service_business_record",
+          entityId: String(id),
+          action: "confirm_service_commission",
+          operator,
+          payloadJson: JSON.stringify({
+            before: { finalCommission: current.supervisorFinalCommission, confirmStatus: current.confirmStatus },
+            after: { finalCommission, confirmStatus: "confirmed" },
+            voidedDocumentIds
+          })
+        }
+      });
+      return updated;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    await Promise.all([
+      workflowService.generateServiceDocuments(month, operator),
+      workflowService.generateSalaryDocuments(month, operator)
+    ]);
     return record;
   },
 
-  async confirmSalespersonCommission(month: string | undefined, salespersonName: string, manualRate?: number, adjustReason?: string) {
+  async confirmSalespersonCommission(month: string | undefined, salespersonName: string, manualRate?: number, adjustReason?: string, operator = "supervisor") {
     month = resolveMonth(month);
+    await assertMonthOpen(prisma, month, "confirm salesperson commission");
+    if (manualRate !== undefined && (!Number.isFinite(manualRate) || manualRate < 0 || manualRate > 1)) {
+      throw new AppError(400, "INVALID_COMMISSION_RATE", "Commission rate must be between 0 and 1.");
+    }
     const reason = manualRate !== undefined
       ? requireReason(adjustReason, "Adjust reason is required when changing commission rate.")
       : undefined;
-    const records = await prisma.commissionRecord.findMany({
-      where: { salespersonName, financeOrder: { month } },
-      include: { financeOrder: true }
-    });
-    const updates = [];
-    for (const record of records) {
-      updates.push(await prisma.commissionRecord.update({
-        where: { id: record.id },
+    const targets = [
+      { documentType: "logistics_commission", ownerName: salespersonName },
+      { documentType: "sales_salary", ownerName: salespersonName }
+    ];
+    const result = await prisma.$transaction(async (tx) => {
+      await assertConfirmationSnapshotsMutable(tx, month, targets);
+      const records = await tx.commissionRecord.findMany({
+        where: { salespersonName, financeOrder: { month } },
+        include: { financeOrder: true }
+      });
+      if (!records.length) throw new AppError(404, "COMMISSION_NOT_FOUND", "No commission records were found for this salesperson and month.");
+
+      const updates = [];
+      for (const record of records) {
+        updates.push(await tx.commissionRecord.update({
+          where: { id: record.id },
+          data: {
+            confirmStatus: "confirmed",
+            ...(manualRate !== undefined ? {
+              commissionRate: manualRate,
+              manualCommissionAmount: roundMoney(record.grossProfit * manualRate),
+              adjustReason: reason
+            } : {})
+          }
+        }));
+      }
+
+      const allMonthRecords = await tx.commissionRecord.findMany({
+        where: { financeOrder: { month } },
+        select: { commissionAmount: true, manualCommissionAmount: true }
+      });
+      const totalCommission = roundMoney(allMonthRecords.reduce(
+        (sum, item) => sum + (item.manualCommissionAmount ?? item.commissionAmount),
+        0
+      ));
+      await tx.financeSummary.updateMany({ where: { month }, data: { totalCommission } });
+      const voidedDocumentIds = await voidDraftConfirmationSnapshots(
+        tx,
+        month,
+        targets,
+        `销售代表 ${salespersonName} 的物流提成已更新，旧确认单自动作废并生成新版本`
+      );
+      await tx.actionLog.create({
         data: {
-          confirmStatus: "confirmed",
-          ...(manualRate !== undefined ? {
-            commissionRate: manualRate,
-            manualCommissionAmount: roundMoney(record.grossProfit * manualRate),
-            adjustReason: reason
-          } : {})
+          month,
+          entityType: "commission_record",
+          entityId: salespersonName,
+          action: manualRate !== undefined ? "adjust_and_confirm_commission" : "confirm_commission",
+          operator,
+          payloadJson: JSON.stringify({
+            before: records.map((record) => ({ id: record.id, rate: record.commissionRate, amount: record.manualCommissionAmount ?? record.commissionAmount, status: record.confirmStatus })),
+            after: updates.map((record) => ({ id: record.id, rate: record.commissionRate, amount: record.manualCommissionAmount ?? record.commissionAmount, status: record.confirmStatus })),
+            adjustReason: reason,
+            totalCommission,
+            voidedDocumentIds
+          })
         }
-      }));
-    }
-    await logAction({
-      month,
-      entityType: "commission_record",
-      entityId: salespersonName,
-      action: manualRate !== undefined ? "adjust_and_confirm_commission" : "confirm_commission",
-      payload: { count: updates.length, manualRate, adjustReason: reason }
-    });
-    return { salespersonName, rows: updates };
+      });
+      return { salespersonName, rows: updates };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    await Promise.all([
+      workflowService.generateLogisticsDocuments(month, operator),
+      workflowService.generateSalaryDocuments(month, operator)
+    ]);
+    return result;
   },
 
   async actionLogs(input: { month?: string; entityType?: string; entityId?: string; action?: string; operator?: string } = {}) {

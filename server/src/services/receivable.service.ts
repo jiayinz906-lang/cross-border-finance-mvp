@@ -1,6 +1,8 @@
 import { receivableRepository } from "../repositories/receivable.repository.js";
 import { financeRepository } from "../repositories/finance.repository.js";
 import * as XLSX from "xlsx";
+import { allFinanceAccess } from "../security/finance-access.js";
+import type { FinanceAccessScope } from "../security/finance-access.js";
 
 type AgingBucket = "0-30" | "31-60" | "61-90" | "90+";
 type BillingStatus = "unsettled" | "partial" | "settled" | "refund_due";
@@ -48,9 +50,9 @@ function statusLabel(status: BillingStatus) {
 }
 
 export const receivableService = {
-  async listReceivables(month?: string) {
+  async listReceivables(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     const selectedMonth = month ?? (await financeRepository.getLatestSummary())?.month;
-    const rows = await receivableRepository.listReceivables(selectedMonth);
+    const rows = await receivableRepository.listReceivables(selectedMonth, scope);
     const asOfDate = monthEnd(selectedMonth);
     const agingBuckets: Record<AgingBucket, number> = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
     const customerMap = new Map<string, {
@@ -125,8 +127,8 @@ export const receivableService = {
     };
   },
 
-  async exportReceivables(month?: string) {
-    const result = await receivableService.listReceivables(month);
+  async exportReceivables(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
+    const result = await receivableService.listReceivables(month, scope);
     const rows = result.rows.map((row) => ({
       客户: row.customerName,
       系统订单号: row.orderNo,

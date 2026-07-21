@@ -4,6 +4,9 @@ import type { Prisma } from "@prisma/client";
 import { agencyRuntimeProfile } from "../config/agent.registry.js";
 import { selfHostedStack } from "../config/selfhosted-stack.js";
 import { prisma } from "../prisma/client.js";
+import { AppError } from "../errors/app-error.js";
+import { resolveParameterRules } from "./finance.service.js";
+import { multiplyNumbers, safeRate, subtractNumbers, sumNumbers } from "../utils/number.js";
 
 type CellValue = string | number | boolean | Date | null | undefined;
 type RawRow = Record<string, CellValue>;
@@ -142,7 +145,12 @@ const defaultImportRules: ImportRules = {
   ]
 };
 
-const templateHeaders = [
+export const systemImportTemplate = {
+  templateKey,
+  fileName: "表头模版.xlsx",
+  sheetName: "Sheet1",
+  headerRowIndex: 1,
+  headers: [
   "运单号",
   "客户订单号",
   "用户",
@@ -158,13 +166,32 @@ const templateHeaders = [
   "本币费用",
   "销售代表",
   "备注",
+  "备注",
+  "折合人民币",
   "客服代表",
   "下单时间",
   "内部备注",
   "实重",
   "件数",
   "主品名"
-];
+  ]
+} as const;
+
+const templateHeaders: string[] = [...systemImportTemplate.headers];
+
+export async function ensureDefaultImportTemplate() {
+  return prisma.excelImportTemplate.upsert({
+    where: { templateKey },
+    update: {},
+    create: {
+      templateKey: systemImportTemplate.templateKey,
+      fileName: systemImportTemplate.fileName,
+      sheetName: systemImportTemplate.sheetName,
+      headerRowIndex: systemImportTemplate.headerRowIndex,
+      headersJson: JSON.stringify(systemImportTemplate.headers)
+    }
+  });
+}
 
 const fieldAliases: Record<CanonicalField, string[]> = {
   orderNo: ["运单号", "单号", "订单号", "物流单号", "系统单号", "运单编号"],
@@ -226,21 +253,8 @@ function rowHash(value: unknown): string {
   return crypto.createHash("sha256").update(stableJson(value)).digest("hex");
 }
 
-async function loadImportRules(): Promise<ImportRules> {
-  const rows = await prisma.parameterRule.findMany({
-    where: {
-      isActive: true,
-      ruleKey: {
-        in: [
-          "exchange_rate_policy",
-          "risk_profit_rate_threshold",
-          "logistics_commission_tiers",
-          "company_customer_commission_rate",
-          "service_business_scope"
-        ]
-      }
-    }
-  });
+async function loadImportRules(month?: string): Promise<ImportRules> {
+  const rows = await resolveParameterRules(month);
   const byKey = new Map(rows.map((row) => [row.ruleKey, row.valueJson]));
   const exchange = safeJson<{ cnyRate?: number; usdRate?: number }>(byKey.get("exchange_rate_policy"), {});
   const risk = safeJson<{ highRiskBelow?: number; abnormalHighAbove?: number }>(byKey.get("risk_profit_rate_threshold"), {});
@@ -303,7 +317,7 @@ function mapRawRow(row: RawRow, mapping: HeaderMapping): CanonicalRow {
 }
 
 async function loadTemplateHeaders() {
-  const template = await prisma.excelImportTemplate.findUnique({ where: { templateKey } });
+  const template = await ensureDefaultImportTemplate();
   return safeJson<string[]>(template?.headersJson, templateHeaders);
 }
 
@@ -510,10 +524,22 @@ function makeDraft(row: CanonicalRow, rules: ImportRules): DraftOrder {
 }
 
 function finalize(order: DraftOrder, rules: ImportRules): DraftOrder {
-  order.adjustedReceivable = order.receivableFreight + order.receivableClearance + order.receivableDelivery + order.receivableCompensation + order.otherReceivable;
-  order.adjustedPayable = order.payableFreight + order.payableClearance + order.payableDelivery + order.payableCompensation + order.otherCost;
-  order.adjustedGrossProfit = order.adjustedReceivable - order.adjustedPayable;
-  order.adjustedGrossProfitRate = order.adjustedReceivable > 0 ? order.adjustedGrossProfit / order.adjustedReceivable : null;
+  order.adjustedReceivable = sumNumbers([
+    order.receivableFreight,
+    order.receivableClearance,
+    order.receivableDelivery,
+    order.receivableCompensation,
+    order.otherReceivable
+  ]);
+  order.adjustedPayable = sumNumbers([
+    order.payableFreight,
+    order.payableClearance,
+    order.payableDelivery,
+    order.payableCompensation,
+    order.otherCost
+  ]);
+  order.adjustedGrossProfit = subtractNumbers(order.adjustedReceivable, order.adjustedPayable);
+  order.adjustedGrossProfitRate = safeRate(order.adjustedGrossProfit, order.adjustedReceivable);
 
   const notes = [];
   if (order.exchangeRateStatus === "pending") notes.push("汇率缺失或非数字，待主管复核");
@@ -592,9 +618,9 @@ function importAudit(headers: string[], mapping: HeaderMapping, rules?: ImportRu
 }
 
 function summarizeOrders(orders: DraftOrder[], rules: ImportRules) {
-  const totalReceivable = orders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
-  const totalPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
-  const totalGrossProfit = orders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
+  const totalReceivable = sumNumbers(orders.map((order) => order.adjustedReceivable));
+  const totalPayable = sumNumbers(orders.map((order) => order.adjustedPayable));
+  const totalGrossProfit = sumNumbers(orders.map((order) => order.adjustedGrossProfit));
   return {
     importedOrders: orders.length,
     serviceOrders: orders.filter((order) => order.isServiceBusiness).length,
@@ -602,7 +628,7 @@ function summarizeOrders(orders: DraftOrder[], rules: ImportRules) {
     totalReceivable,
     totalPayable,
     totalGrossProfit,
-    grossProfitRate: totalReceivable > 0 ? totalGrossProfit / totalReceivable : null,
+    grossProfitRate: safeRate(totalGrossProfit, totalReceivable),
     riskOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < rules.highRiskBelow || order.needSupervisorConfirm).length,
     abnormalHighProfitOrderCount: orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > rules.abnormalHighAbove).length,
     pendingSupervisorConfirmCount: orders.filter((order) => order.needSupervisorConfirm).length
@@ -782,14 +808,14 @@ function buildChargeLineSummary(rawLines: ParsedRawLine[], rules: ImportRules) {
     compensationLineCount: compensationLines.length,
     negativeAmountCount: negativeLines.length,
     serviceLineCount: chargeLines.filter((line) => line.isServiceBusiness).length,
-    totalReceivable: receivableLines.reduce((sum, line) => sum + line.localAmount, 0),
-    totalPayable: payableLines.reduce((sum, line) => sum + line.localAmount, 0),
-    totalCompensation: compensationLines.reduce((sum, line) => sum + line.signedAmount, 0),
-    totalSignedAmount: chargeLines.reduce((sum, line) => sum + line.signedAmount, 0),
+    totalReceivable: sumNumbers(receivableLines.map((line) => line.localAmount)),
+    totalPayable: sumNumbers(payableLines.map((line) => line.localAmount)),
+    totalCompensation: sumNumbers(compensationLines.map((line) => line.signedAmount)),
+    totalSignedAmount: sumNumbers(chargeLines.map((line) => line.signedAmount)),
     feeTypeSummary: Array.from(chargeLines.reduce((map, line) => {
       const item = map.get(line.feeType) ?? { feeType: line.feeType, count: 0, amount: 0 };
       item.count += 1;
-      item.amount += line.localAmount;
+      item.amount = sumNumbers([item.amount, line.localAmount]);
       map.set(line.feeType, item);
       return map;
     }, new Map<string, { feeType: string; count: number; amount: number }>()).values())
@@ -841,10 +867,10 @@ function buildImportAuditReport(parsed: {
     reconciliation: {
       orderReceivable: parsed.totalReceivable,
       chargeReceivable: chargeLineSummary.totalReceivable,
-      receivableDifference: parsed.totalReceivable - chargeLineSummary.totalReceivable,
+      receivableDifference: subtractNumbers(parsed.totalReceivable, chargeLineSummary.totalReceivable),
       orderPayable: parsed.totalPayable,
       chargePayable: chargeLineSummary.totalPayable,
-      payableDifference: parsed.totalPayable - chargeLineSummary.totalPayable,
+      payableDifference: subtractNumbers(parsed.totalPayable, chargeLineSummary.totalPayable),
       source: "FinanceOrder 聚合与 FinanceChargeLine 费用明细账同源计算"
     }
   };
@@ -909,7 +935,7 @@ function normalizeImportMonth(value?: string) {
 }
 
 async function parseWorkbook(buffer: Buffer, originalName: string, targetMonth?: string) {
-  const rules = await loadImportRules();
+  const rules = await loadImportRules(targetMonth);
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
   const fileName = normalizeUploadFileName(originalName);
   const { sheetName, headers, mapping, rows } = findDetailSheet(workbook);
@@ -1011,10 +1037,13 @@ async function writeActionLog(db: Prisma.TransactionClient, input: {
 
 async function rebuildFinanceSummary(db: Prisma.TransactionClient, month: string, rules: ImportRules) {
   const orders = await db.financeOrder.findMany({ where: { month } });
-  const totalReceivable = orders.reduce((sum, order) => sum + order.adjustedReceivable, 0);
-  const totalPayable = orders.reduce((sum, order) => sum + order.adjustedPayable, 0);
-  const totalGrossProfit = orders.reduce((sum, order) => sum + order.adjustedGrossProfit, 0);
+  const totalReceivable = sumNumbers(orders.map((order) => order.adjustedReceivable));
+  const totalPayable = sumNumbers(orders.map((order) => order.adjustedPayable));
+  const totalGrossProfit = sumNumbers(orders.map((order) => order.adjustedGrossProfit));
   const commissions = await db.commissionRecord.findMany({ where: { financeOrder: { month } } });
+  const totalReceived = sumNumbers(orders.map((order) => order.receivedAmount));
+  const totalPaid = sumNumbers(orders.map((order) => order.paidAmount));
+  const totalCommission = sumNumbers(commissions.map((item) => item.commissionAmount));
   const riskOrderCount = orders.filter((order) => (order.adjustedGrossProfitRate ?? 1) < rules.highRiskBelow || order.needSupervisorConfirm).length;
   const abnormalHighProfitOrderCount = orders.filter((order) => (order.adjustedGrossProfitRate ?? 0) > rules.abnormalHighAbove).length;
 
@@ -1023,11 +1052,11 @@ async function rebuildFinanceSummary(db: Prisma.TransactionClient, month: string
     update: {
       totalReceivable,
       totalPayable,
-      totalReceived: orders.reduce((sum, order) => sum + order.receivedAmount, 0),
-      totalPaid: orders.reduce((sum, order) => sum + order.paidAmount, 0),
+      totalReceived,
+      totalPaid,
       totalGrossProfit,
-      grossProfitRate: totalReceivable > 0 ? totalGrossProfit / totalReceivable : null,
-      totalCommission: commissions.reduce((sum, item) => sum + item.commissionAmount, 0),
+      grossProfitRate: safeRate(totalGrossProfit, totalReceivable),
+      totalCommission,
       riskOrderCount,
       abnormalHighProfitOrderCount,
       pendingSupervisorConfirmCount: orders.filter((order) => order.needSupervisorConfirm).length
@@ -1036,11 +1065,11 @@ async function rebuildFinanceSummary(db: Prisma.TransactionClient, month: string
       month,
       totalReceivable,
       totalPayable,
-      totalReceived: orders.reduce((sum, order) => sum + order.receivedAmount, 0),
-      totalPaid: orders.reduce((sum, order) => sum + order.paidAmount, 0),
+      totalReceived,
+      totalPaid,
       totalGrossProfit,
-      grossProfitRate: totalReceivable > 0 ? totalGrossProfit / totalReceivable : null,
-      totalCommission: commissions.reduce((sum, item) => sum + item.commissionAmount, 0),
+      grossProfitRate: safeRate(totalGrossProfit, totalReceivable),
+      totalCommission,
       riskOrderCount,
       abnormalHighProfitOrderCount,
       pendingSupervisorConfirmCount: orders.filter((order) => order.needSupervisorConfirm).length
@@ -1066,7 +1095,7 @@ async function createDerivedRecords(
         businessType: order.businessType,
         grossProfit: order.adjustedGrossProfit,
         commissionRate: rate,
-        commissionAmount: order.adjustedGrossProfit * rate,
+        commissionAmount: multiplyNumbers(order.adjustedGrossProfit, rate, 2),
         needSupervisorConfirm: order.needSupervisorConfirm,
         confirmStatus: order.needSupervisorConfirm ? "pending" : "confirmed"
       }
@@ -1093,8 +1122,8 @@ async function createDerivedRecords(
         serviceType: order.businessType,
         originalPrice: order.adjustedReceivable,
         suggestedPrice: order.adjustedReceivable,
-        suggestedCommissionMin: Math.max(order.adjustedGrossProfit * 0.08, 0),
-        suggestedCommissionMax: Math.max(order.adjustedGrossProfit * 0.12, 0),
+        suggestedCommissionMin: Math.max(multiplyNumbers(order.adjustedGrossProfit, 0.08, 2), 0),
+        suggestedCommissionMax: Math.max(multiplyNumbers(order.adjustedGrossProfit, 0.12, 2), 0),
         costAmount: order.adjustedPayable,
         grossProfit: order.adjustedGrossProfit,
         confirmStatus: "pending",
@@ -1139,6 +1168,7 @@ export const excelService = {
   },
 
   async listImportTemplates() {
+    await ensureDefaultImportTemplate();
     const templates = await prisma.excelImportTemplate.findMany({
       orderBy: [{ templateKey: "asc" }, { id: "asc" }]
     });
@@ -1199,7 +1229,7 @@ export const excelService = {
     };
   },
 
-  async importWorkbook(buffer: Buffer, originalName: string, targetMonth?: string) {
+  async importWorkbook(buffer: Buffer, originalName: string, targetMonth?: string, operator = "finance-system") {
     const parsed = await parseWorkbook(buffer, originalName, targetMonth);
     const auditReport = buildImportAuditReport(parsed);
     if (auditReport.blockingIssues.length) {
@@ -1237,7 +1267,8 @@ export const excelService = {
           }),
           sourceFileData: buffer,
           sourceFileSha256,
-          sourceFileSize: buffer.length
+          sourceFileSize: buffer.length,
+          createdBy: operator
         }
       });
 
@@ -1304,7 +1335,7 @@ export const excelService = {
         if (!order.isServiceBusiness && order.adjustedGrossProfit > 0) {
           logisticsProfitBySalesperson.set(
             order.salespersonName,
-            (logisticsProfitBySalesperson.get(order.salespersonName) ?? 0) + order.adjustedGrossProfit
+            sumNumbers([logisticsProfitBySalesperson.get(order.salespersonName) ?? 0, order.adjustedGrossProfit])
           );
         }
       }
@@ -1319,6 +1350,7 @@ export const excelService = {
         entityType: "import_batch",
         entityId: batch.id,
         action: "import_excel",
+        operator,
         payload: {
           batchNo: batch.batchNo,
           fileName: parsed.fileName,
@@ -1510,12 +1542,61 @@ export const excelService = {
     };
   },
 
-  async rollbackImportBatch(id: number) {
+  async rollbackImportBatch(id: number, operator = "finance-system") {
     const batch = await prisma.importBatch.findUnique({ where: { id } });
     if (!batch) throw new Error("导入批次不存在。");
     if (batch.status === "reverted") throw new Error("导入批次已回滚。");
+    if (batch.status !== "active") {
+      throw new AppError(409, "IMPORT_BATCH_NOT_ACTIVE", "只能回滚当前有效导入批次；历史批次保留为不可变审计记录。");
+    }
     await assertMonthOpen(batch.month, "回滚导入批次");
-    const rules = await loadImportRules();
+
+    const previous = await prisma.importBatch.findFirst({
+      where: {
+        month: batch.month,
+        id: { not: batch.id },
+        status: "superseded",
+        sourceFileData: { not: null }
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }]
+    });
+
+    if (previous?.sourceFileData) {
+      const restored = await excelService.importWorkbook(
+        Buffer.from(previous.sourceFileData),
+        previous.fileName,
+        batch.month,
+        operator
+      );
+      await prisma.$transaction(async (tx) => {
+        await tx.importBatch.update({ where: { id }, data: { status: "reverted", revertedAt: new Date() } });
+        await writeActionLog(tx, {
+          month: batch.month,
+          entityType: "import_batch",
+          entityId: id,
+          action: "rollback_and_restore_previous_import",
+          operator,
+          payload: {
+            revertedBatchNo: batch.batchNo,
+            restoredFromBatchId: previous.id,
+            restoredFromBatchNo: previous.batchNo,
+            restoredAsBatchId: restored.batchId,
+            restoredAsBatchNo: restored.batchNo,
+            sourceFileSha256: previous.sourceFileSha256
+          }
+        });
+      });
+      return {
+        id,
+        month: batch.month,
+        status: "reverted",
+        restoredFromBatchId: previous.id,
+        activeBatchId: restored.batchId,
+        activeBatchNo: restored.batchNo
+      };
+    }
+
+    const rules = await loadImportRules(batch.month);
 
     await prisma.$transaction(async (tx) => {
       await tx.serviceBusinessRecord.deleteMany({ where: { financeOrder: { importBatchId: id } } });
@@ -1532,11 +1613,14 @@ export const excelService = {
         entityType: "import_batch",
         entityId: id,
         action: "rollback_import_batch",
+        operator,
         payload: {
           batchNo: batch.batchNo,
           fileName: batch.fileName,
           importedOrders: batch.importedOrders,
-          importedRows: batch.importedRows
+          importedRows: batch.importedRows,
+          restoredFromBatchId: null,
+          result: "month_cleared_no_previous_source"
         }
       });
     }, { timeout: 120_000 });

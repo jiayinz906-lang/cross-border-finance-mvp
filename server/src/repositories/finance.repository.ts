@@ -1,13 +1,15 @@
 import { prisma } from "../prisma/client.js";
+import { allFinanceAccess, scopedFinanceOrderWhere } from "../security/finance-access.js";
+import type { FinanceAccessScope } from "../security/finance-access.js";
 
 function monthWhere(month?: string) {
   return month ? { month } : undefined;
 }
 
 export const financeRepository = {
-  listOrders(month?: string) {
+  listOrders(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     return prisma.financeOrder.findMany({
-      where: monthWhere(month),
+      where: scopedFinanceOrderWhere(monthWhere(month) ?? {}, scope),
       orderBy: [{ month: "desc" }, { orderNo: "asc" }]
     });
   },
@@ -30,16 +32,16 @@ export const financeRepository = {
     });
   },
 
-  listLogisticsOrders(month?: string) {
+  listLogisticsOrders(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     return prisma.financeOrder.findMany({
-      where: { ...(month ? { month } : {}), isServiceBusiness: false },
+      where: scopedFinanceOrderWhere({ ...(month ? { month } : {}), isServiceBusiness: false }, scope),
       orderBy: [{ month: "desc" }, { orderNo: "asc" }]
     });
   },
 
-  listServiceOrders(month?: string) {
+  listServiceOrders(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     return prisma.financeOrder.findMany({
-      where: { ...(month ? { month } : {}), isServiceBusiness: true },
+      where: scopedFinanceOrderWhere({ ...(month ? { month } : {}), isServiceBusiness: true }, scope),
       orderBy: [{ month: "desc" }, { orderNo: "asc" }]
     });
   }

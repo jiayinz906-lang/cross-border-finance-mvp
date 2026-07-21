@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { workflowService } from "../server/src/services/workflow.service.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const month = process.env.BACKUP_MONTH || "2026-06";
+const month = process.env.BACKUP_MONTH?.trim() || undefined;
 const outputDir = path.resolve(projectRoot, process.env.BACKUP_OUTPUT_DIR || "outputs/backups");
 
 async function main() {
@@ -17,7 +17,7 @@ async function main() {
   await fs.promises.writeFile(target, file.buffer);
 
   console.log("System backup exported.");
-  console.log(`Month: ${month}`);
+  console.log(`Scope: ${month ?? "all months"}`);
   console.log(`File: ${target}`);
   console.log(`Size: ${file.buffer.length} bytes`);
 }

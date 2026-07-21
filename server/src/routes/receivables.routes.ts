@@ -4,8 +4,8 @@ import { requirePermission } from "../middleware/rbac.middleware.js";
 
 export const receivablesRoutes = Router();
 
-receivablesRoutes.get("/", receivablesController);
-receivablesRoutes.get("/export", requirePermission("reports:export"), exportReceivablesController);
-receivablesRoutes.get("/settlements", receiptRecordsController);
+receivablesRoutes.get("/", requirePermission("receivables:read"), receivablesController);
+receivablesRoutes.get("/export", requirePermission("receivables:read"), requirePermission("reports:export"), exportReceivablesController);
+receivablesRoutes.get("/settlements", requirePermission("receivables:read"), receiptRecordsController);
 receivablesRoutes.post("/:id/receipts", requirePermission("finance:import"), recordReceiptController);
 receivablesRoutes.post("/settlements/:id/void", requirePermission("finance:rollback"), voidReceiptController);

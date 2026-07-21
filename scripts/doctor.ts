@@ -1,9 +1,14 @@
 import http from "node:http";
 import https from "node:https";
+import {
+  argumentValue,
+  loadEnvironmentFile,
+  resolveVerificationCredentials
+} from "./lib/runtime-config.js";
 
 type Check = {
   name: string;
-  pass: boolean;
+  status: "PASS" | "FAIL" | "SKIP";
   detail?: string;
 };
 
@@ -12,10 +17,10 @@ type ResponsePayload = {
   body: string;
 };
 
-const projectRoot = process.cwd();
-const clientUrl = process.env.UI_SMOKE_CLIENT_URL || "http://localhost:5173/";
-const apiUrl = process.env.UI_SMOKE_API_URL || "http://localhost:4000/api";
-const month = process.env.FINANCE_DOCTOR_MONTH || "2026-06";
+const loadedEnvironmentFile = loadEnvironmentFile(argumentValue("env-file") || process.env.FINANCE_ENV_FILE);
+const clientUrl = argumentValue("client-url") || process.env.UI_SMOKE_CLIENT_URL || "http://localhost:5173/";
+const apiUrl = argumentValue("api-url") || process.env.UI_SMOKE_API_URL || "http://localhost:4000/api";
+const requestedMonth = argumentValue("month") || process.env.FINANCE_DOCTOR_MONTH;
 
 function requestText(url: string, headers: Record<string, string> = {}): Promise<ResponsePayload> {
   return new Promise((resolve, reject) => {
@@ -63,7 +68,11 @@ async function requestJson<T>(url: string, headers: Record<string, string> = {})
 }
 
 function push(checks: Check[], name: string, pass: boolean, detail?: string) {
-  checks.push({ name, pass, detail });
+  checks.push({ name, status: pass ? "PASS" : "FAIL", detail });
+}
+
+function skip(checks: Check[], name: string, detail: string) {
+  checks.push({ name, status: "SKIP", detail });
 }
 
 function money(value: unknown) {
@@ -73,6 +82,7 @@ function money(value: unknown) {
 
 async function main() {
   const checks: Check[] = [];
+  let month = requestedMonth || new Date().toISOString().slice(0, 7);
 
   const frontend = await requestText(clientUrl);
   push(checks, "Frontend is reachable", frontend.statusCode === 200 && frontend.body.includes("<!doctype html>"), `${clientUrl} -> ${frontend.statusCode}`);
@@ -80,71 +90,109 @@ async function main() {
   const health = await requestJson<{ status?: string; service?: string }>(`${apiUrl}/health`);
   push(checks, "Backend health is ok", health.status === "ok", JSON.stringify(health));
 
-  const loginResponse = await requestPostText(`${apiUrl}/auth/login`, {
-    username: process.env.FINANCE_DOCTOR_USERNAME || "admin",
-    password: process.env.FINANCE_DOCTOR_PASSWORD || "admin123"
-  });
-  if (loginResponse.statusCode !== 200) throw new Error(`Doctor login failed: ${loginResponse.statusCode} ${loginResponse.body.slice(0, 200)}`);
-  const login = JSON.parse(loginResponse.body) as { token?: string };
-  if (!login.token) throw new Error("Doctor login did not return a token.");
-  const authHeaders = { authorization: `Bearer ${login.token}` };
-  push(checks, "Authenticated API session established", Boolean(login.token));
+  const credentials = resolveVerificationCredentials();
+  let authHeaders: Record<string, string> | null = null;
+  if (!credentials.username || !credentials.password) {
+    skip(
+      checks,
+      "Authenticated API session established",
+      "Set FINANCE_TEST_USERNAME and FINANCE_TEST_PASSWORD, or pass --env-file=.env.production."
+    );
+  } else {
+    const loginResponse = await requestPostText(`${apiUrl}/auth/login`, credentials);
+    if (loginResponse.statusCode === 200) {
+      const login = JSON.parse(loginResponse.body) as { token?: string };
+      if (login.token) {
+        authHeaders = { authorization: `Bearer ${login.token}` };
+        push(checks, "Authenticated API session established", true);
+      } else {
+        push(checks, "Authenticated API session established", false, "Login response did not include a token.");
+      }
+    } else {
+      push(
+        checks,
+        "Authenticated API session established",
+        false,
+        `Login returned ${loginResponse.statusCode}. Check the verification account configured in the selected environment file.`
+      );
+    }
+  }
 
-  const readiness = await requestJson<{
+  if (authHeaders && !requestedMonth) {
+    const months = await requestJson<{ rows?: Array<{ month?: string }> }>(`${apiUrl}/finance/months`, authHeaders);
+    month = months.rows?.find((row) => /^\d{4}-\d{2}$/.test(row.month ?? ""))?.month ?? month;
+    push(checks, "Verification month resolved", true, months.rows?.length ? month : `${month} (database has no business month yet)`);
+  } else if (requestedMonth) {
+    push(checks, "Verification month resolved", true, month);
+  } else {
+    skip(checks, "Verification month resolved", `${month} (authentication unavailable)`);
+  }
+
+  let readiness: {
     status?: string;
     checks?: Record<string, boolean>;
     details?: {
       templateCount?: number;
       latestImportBatch?: { batchNo?: string; importedRows?: number; importedOrders?: number; logisticsOrders?: number; serviceOrders?: number } | null;
     };
-  }>(`${apiUrl}/health/ready?month=${encodeURIComponent(month)}`);
-  push(checks, "Backend readiness is ready", readiness.status === "ready", JSON.stringify(readiness.checks));
-  push(checks, "Readiness checks are all true", Object.values(readiness.checks ?? {}).every(Boolean), JSON.stringify(readiness.checks));
-  const hasImportBatch = Boolean(readiness.details?.latestImportBatch?.batchNo);
-  push(checks, "Import batch state is valid", hasImportBatch || readiness.details?.latestImportBatch === null, JSON.stringify(readiness.details?.latestImportBatch));
-
-  const operations = await requestJson<{
-    status?: string;
-    database?: { ok?: boolean; latencyMs?: number };
-    configuration?: { authRequired?: boolean; headerRoleAllowed?: boolean };
-  }>(`${apiUrl}/health/status`, authHeaders);
-  push(checks, "Operational status is healthy", operations.status === "healthy" && operations.database?.ok === true, JSON.stringify(operations.database));
-  push(checks, "Authentication hardening is enabled", operations.configuration?.authRequired === true && operations.configuration?.headerRoleAllowed === false, JSON.stringify(operations.configuration));
-
-  const templates = await requestJson<{ rows?: Array<{ templateKey: string; fileName: string; headerCount: number; headers: string[] }> }>(`${apiUrl}/finance/import-templates`, authHeaders);
-  const systemTemplate = templates.rows?.find((row) => row.templateKey === "system_waybill_detail");
-  push(checks, "System import template exists", Boolean(systemTemplate), templates.rows?.map((row) => row.templateKey).join(","));
-  push(checks, "System import template has 23 headers", systemTemplate?.headerCount === 23, `${systemTemplate?.fileName ?? "-"} / ${systemTemplate?.headerCount ?? 0}`);
-  push(checks, "Template includes required core columns", Boolean(systemTemplate?.headers[0]) && Boolean(systemTemplate?.headers[8]) && Boolean(systemTemplate?.headers[9]), JSON.stringify(systemTemplate?.headers.slice(0, 10)));
-
-  const dashboard = await requestJson<{
-    summary?: { totalReceivable?: number; totalPayable?: number; totalGrossProfit?: number; grossProfitRate?: number };
-    businessSummary?: unknown[];
-  }>(`${apiUrl}/finance/dashboard?month=${encodeURIComponent(month)}`, authHeaders);
-  const emptyBusinessDatabase = !readiness.details?.latestImportBatch?.batchNo && !dashboard.summary;
-  if (emptyBusinessDatabase) {
-    push(checks, "New business database is ready for first import", true, "No active import batch or finance summary.");
+  } = {};
+  if (authHeaders) {
+    readiness = await requestJson(`${apiUrl}/health/ready?month=${encodeURIComponent(month)}`, authHeaders);
+    push(checks, "Backend readiness is ready", readiness.status === "ready", JSON.stringify(readiness.checks));
+    push(checks, "Readiness checks are all true", Object.values(readiness.checks ?? {}).every(Boolean), JSON.stringify(readiness.checks));
+    const hasImportBatch = Boolean(readiness.details?.latestImportBatch?.batchNo);
+    push(checks, "Import batch state is valid", hasImportBatch || readiness.details?.latestImportBatch === null, JSON.stringify(readiness.details?.latestImportBatch));
   } else {
-    push(
-      checks,
-      "Dashboard summary has finance totals",
-      Number(dashboard.summary?.totalReceivable ?? 0) > 0 && Number(dashboard.summary?.totalPayable ?? 0) > 0,
-      `receivable=${money(dashboard.summary?.totalReceivable)}, payable=${money(dashboard.summary?.totalPayable)}, profit=${money(dashboard.summary?.totalGrossProfit)}`
-    );
-    push(checks, "Dashboard has business summary rows", Array.isArray(dashboard.businessSummary) && dashboard.businessSummary.length > 0, String(dashboard.businessSummary?.length ?? 0));
+    skip(checks, "Protected readiness checks", "No valid verification credentials were available.");
+  }
+
+  if (authHeaders) {
+    const operations = await requestJson<{
+      status?: string;
+      database?: { ok?: boolean; latencyMs?: number };
+      configuration?: { authRequired?: boolean; headerRoleAllowed?: boolean };
+    }>(`${apiUrl}/health/status`, authHeaders);
+    push(checks, "Operational status is healthy", operations.status === "healthy" && operations.database?.ok === true, JSON.stringify(operations.database));
+    push(checks, "Authentication hardening is enabled", operations.configuration?.authRequired === true && operations.configuration?.headerRoleAllowed === false, JSON.stringify(operations.configuration));
+
+    const templates = await requestJson<{ rows?: Array<{ templateKey: string; fileName: string; headerCount: number; headers: string[] }> }>(`${apiUrl}/finance/import-templates`, authHeaders);
+    const systemTemplate = templates.rows?.find((row) => row.templateKey === "system_waybill_detail");
+    push(checks, "System import template exists", Boolean(systemTemplate), templates.rows?.map((row) => row.templateKey).join(","));
+    push(checks, "System import template has 23 headers", systemTemplate?.headerCount === 23, `${systemTemplate?.fileName ?? "-"} / ${systemTemplate?.headerCount ?? 0}`);
+    push(checks, "Template includes required core columns", Boolean(systemTemplate?.headers[0]) && Boolean(systemTemplate?.headers[8]) && Boolean(systemTemplate?.headers[9]), JSON.stringify(systemTemplate?.headers.slice(0, 10)));
+
+    const dashboard = await requestJson<{
+      summary?: { totalReceivable?: number; totalPayable?: number; totalGrossProfit?: number; grossProfitRate?: number };
+      businessSummary?: unknown[];
+    }>(`${apiUrl}/finance/dashboard?month=${encodeURIComponent(month)}`, authHeaders);
+    const emptyBusinessDatabase = !readiness.details?.latestImportBatch?.batchNo && !dashboard.summary;
+    if (emptyBusinessDatabase) {
+      push(checks, "New business database is ready for first import", true, "No active import batch or finance summary.");
+    } else {
+      push(
+        checks,
+        "Dashboard summary has finance totals",
+        Number(dashboard.summary?.totalReceivable ?? 0) > 0 && Number(dashboard.summary?.totalPayable ?? 0) > 0,
+        `receivable=${money(dashboard.summary?.totalReceivable)}, payable=${money(dashboard.summary?.totalPayable)}, profit=${money(dashboard.summary?.totalGrossProfit)}`
+      );
+      push(checks, "Dashboard has business summary rows", Array.isArray(dashboard.businessSummary) && dashboard.businessSummary.length > 0, String(dashboard.businessSummary?.length ?? 0));
+    }
+  } else {
+    skip(checks, "Protected operational, template and dashboard checks", "No valid verification credentials were available.");
   }
 
   for (const check of checks) {
-    console.log(`${check.pass ? "PASS" : "FAIL"} ${check.name}${check.detail ? `: ${check.detail}` : ""}`);
+    console.log(`${check.status} ${check.name}${check.detail ? `: ${check.detail}` : ""}`);
   }
 
-  const failed = checks.filter((check) => !check.pass);
+  const failed = checks.filter((check) => check.status === "FAIL");
   if (failed.length) {
     throw new Error(`${failed.length} doctor checks failed`);
   }
 
   console.log("");
   console.log("Finance system doctor passed.");
+  if (loadedEnvironmentFile) console.log(`Environment: ${loadedEnvironmentFile}`);
   console.log(`Frontend: ${clientUrl}`);
   console.log(`Backend:  ${apiUrl}`);
   console.log(`Month:    ${month}`);

@@ -4,6 +4,10 @@ export function getMonthlyReport(month?: string) {
   return request.get("/reports/monthly", month ? { params: { month } } : undefined);
 }
 
+export function getServiceRecords(month?: string) {
+  return request.get("/reports/service-records", month ? { params: { month } } : undefined);
+}
+
 export function monthlyReportExportUrl(month?: string) {
   const query = month ? `?month=${encodeURIComponent(month)}` : "";
   return `${request.defaults.baseURL}/reports/monthly/export${query}`;

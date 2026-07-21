@@ -19,6 +19,7 @@ import { useSelectedMonth } from "../../contexts/MonthContext";
 import { ReasonActionModal } from "../../components/ReasonActionModal";
 import { copyText } from "../../utils/copyText";
 import { externalSignatureUrl, productionAppUrl, usesLocalSignatureBackend } from "../../utils/externalSignatureUrl";
+import { useAuth } from "../../contexts/AuthContext";
 
 type PerformanceRow = {
   id: string;
@@ -79,6 +80,8 @@ function recalculatePerformanceGroup(group: OperatorGroup): OperatorGroup {
 
 export default function OperatorPerformance() {
   const { selectedMonth } = useSelectedMonth();
+  const { user } = useAuth();
+  const canApprove = Boolean(user?.auth?.permissions.includes("confirmation:approve"));
   const [operatorGroups, setOperatorGroups] = useState<OperatorGroup[]>([]);
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
   const [payoutNote, setPayoutNote] = useState("");
@@ -192,7 +195,7 @@ export default function OperatorPerformance() {
     const res = await sendSignatureLink(row.id);
     const url = externalSignatureUrl(res.data.signatureUrl);
     const copied = await copyText(url);
-    if (copied) message.success("绩效签名链接已生成并复制，可直接发送给客服代表");
+    if (copied) message.success("绩效签名链接已生成并复制，可直接发送给操作员");
     else Modal.info({ title: "签名链接已生成，请手动复制", content: <Typography.Paragraph copyable>{url}</Typography.Paragraph> });
     await loadData();
   };
@@ -233,7 +236,7 @@ export default function OperatorPerformance() {
       align: "right",
       width: 150,
       render: (value: number, row) => <Space direction="vertical" size={0}>
-        <InputNumber min={0} precision={0} disabled={row.calculationMode === "gross_profit"} value={value} onChange={(next) => handleNumberChange(row.id, "orderCount", next)} />
+        <InputNumber min={0} precision={0} disabled={!canApprove || row.calculationMode === "gross_profit"} value={value} onChange={(next) => handleNumberChange(row.id, "orderCount", next)} />
         <Typography.Text type="secondary" style={{ fontSize: 11 }}>Excel：{row.rawOrderCount}</Typography.Text>
       </Space>
     },
@@ -242,7 +245,7 @@ export default function OperatorPerformance() {
       dataIndex: "baseCount",
       align: "right",
       width: 120,
-      render: (value: number, row) => <InputNumber min={0} precision={0} disabled={row.calculationMode === "gross_profit"} value={value} onChange={(next) => handleNumberChange(row.id, "baseCount", next)} />
+      render: (value: number, row) => <InputNumber min={0} precision={0} disabled={!canApprove || row.calculationMode === "gross_profit"} value={value} onChange={(next) => handleNumberChange(row.id, "baseCount", next)} />
     },
     {
       title: "自动匹配档位",
@@ -262,7 +265,7 @@ export default function OperatorPerformance() {
       dataIndex: "rate",
       align: "right",
       width: 150,
-      render: (value: number, row) => <Space size={4}><InputNumber min={0} precision={2} value={value} onChange={(next) => handleNumberChange(row.id, "rate", next)} /><Typography.Text type="secondary">{row.rateUnit}</Typography.Text></Space>
+      render: (value: number, row) => <Space size={4}><InputNumber min={0} precision={2} disabled={!canApprove} value={value} onChange={(next) => handleNumberChange(row.id, "rate", next)} /><Typography.Text type="secondary">{row.rateUnit}</Typography.Text></Space>
     },
     { title: "分类绩效金额", dataIndex: "commissionAmount", align: "right", width: 120 },
     {
@@ -274,15 +277,15 @@ export default function OperatorPerformance() {
       title: "操作",
       fixed: "right",
       width: 150,
-      render: (_, row) => <Space size={4}>
+      render: (_, row) => canApprove ? <Space size={4}>
         <Button size="small" type="primary" loading={rowSaving === row.id} onClick={() => savePerformanceRow(row)}>保存</Button>
         <Button size="small" disabled={rowSaving === row.id} onClick={() => resetPerformanceRow(row)}>恢复</Button>
-      </Space>
+      </Space> : <Typography.Text type="secondary">只读</Typography.Text>
     }
   ];
 
   const documentColumns: ColumnsType<ConfirmationDocument> = [
-    { title: "客服代表", dataIndex: "ownerName", fixed: "left", width: 120 },
+    { title: "操作员", dataIndex: "ownerName", fixed: "left", width: 120 },
     { title: "绩效票数", dataIndex: "orderCount", width: 100 },
     { title: "绩效金额", dataIndex: "commissionAmount", align: "right", width: 120 },
     { title: "确认单状态", dataIndex: "documentStatus", width: 120, render: (value) => statusTag(value, "已生成", "待生成") },
@@ -296,8 +299,8 @@ export default function OperatorPerformance() {
       width: 470,
       render: (_, row) => (
         <Space size={6} wrap>
-          <Button size="small" onClick={() => handleSend(row)}>发送签名链接</Button>
-          <Button size="small" disabled={!row.signatureUrl} onClick={async () => {
+          {canApprove ? <Button size="small" onClick={() => handleSend(row)}>发送签名链接</Button> : null}
+          {canApprove ? <Button size="small" disabled={!row.signatureUrl} onClick={async () => {
             if (usesLocalSignatureBackend()) {
               Modal.warning({ title: "这是本机调试链接", content: <Typography.Paragraph>本机数据库生成的链接无法在外部设备使用。请在线上系统重新生成。</Typography.Paragraph> });
               return;
@@ -305,11 +308,11 @@ export default function OperatorPerformance() {
             const url = externalSignatureUrl(row.signatureUrl);
             if (await copyText(url)) message.success("签名链接已复制");
             else Modal.info({ title: "请手动复制签名链接", content: <Typography.Paragraph copyable>{url}</Typography.Paragraph> });
-          }}>复制链接</Button>
+          }}>复制链接</Button> : null}
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>下载 PDF</Button>
           <Button size="small" onClick={() => handleDownload(row, "png")}>下载 PNG</Button>
-          <Button size="small" disabled={row.supervisorStatus === "confirmed" || row.signatureStatus !== "signed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
-          <Button size="small" onClick={() => handleVoid(row)}>作废重签</Button>
+          {canApprove ? <Button size="small" disabled={row.supervisorStatus === "confirmed" || row.signatureStatus !== "signed"} onClick={() => handleSupervisorConfirm(row)}>主管确认</Button> : null}
+          {canApprove ? <Button size="small" onClick={() => handleVoid(row)}>作废重签</Button> : null}
         </Space>
       )
     }
@@ -322,7 +325,7 @@ export default function OperatorPerformance() {
         title="操作员绩效计算"
         extra={(
           <Space size={10} wrap>
-            <Tag bordered={false} className="operator-policy-tag">按客服代表汇总；票数仅来自当前月份有效导入批次</Tag>
+            <Tag bordered={false} className="operator-policy-tag">按操作员（客服代表）汇总；票数仅来自当前月份有效导入批次</Tag>
             <Tag color="blue">全额绩效金额：{totalPayablePerformance}</Tag>
           </Space>
         )}
@@ -339,7 +342,7 @@ export default function OperatorPerformance() {
           <div className="operator-rule-grid">
             <div>
               <strong>空运白关业务</strong>
-              <span>按客服代表当月有效导入批次的实际票数统计</span>
+              <span>按操作员当月有效导入批次的实际票数统计</span>
               <span>固定 50元/票</span>
               <span>不按毛利比例计提</span>
             </div>
@@ -374,8 +377,8 @@ export default function OperatorPerformance() {
               <strong>绩效金额</strong>
               <span>各订单类型分类绩效金额全额汇总</span>
               <span>不执行 80% 折算</span>
-              <Input value={payoutNote} onChange={(event) => setPayoutNote(event.target.value)} placeholder="填写绩效发放说明" />
-              <Button size="small" type="primary" loading={payoutSaving} onClick={savePayoutNote}>保存发放说明</Button>
+              <Input disabled={!canApprove} value={payoutNote} onChange={(event) => setPayoutNote(event.target.value)} placeholder="填写绩效发放说明" />
+              {canApprove ? <Button size="small" type="primary" loading={payoutSaving} onClick={savePayoutNote}>保存发放说明</Button> : null}
             </div>
           </div>
         </div>
@@ -405,10 +408,10 @@ export default function OperatorPerformance() {
 
       <Card
         className="operator-signature-card"
-        title={<div className="signature-title-block"><strong>操作员绩效签名确认</strong><span>按客服代表生成个人绩效确认单，员工在线签名后回传状态，最终由主管确认发放。</span></div>}
+        title={<div className="signature-title-block"><strong>操作员绩效签名确认</strong><span>按操作员生成个人绩效确认单，员工在线签名后回传状态，最终由主管确认发放。</span></div>}
         extra={(
           <Space size={10} wrap>
-            <Button type="primary" onClick={handleGenerateDocuments}>批量生成绩效确认单</Button>
+            {canApprove ? <Button type="primary" onClick={handleGenerateDocuments}>批量生成绩效确认单</Button> : null}
             <Button onClick={loadData}>刷新状态</Button>
           </Space>
         )}

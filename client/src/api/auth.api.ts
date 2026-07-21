@@ -16,7 +16,11 @@ export type LoginResult = {
     auth: {
       role: string;
       label: string;
+      description?: string;
       permissions: string[];
+      permissionDetails?: Array<{ permission: string; label: string }>;
+      permissionCatalog?: Array<{ permission: string; label: string }>;
+      roles?: Array<{ role: string; label: string; description?: string; permissions: string[] }>;
     };
   };
 };
@@ -26,7 +30,16 @@ export function login(username: string, password: string) {
 }
 
 export function getMe() {
-  return request.get("/auth/me");
+  return request.get<{
+    user: LoginResult["user"];
+    role: string;
+    label: string;
+    description?: string;
+    permissions: string[];
+    permissionDetails?: Array<{ permission: string; label: string }>;
+    permissionCatalog?: Array<{ permission: string; label: string }>;
+    roles?: Array<{ role: string; label: string; description?: string; permissions: string[] }>;
+  }>("/auth/me");
 }
 
 export type ManagedUser = LoginResult["user"];

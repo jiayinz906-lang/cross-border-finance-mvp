@@ -257,16 +257,21 @@ export type ParameterRule = {
   description?: string | null;
   updatedBy: string;
   updatedAt: string;
+  effectiveMonth?: string | null;
+  source?: "monthly" | "default";
 };
 
 export type AuthRole = {
   role: string;
   label: string;
+  description?: string;
   permissions: string[];
 };
 
 export type AuthContext = AuthRole & {
   roles: AuthRole[];
+  permissionDetails?: Array<{ permission: string; label: string }>;
+  permissionCatalog?: Array<{ permission: string; label: string }>;
 };
 
 export type ReadinessStatus = {

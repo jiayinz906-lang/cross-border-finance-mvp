@@ -1,13 +1,13 @@
 import type { Request, Response } from "express";
 import { analyticsService } from "../services/analytics.service.js";
-import { currentUser } from "../middleware/rbac.middleware.js";
+import { currentFinanceAccess, currentUser } from "../middleware/rbac.middleware.js";
 
 export async function customerProfitController(req: Request, res: Response) {
-  res.json(await analyticsService.customerProfit(req.query.month as string | undefined));
+  res.json(await analyticsService.customerProfit(req.query.month as string | undefined, currentFinanceAccess(req)));
 }
 
 export async function operatorPerformanceController(req: Request, res: Response) {
-  res.json(await analyticsService.operatorPerformanceWithSettings(req.query.month as string | undefined));
+  res.json(await analyticsService.operatorPerformanceWithSettings(req.query.month as string | undefined, currentFinanceAccess(req)));
 }
 
 export async function updateOperatorPerformanceOverrideController(req: Request, res: Response) {

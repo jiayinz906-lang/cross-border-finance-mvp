@@ -13,28 +13,13 @@ import { useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSelectedMonth } from "../contexts/MonthContext";
+import { appPages, hasPermission } from "../config/access";
 
 const { Sider, Content } = Layout;
 
 function MenuMark() {
   return <span className="menu-mark" aria-hidden="true" />;
 }
-
-const menuItemConfig = [
-  { key: "/dashboard", icon: <MenuMark />, label: "经营总览" },
-  { key: "/raw-entry", icon: <MenuMark />, label: "原始数据录入" },
-  { key: "/finance-operations", icon: <MenuMark />, label: "财务工作台", permission: "operations:read" },
-  { key: "/profit-analysis", icon: <MenuMark />, label: "业务利润" },
-  { key: "/commission", icon: <MenuMark />, label: "物流提成" },
-  { key: "/service-confirm", icon: <MenuMark />, label: "注册提成" },
-  { key: "/signature-confirm", icon: <MenuMark />, label: "电子签名确认" },
-  { key: "/operator-performance", icon: <MenuMark />, label: "操作员绩效" },
-  { key: "/customer-profit", icon: <MenuMark />, label: "客户利润分析" },
-  { key: "/risks", icon: <MenuMark />, label: "风险复查" },
-  { key: "/receivables", icon: <MenuMark />, label: "应收管理" },
-  { key: "/payables", icon: <MenuMark />, label: "上游应付" },
-  { key: "/settings", icon: <MenuMark />, label: "参数规则" }
-];
 
 function Brand() {
   const { selectedMonth } = useSelectedMonth();
@@ -54,9 +39,9 @@ export function BasicLayout() {
   const isMobile = !screens.md;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { user, logout } = useAuth();
-  const menuItems: MenuProps["items"] = menuItemConfig
-    .filter((item) => !("permission" in item) || user?.auth?.permissions?.includes(item.permission!))
-    .map(({ permission: _permission, ...item }) => item);
+  const menuItems: MenuProps["items"] = appPages
+    .filter((page) => page.navigation && hasPermission(user?.auth?.permissions, page.permission))
+    .map((page) => ({ key: page.path, icon: <MenuMark />, label: page.label }));
 
   const handleNavigate: MenuProps["onClick"] = ({ key }) => {
     navigate(key);

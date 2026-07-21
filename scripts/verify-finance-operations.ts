@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
+import { resolveVerificationCredentials } from "./lib/runtime-config.js";
 
 const apiUrl = (process.env.UI_SMOKE_API_URL || "http://localhost:4000/api").replace(/\/$/, "");
-const username = process.env.VERIFY_USERNAME || "admin";
-const password = process.env.VERIFY_PASSWORD || "admin123";
+const credentials = resolveVerificationCredentials();
 
 async function jsonRequest(path: string, init: RequestInit = {}) {
   const response = await fetch(`${apiUrl}${path}`, init);
@@ -11,13 +11,14 @@ async function jsonRequest(path: string, init: RequestInit = {}) {
 }
 
 async function main() {
+  assert.ok(credentials.username && credentials.password, "Finance operations verification requires VERIFY_USERNAME and VERIFY_PASSWORD");
   const anonymous = await jsonRequest("/operations/overview?month=2026-06");
   assert.equal(anonymous.response.status, 401, "Operations APIs must reject anonymous access");
 
   const login = await jsonRequest("/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify(credentials)
   });
   assert.equal(login.response.status, 200, `Login failed: ${JSON.stringify(login.body)}`);
   assert.equal(typeof login.body?.token, "string");

@@ -8,6 +8,7 @@ import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData, FinanceOrder, RawLedgerLine } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatPercent } from "../../utils/formatPercent";
+import { useAuth } from "../../contexts/AuthContext";
 
 type RiskRow = {
   id: number;
@@ -123,6 +124,8 @@ function rawRows(lines: RawLedgerLine[]): RawDataRow[] {
 
 export default function Risks() {
   const { selectedMonth } = useSelectedMonth();
+  const { user } = useAuth();
+  const canReview = Boolean(user?.auth?.permissions.includes("risk:review"));
   const [rows, setRows] = useState<RiskRow[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [selectedRisk, setSelectedRisk] = useState<RiskRow | null>(null);
@@ -303,9 +306,7 @@ export default function Risks() {
         <Space size={6}>
           <Button size="small" onClick={() => setExpandedKeys([row.id])}>详情</Button>
           <Button size="small" onClick={() => openRawData(row)}>原始数据</Button>
-          <Button size="small" onClick={() => openReviewModal(row)}>
-            复核
-          </Button>
+          {canReview ? <Button size="small" onClick={() => openReviewModal(row)}>复核</Button> : null}
         </Space>
       )
     }

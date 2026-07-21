@@ -1,37 +1,41 @@
 import type { Request, Response } from "express";
 import { authContext } from "../config/rbac.js";
-import { currentRole } from "../middleware/rbac.middleware.js";
+import { currentFinanceAccess, currentRole, requiredCurrentUser } from "../middleware/rbac.middleware.js";
 import { excelService } from "../services/excel.service.js";
 import { financeService } from "../services/finance.service.js";
 import { resetBusinessData, resetConfirmationPhrase } from "../services/business-reset.service.js";
 import { currentUser } from "../middleware/rbac.middleware.js";
 
 export async function listLedgerController(req: Request, res: Response) {
-  res.json(await financeService.listLedger(req.query.month as string | undefined));
+  res.json(await financeService.listLedger(req.query.month as string | undefined, currentFinanceAccess(req)));
 }
 
 export async function summaryController(req: Request, res: Response) {
-  res.json(await financeService.getSummary(req.query.month as string | undefined));
+  res.json(await financeService.getSummary(req.query.month as string | undefined, currentFinanceAccess(req)));
 }
 
 export async function dashboardController(req: Request, res: Response) {
-  res.json(await financeService.getDashboard(req.query.month as string | undefined));
+  res.json(await financeService.getDashboard(req.query.month as string | undefined, currentFinanceAccess(req)));
 }
 
-export async function monthsController(_req: Request, res: Response) {
-  res.json(await financeService.listMonths());
+export async function monthsController(req: Request, res: Response) {
+  res.json(await financeService.listMonths(currentFinanceAccess(req)));
 }
 
 export function authContextController(req: Request, res: Response) {
   res.json(authContext(currentRole(req)));
 }
 
-export async function parameterRulesController(_req: Request, res: Response) {
-  res.json(await financeService.listParameterRules());
+export async function parameterRulesController(req: Request, res: Response) {
+  res.json(await financeService.listParameterRules(typeof req.query.month === "string" ? req.query.month : undefined));
 }
 
 export async function updateParameterRuleController(req: Request, res: Response) {
-  res.json(await financeService.updateParameterRule(req.params.ruleKey, req.body ?? {}));
+  const actor = requiredCurrentUser(req);
+  res.json(await financeService.updateParameterRule(req.params.ruleKey, {
+    ...(req.body ?? {}),
+    updatedBy: actor.displayName || actor.username
+  }));
 }
 
 export async function importPreviewController(req: Request, res: Response) {
@@ -49,7 +53,13 @@ export async function importExcelController(req: Request, res: Response) {
     return;
   }
 
-  res.json(await excelService.importWorkbook(req.file.buffer, req.file.originalname, req.body?.targetMonth));
+  const actor = requiredCurrentUser(req);
+  res.json(await excelService.importWorkbook(
+    req.file.buffer,
+    req.file.originalname,
+    req.body?.targetMonth,
+    actor.displayName || actor.username
+  ));
 }
 
 export async function importTemplateController(req: Request, res: Response) {
@@ -122,7 +132,8 @@ export async function rollbackImportBatchController(req: Request, res: Response)
     return;
   }
 
-  res.json(await excelService.rollbackImportBatch(id));
+  const actor = requiredCurrentUser(req);
+  res.json(await excelService.rollbackImportBatch(id, actor.displayName || actor.username));
 }
 
 export function agentRulesController(_req: Request, res: Response) {

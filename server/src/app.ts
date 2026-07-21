@@ -8,8 +8,10 @@ import { requestLogMiddleware } from "./middleware/request-log.middleware.js";
 import { requireAuthToken } from "./middleware/rbac.middleware.js";
 import { routes } from "./routes/index.js";
 import { env } from "./config/env.js";
+import { auditContextMiddleware } from "./audit/audit-context.js";
 
 export const app = express();
+app.set("trust proxy", 1);
 
 const privateCors = cors({
   // Finance APIs are available only to configured app origins. Public signing
@@ -30,6 +32,7 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(requestLogMiddleware);
 app.use("/api", requireAuthToken);
+app.use("/api", auditContextMiddleware);
 app.use("/api", routes);
 
 const clientDistPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../client/dist");

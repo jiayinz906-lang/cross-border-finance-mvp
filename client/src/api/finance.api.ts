@@ -81,11 +81,11 @@ export function rollbackImportBatch(id: number) {
   return request.post(`/finance/import-batches/${id}/rollback`);
 }
 
-export function getParameterRules() {
-  return request.get("/finance/parameter-rules");
+export function getParameterRules(month?: string) {
+  return request.get("/finance/parameter-rules", { params: month ? { month } : undefined });
 }
 
-export function updateParameterRule(ruleKey: string, data: { valueJson: string; description?: string; updatedBy?: string }) {
+export function updateParameterRule(ruleKey: string, data: { valueJson: string; description?: string; updatedBy?: string; effectiveMonth?: string }) {
   return request.put(`/finance/parameter-rules/${ruleKey}`, data);
 }
 

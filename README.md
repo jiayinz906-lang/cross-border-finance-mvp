@@ -42,8 +42,8 @@ ENABLE_LEGACY_DEFAULT_USERS=false
 
 - 前端：React、TypeScript、Vite、Ant Design、React Router、Axios
 - 后端：Node.js、Express、TypeScript、Prisma ORM
-- 本地数据库：SQLite `prisma/dev.db`
-- 生产建议：PostgreSQL，避免把 Render 免费实例文件系统作为长期财务数据库
+- 数据库：PostgreSQL 17（本地 Docker 与生产统一）
+- 运行结构：Nginx + Node.js 后端 + PostgreSQL，SQLite 仅保留历史验证脚本
 
 ## 本地一键启动
 
@@ -54,13 +54,13 @@ cd D:\Users\DELL\Documents\财务系统\cross-border-finance-mvp
 .\start-finance-local.ps1
 ```
 
-脚本会：
+当前推荐使用 Docker 开发栈：
 
-- 使用项目内 `prisma/dev.db`
-- 执行 `pnpm prisma:deploy`
-- 启动后端 `4000`
-- 启动前端 `5173`
-- 如端口被旧进程占用，默认先释放 `4000` 和 `5173`
+```powershell
+docker compose --env-file .env.docker -f docker-compose.dev.yml up -d --build
+```
+
+它会启动 PostgreSQL、后端 `4000` 和前端 `5173`，数据库数据保存在 Docker 命名卷 `postgres_dev_data` 中。`start-finance-local.ps1` 仍可用于已有本机 PostgreSQL 的宿主机开发模式。
 
 如不希望脚本释放端口：
 
@@ -75,7 +75,7 @@ cd D:\Users\DELL\Documents\财务系统\cross-border-finance-mvp
 - 原始数据录入：http://localhost:5173/#/raw-entry
 - 后端 API：http://localhost:4000/api
 - 健康检查：http://localhost:4000/api/health
-- 就绪检查：http://localhost:4000/api/health/ready?month=2026-06
+- 就绪检查：http://localhost:4000/api/health/ready
 - 运维状态（登录后）：http://localhost:4000/api/health/status
 
 ## 首次安装或数据库同步
@@ -138,11 +138,13 @@ pnpm verify:all
 
 ```powershell
 pnpm doctor
+pnpm doctor:docker
 pnpm verify:import
 pnpm verify:ui
+pnpm verify:ui:docker
 ```
 
-`pnpm doctor` 是非破坏性体检命令：不重新导入 Excel、不改数据库，只检查前端、后端、数据库就绪、固定表头模板和仪表盘汇总是否可用。
+`pnpm doctor` 是非破坏性体检命令：不重新导入 Excel、不改数据库，只检查前端、后端、数据库就绪、固定表头模板和仪表盘汇总是否可用。它优先使用 `FINANCE_TEST_USERNAME` / `FINANCE_TEST_PASSWORD`；`pnpm doctor:docker` 会读取本机 `.env.production` 并检查 `http://localhost/`。月份自动采用数据库最新有效月份，空数据库会显示为“待首次导入”。
 
 `pnpm verify:all` 覆盖：
 
@@ -167,8 +169,10 @@ pnpm dev
 pnpm --filter cross-border-finance-server build
 pnpm --filter cross-border-finance-client build
 pnpm doctor
+pnpm doctor:docker
 pnpm backup:system
 pnpm backup:db
+pnpm verify:db-backup
 pnpm verify:all
 pnpm verify:import
 pnpm verify:ui
@@ -188,7 +192,7 @@ pnpm prisma:deploy
 pnpm backup:system
 ```
 
-默认导出 `2026-06` 到 `outputs/backups/`。可用环境变量指定：
+默认导出全部月份到 `outputs/backups/`。如只需归档一个月份，可用环境变量指定：
 
 ```powershell
 $env:BACKUP_MONTH='2026-06'
@@ -198,20 +202,34 @@ pnpm backup:system
 
 系统备份 Excel 包含月度汇总、导入批次、表头模板、参数规则、锁账状态、确认单、操作日志和导出记录；它用于审计和关键配置归档，不替代生产数据库全量备份。
 
-本地 SQLite 数据库快照：
+PostgreSQL 全量归档：
 
 ```powershell
 pnpm backup:db
 ```
 
-默认复制 `prisma/dev.db` 到 `outputs/db-backups/`。如需指定位置：
+命令从本机 `docker-compose.prod.yml` 的 PostgreSQL 容器生成 custom-format `pg_dump`，保存到 `outputs/db-backups/`，同时生成 SHA-256 和元数据文件。归档完成后会立即使用 `pg_restore --list` 做只读结构校验。
+
+再次验证最近一次归档：
+
+```powershell
+pnpm verify:db-backup
+```
+
+备份 Docker 开发数据库：
+
+```powershell
+pnpm backup:db:dev
+```
+
+如需指定位置：
 
 ```powershell
 $env:DB_BACKUP_OUTPUT_DIR='D:/Users/DELL/Desktop'
 pnpm backup:db
 ```
 
-SQLite 快照用于本地测试前后快速留档；生产 PostgreSQL 应使用云数据库自己的备份和恢复机制。
+这些命令不会执行恢复或修改数据库。恢复必须先在独立测试数据库演练并核对应收、应付、毛利、导入批次和签名证据；不得直接覆盖当前业务库。历史 SQLite 文件如需留档，使用 `pnpm backup:legacy-sqlite`。
 
 ## Render 部署
 
@@ -251,21 +269,35 @@ pnpm prisma:seed
 
 ## Docker 部署
 
+本地开发模式：
+
 ```powershell
-docker build -t xjd-finance-ui .
-docker run --rm -p 4000:4000 xjd-finance-ui
+Copy-Item .env.docker.example .env.docker
+# 编辑 .env.docker，替换全部 CHANGE_ME
+docker compose --env-file .env.docker -f docker-compose.dev.yml up -d --build
 ```
 
-容器访问：
+本地生产模式：
 
-- 前端：http://localhost:4000/
-- 后端：http://localhost:4000/api
+```powershell
+Copy-Item .env.production.example .env.production
+# 编辑 .env.production，替换全部 CHANGE_ME
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+```
+
+生产模式由 Nginx 统一提供入口：
+
+- 前端：http://localhost/
+- 后端：http://localhost/api
+- PostgreSQL 和 Backend 不直接开放到宿主机
+
+完整架构、端口、数据卷和停止/重启说明见 [DOCKER_ARCHITECTURE.md](./DOCKER_ARCHITECTURE.md)。Docker 镜像构建阶段不会连接或修改数据库。
 
 ## 目录说明
 
 - `client/`：前端应用
 - `server/`：后端 API
-- `prisma/`：数据库模型和本地 SQLite 数据
+- `prisma/`：PostgreSQL 数据模型与迁移文件
 - `scripts/verify-all.ts`：构建、导入验收和 UI smoke 总验收脚本
 - `scripts/verify-import.ts`：Excel 导入和财务工作流验收脚本
 - `start-finance-local.ps1`：Finance 项目本地一键启动脚本

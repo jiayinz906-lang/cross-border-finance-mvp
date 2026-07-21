@@ -1,9 +1,14 @@
 import type { Request, Response } from "express";
-import { currentRole } from "../middleware/rbac.middleware.js";
+import { currentFinanceAccess, currentRole, requiredCurrentUser } from "../middleware/rbac.middleware.js";
 import { workflowService } from "../services/workflow.service.js";
 
 function month(req: Request) {
   return (req.query.month as string | undefined) ?? (req.body?.month as string | undefined);
+}
+
+function actorName(req: Request) {
+  const actor = requiredCurrentUser(req);
+  return actor.displayName || actor.username;
 }
 
 export async function listDocumentsController(req: Request, res: Response) {
@@ -11,35 +16,37 @@ export async function listDocumentsController(req: Request, res: Response) {
     rows: await workflowService.listDocuments(
       month(req),
       req.query.documentType as "logistics_commission" | "service_commission" | "operator_performance" | "sales_salary" | "customer_service_salary" | undefined,
-      req.query.history === "true"
+      req.query.history === "true",
+      currentFinanceAccess(req)
     )
   });
 }
 
 export async function generateLogisticsDocumentsController(req: Request, res: Response) {
-  res.json({ rows: await workflowService.generateLogisticsDocuments(month(req)) });
+  res.json({ rows: await workflowService.generateLogisticsDocuments(month(req), actorName(req)) });
 }
 
 export async function generateServiceDocumentsController(req: Request, res: Response) {
-  res.json({ rows: await workflowService.generateServiceDocuments(month(req)) });
+  res.json({ rows: await workflowService.generateServiceDocuments(month(req), actorName(req)) });
 }
 
 export async function generateOperatorDocumentsController(req: Request, res: Response) {
-  res.json({ rows: await workflowService.generateOperatorDocuments(month(req)) });
+  res.json({ rows: await workflowService.generateOperatorDocuments(month(req), actorName(req)) });
 }
 
 export async function generateSalaryDocumentsController(req: Request, res: Response) {
-  res.json({ rows: await workflowService.generateSalaryDocuments(month(req)) });
+  res.json({ rows: await workflowService.generateSalaryDocuments(month(req), actorName(req)) });
 }
 
 export async function sendSignatureLinkController(req: Request, res: Response) {
-  res.json(await workflowService.sendSignatureLink(Number(req.params.id)));
+  res.json(await workflowService.sendSignatureLink(Number(req.params.id), actorName(req)));
 }
 
 export async function markSignatureLinkNotifiedController(req: Request, res: Response) {
   res.json(await workflowService.markSignatureLinkNotified(
     Number(req.params.id),
-    typeof req.body?.channel === "string" ? req.body.channel : "manual_copy"
+    typeof req.body?.channel === "string" ? req.body.channel : "manual_copy",
+    actorName(req)
   ));
 }
 
@@ -63,15 +70,17 @@ export async function signByTokenController(req: Request, res: Response) {
 }
 
 export async function supervisorConfirmController(req: Request, res: Response) {
+  const operator = actorName(req);
   res.json(await workflowService.supervisorConfirm(
     Number(req.params.id),
     evidence(req, "supervisor_confirm"),
-    req.body?.adjustReason
+    req.body?.adjustReason,
+    operator
   ));
 }
 
 export async function voidDocumentController(req: Request, res: Response) {
-  res.json(await workflowService.voidDocument(Number(req.params.id), req.body?.voidReason));
+  res.json(await workflowService.voidDocument(Number(req.params.id), req.body?.voidReason, actorName(req)));
 }
 
 export async function createExportJobController(req: Request, res: Response) {
@@ -92,7 +101,7 @@ export async function downloadExportJobController(req: Request, res: Response) {
 
 export async function downloadConfirmationDocumentController(req: Request, res: Response) {
   const format = req.query.format === "png" ? "png" : "pdf";
-  const file = await workflowService.downloadConfirmationDocument(Number(req.params.id), format);
+  const file = await workflowService.downloadConfirmationDocument(Number(req.params.id), format, currentFinanceAccess(req));
   res.setHeader("Content-Type", file.contentType);
   res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.fileName)}"`);
   res.send(file.buffer);
@@ -106,11 +115,11 @@ export async function exportSystemBackupController(req: Request, res: Response) 
 }
 
 export async function markRiskReviewedController(req: Request, res: Response) {
-  res.json(await workflowService.markRiskReviewed(Number(req.params.id)));
+  res.json(await workflowService.markRiskReviewed(Number(req.params.id), actorName(req)));
 }
 
 export async function confirmServiceRecordController(req: Request, res: Response) {
-  res.json(await workflowService.confirmServiceRecord(Number(req.params.id), req.body?.finalCommission));
+  res.json(await workflowService.confirmServiceRecord(Number(req.params.id), req.body?.finalCommission, actorName(req)));
 }
 
 export async function confirmSalespersonCommissionController(req: Request, res: Response) {
@@ -118,7 +127,8 @@ export async function confirmSalespersonCommissionController(req: Request, res: 
     month(req),
     req.params.salespersonName,
     req.body?.manualRate,
-    req.body?.adjustReason
+    req.body?.adjustReason,
+    actorName(req)
   ));
 }
 
@@ -143,15 +153,17 @@ export async function monthStatusController(req: Request, res: Response) {
 }
 
 export async function lockMonthController(req: Request, res: Response) {
+  const actor = requiredCurrentUser(req);
   res.json(await workflowService.lockMonth(month(req), {
-    operator: req.body?.operator ?? currentRole(req),
+    operator: actor.displayName || actor.username,
     note: req.body?.note
   }));
 }
 
 export async function unlockMonthController(req: Request, res: Response) {
+  const actor = requiredCurrentUser(req);
   res.json(await workflowService.unlockMonth(month(req), {
-    operator: req.body?.operator ?? currentRole(req),
+    operator: actor.displayName || actor.username,
     note: req.body?.note
   }));
 }

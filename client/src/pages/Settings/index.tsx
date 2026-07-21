@@ -12,7 +12,7 @@ import {
 } from "../../api/finance.api";
 import { downloadAuthenticatedFile } from "../../api/download";
 import { getOperationsStatus, getReadiness } from "../../api/health.api";
-import { changePassword, createUser, getNotificationStatus, getUsers, login, updateUser, type ManagedUser } from "../../api/auth.api";
+import { changePassword, createUser, getNotificationStatus, getUsers, updateUser, type ManagedUser } from "../../api/auth.api";
 import {
   getActionLogs,
   getMonthCloseStatus,
@@ -27,11 +27,18 @@ import { MonthWorkflowStatus } from "../../components/MonthWorkflowStatus";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import { apiBaseUrl } from "../../api/request";
 import type { AuthContext, ImportBatch, ImportTemplate, OperationsStatus, ParameterRule, ReadinessStatus } from "../../types/finance.types";
+import {
+  auditActionLabel,
+  auditActionOptions,
+  auditEntityIdLabel,
+  auditEntityLabel,
+  auditEntityOptions,
+  auditOperatorLabel,
+  auditPayloadSummary
+} from "../../utils/auditLog";
 import { formatMoney } from "../../utils/formatMoney";
 import { useAuth } from "../../contexts/AuthContext";
-
-const roleStorageKey = "xjd-finance-role";
-const tokenStorageKey = "xjd-finance-token";
+import { pagesForPermissions, roleDataScopeLabels } from "../../config/access";
 
 type RuleDraft = Record<string, { valueJson: string; description: string }>;
 
@@ -82,11 +89,6 @@ export default function Settings() {
   const { selectedMonth } = useSelectedMonth();
   const currentAccount = useAuth();
   const [auth, setAuth] = useState<AuthContext | null>(null);
-  const [currentRole, setCurrentRole] = useState(() => localStorage.getItem(roleStorageKey) || "admin");
-  const [loginUser, setLoginUser] = useState(() => localStorage.getItem("xjd-finance-user") || "");
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
-  const [loginLoading, setLoginLoading] = useState(false);
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [templates, setTemplates] = useState<ImportTemplate[]>([]);
   const [rules, setRules] = useState<ParameterRule[]>([]);
@@ -133,11 +135,24 @@ export default function Settings() {
     }
   };
 
-  const permissions = useMemo(() => new Set(auth?.permissions ?? []), [auth]);
+  const effectivePermissions = currentAccount.user?.auth?.permissions ?? auth?.permissions ?? [];
+  const permissions = useMemo(() => new Set(effectivePermissions), [effectivePermissions]);
+  const roleDirectory = currentAccount.user?.auth?.roles ?? auth?.roles ?? [];
+  const permissionDirectory = currentAccount.user?.auth?.permissionCatalog ?? auth?.permissionCatalog ?? [];
+  const permissionLabelByCode = useMemo(
+    () => new Map(permissionDirectory.map((item) => [item.permission, item.label])),
+    [permissionDirectory]
+  );
   const canWriteRules = permissions.has("rules:write");
+  const canImport = permissions.has("finance:import");
   const canRollback = permissions.has("finance:rollback");
   const canCloseMonth = permissions.has("finance:close");
-  const canManageUsers = (currentAccount.user?.auth?.permissions ?? auth?.permissions ?? []).includes("users:manage");
+  const canManageUsers = permissions.has("users:manage");
+  const canAudit = permissions.has("audit:read");
+  const canExport = permissions.has("reports:export");
+  const canViewOperations = permissions.has("operations:read");
+  const canViewRules = permissions.has("rules:read");
+  const canViewMonthClose = permissions.has("month-close:read");
   const isMonthLocked = monthClose?.status === "locked";
 
   const loadAuth = useCallback(async () => {
@@ -161,6 +176,10 @@ export default function Settings() {
   }, [canManageUsers]);
 
   const loadBatches = useCallback(async () => {
+    if (!canImport) {
+      setBatches([]);
+      return;
+    }
     setLoading(true);
     try {
       const res = await getImportBatches(selectedMonth);
@@ -170,9 +189,13 @@ export default function Settings() {
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth]);
+  }, [canImport, selectedMonth]);
 
   const loadTemplates = useCallback(async () => {
+    if (!canImport) {
+      setTemplates([]);
+      return;
+    }
     setTemplatesLoading(true);
     try {
       const res = await getImportTemplates();
@@ -182,9 +205,13 @@ export default function Settings() {
     } finally {
       setTemplatesLoading(false);
     }
-  }, []);
+  }, [canImport]);
 
   const loadReadiness = useCallback(async () => {
+    if (!canViewOperations) {
+      setReadiness(null);
+      return;
+    }
     setReadinessLoading(true);
     try {
       const res = await getReadiness(selectedMonth);
@@ -196,9 +223,13 @@ export default function Settings() {
     } finally {
       setReadinessLoading(false);
     }
-  }, [selectedMonth]);
+  }, [canViewOperations, selectedMonth]);
 
   const loadOperations = useCallback(async () => {
+    if (!canViewOperations) {
+      setOperations(null);
+      return;
+    }
     setOperationsLoading(true);
     try {
       const res = await getOperationsStatus();
@@ -210,12 +241,17 @@ export default function Settings() {
     } finally {
       setOperationsLoading(false);
     }
-  }, []);
+  }, [canViewOperations]);
 
   const loadRules = useCallback(async () => {
+    if (!canViewRules) {
+      setRules([]);
+      setRuleDrafts({});
+      return;
+    }
     setRulesLoading(true);
     try {
-      const res = await getParameterRules();
+      const res = await getParameterRules(selectedMonth);
       const rows = res.data.rows ?? [];
       setRules(rows);
       setRuleDrafts(Object.fromEntries(rows.map((rule: ParameterRule) => [
@@ -227,9 +263,13 @@ export default function Settings() {
     } finally {
       setRulesLoading(false);
     }
-  }, []);
+  }, [canViewRules, selectedMonth]);
 
   const loadMonthClose = useCallback(async () => {
+    if (!canViewMonthClose) {
+      setMonthClose(null);
+      return;
+    }
     try {
       const res = await getMonthCloseStatus(selectedMonth);
       setMonthClose(res.data);
@@ -237,9 +277,13 @@ export default function Settings() {
     } catch {
       message.error("月度锁账状态加载失败，请确认后端服务可用");
     }
-  }, [selectedMonth]);
+  }, [canViewMonthClose, selectedMonth]);
 
   const loadActionLogs = useCallback(async () => {
+    if (!canAudit) {
+      setActionLogs([]);
+      return;
+    }
     setLogsLoading(true);
     try {
       const res = await getActionLogs({
@@ -255,11 +299,11 @@ export default function Settings() {
     } finally {
       setLogsLoading(false);
     }
-  }, [logFilters, selectedMonth]);
+  }, [canAudit, logFilters, selectedMonth]);
 
   useEffect(() => {
     loadAuth().catch(() => message.error("角色权限加载失败"));
-  }, [loadAuth, currentRole]);
+  }, [loadAuth]);
 
   useEffect(() => {
     loadBatches();
@@ -348,38 +392,6 @@ export default function Settings() {
     }
   };
 
-  const changeRole = (role: string) => {
-    localStorage.setItem(roleStorageKey, role);
-    setCurrentRole(role);
-    message.success("角色已切换，后续请求会按新角色权限执行");
-  };
-
-  const submitLogin = async () => {
-    setLoginLoading(true);
-    try {
-      const res = await login(username, password);
-      localStorage.setItem(tokenStorageKey, res.data.token);
-      localStorage.setItem(roleStorageKey, res.data.user.role);
-      localStorage.setItem("xjd-finance-user", `${res.data.user.displayName}（${res.data.user.username}）`);
-      setLoginUser(`${res.data.user.displayName}（${res.data.user.username}）`);
-      setCurrentRole(res.data.user.role);
-      message.success(`已登录：${res.data.user.displayName}`);
-      await loadAuth();
-    } catch {
-      message.error("登录失败，请检查账号密码");
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
-  const logout = async () => {
-    localStorage.removeItem(tokenStorageKey);
-    localStorage.removeItem("xjd-finance-user");
-    setLoginUser("");
-    message.success("已退出登录，系统回到本地测试角色模式");
-    await loadAuth();
-  };
-
   const rollback = async (id: number) => {
     if (isMonthLocked) {
       message.warning(`${selectedMonth} 已锁账，不能回滚导入批次`);
@@ -438,9 +450,10 @@ export default function Settings() {
       await updateParameterRule(rule.ruleKey, {
         valueJson: draft.valueJson,
         description: draft.description,
-        updatedBy: auth?.label ?? "finance-admin"
+        updatedBy: auth?.label ?? "finance-admin",
+        effectiveMonth: selectedMonth
       });
-      message.success("参数规则已保存");
+      message.success(`参数规则已保存，自 ${selectedMonth} 起生效`);
       await loadRules();
     } catch {
       message.error("参数规则保存失败，请检查角色权限、后端服务或 JSON 格式");
@@ -575,6 +588,13 @@ export default function Settings() {
       )
     },
     {
+      title: "当前口径",
+      width: 130,
+      render: (_, row) => row.source === "monthly"
+        ? <Tag color="blue">自 {row.effectiveMonth} 生效</Tag>
+        : <Tag>系统默认</Tag>
+    },
+    {
       title: "说明",
       dataIndex: "description",
       width: 280,
@@ -607,37 +627,35 @@ export default function Settings() {
   const logColumns: ColumnsType<ActionLogRow> = [
     { title: "时间", dataIndex: "createdAt", width: 170, render: (value) => String(value).replace("T", " ").slice(0, 19) },
     { title: "月份", dataIndex: "month", width: 90, render: (value) => value || "-" },
-    { title: "对象", width: 180, render: (_, row) => `${row.entityType} / ${row.entityId}` },
-    { title: "动作", dataIndex: "action", width: 180, render: (value) => <Tag color="blue">{value}</Tag> },
-    { title: "操作人", dataIndex: "operator", width: 120 },
+    {
+      title: "对象",
+      width: 220,
+      render: (_, row) => (
+        <Space size={4} wrap>
+          <span>{auditEntityLabel(row.entityType)}</span>
+          <Typography.Text type="secondary">/ {auditEntityIdLabel(row.entityId)}</Typography.Text>
+        </Space>
+      )
+    },
+    { title: "动作", dataIndex: "action", width: 210, render: (value) => <Tag color="blue">{auditActionLabel(value)}</Tag> },
+    { title: "操作人", dataIndex: "operator", width: 130, render: (value) => auditOperatorLabel(value) },
     {
       title: "摘要",
       dataIndex: "payloadJson",
       ellipsis: true,
-      render: (value) => {
-        if (!value) return "-";
-        try {
-          const parsed = JSON.parse(value);
-          if (parsed.batchNo) return `${parsed.batchNo} ${parsed.fileName ?? ""}`.trim();
-          if (parsed.note) return parsed.note;
-          if (parsed.count !== undefined) return `数量 ${parsed.count}`;
-          return JSON.stringify(parsed).slice(0, 120);
-        } catch {
-          return String(value).slice(0, 120);
-        }
-      }
+      render: (value, row) => auditPayloadSummary(value, row.action)
     }
   ];
 
   return (
     <>
       <PageHeader
-        title="参数规则"
-        description="系统严格按照后台参数规则和原始表格标注执行汇率、风险、提成和服务类确认口径。"
+        title="账号与参数规则"
+        description="查看当前账号的数据范围和授权界面；管理员在此维护账号，财务与主管按权限处理月结、规则和审计。"
       />
 
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
-        <MonthWorkflowStatus month={selectedMonth} />
+        {canViewOperations ? <MonthWorkflowStatus month={selectedMonth} /> : null}
 
         <Card title="当前账号与权限">
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
@@ -647,10 +665,27 @@ export default function Settings() {
               <Tag color="blue">{currentAccount.user?.auth?.label || currentAccount.user?.role}</Tag>
               <Button onClick={() => currentAccount.logout()}>退出登录</Button>
             </Space>
-            <Space wrap>
-              {(currentAccount.user?.auth?.permissions ?? auth?.permissions ?? []).map((permission) => <Tag key={permission}>{permission}</Tag>)}
-            </Space>
-            <Alert type="info" showIcon message="账号登录统一在登录页完成" description="当前页面用于查看权限和管理财务参数；退出后再次访问业务页面会自动进入登录页。" />
+            <Alert
+              type="info"
+              showIcon
+              message={currentAccount.user?.auth?.description ?? auth?.description ?? "当前账号已按角色授权"}
+              description={`数据范围：${roleDataScopeLabels[currentAccount.user?.role ?? auth?.role ?? "restricted"] ?? "按账号角色限制"}`}
+            />
+            <div>
+              <Typography.Text strong>可使用界面</Typography.Text>
+              <Space wrap style={{ marginTop: 8, display: "flex" }}>
+                {pagesForPermissions(effectivePermissions).map((page) => <Tag color="blue" key={page.path}>{page.label}</Tag>)}
+              </Space>
+            </div>
+            <div>
+              <Typography.Text strong>操作权限</Typography.Text>
+              <Space wrap style={{ marginTop: 8, display: "flex" }}>
+                {effectivePermissions.filter((permission) => !permission.endsWith(":read")).map((permission) => (
+                  <Tag key={permission}>{permissionLabelByCode.get(permission) ?? permission}</Tag>
+                ))}
+                {effectivePermissions.every((permission) => permission.endsWith(":read")) ? <Tag>仅查看</Tag> : null}
+              </Space>
+            </div>
           </Space>
         </Card>
 
@@ -670,7 +705,7 @@ export default function Settings() {
               columns={[
                 { title: "账号", dataIndex: "username" },
                 { title: "姓名", dataIndex: "displayName" },
-                { title: "角色", dataIndex: "role", render: (value) => <Tag color="blue">{value}</Tag> },
+                { title: "角色", dataIndex: "role", render: (value) => <Tag color="blue">{roleDirectory.find((item) => item.role === value)?.label ?? value}</Tag> },
                 { title: "状态", render: (_, row) => <Tag color={row.isActive ? "green" : "red"}>{row.isActive ? "启用" : "已停用"}</Tag> },
                 { title: "首次改密", render: (_, row) => row.mustChangePassword ? <Tag color="gold">待修改</Tag> : <Tag>已完成</Tag> },
                 { title: "钉钉用户 ID", dataIndex: "dingtalkUserId", render: (value) => value || <Tag>未映射</Tag> },
@@ -681,18 +716,52 @@ export default function Settings() {
                   <Button size="small" danger={row.isActive} disabled={row.id === currentAccount.user?.id} onClick={async () => { await updateUser(row.id, { isActive: !row.isActive }); message.success(row.isActive ? "账号已停用" : "账号已启用"); loadManagedUsers(); }}>{row.isActive ? "停用" : "启用"}</Button>
                 </Space> }
               ]}
-            /> : <Alert type="info" showIcon message="可在此修改自己的密码" description="账号创建、停用和企业微信通知配置仅对管理员开放。" />}
+            /> : <Alert type="info" showIcon message="可在此修改自己的密码" description="账号创建、角色分配、停用和通知映射仅对系统管理员开放。" />}
           </Space>
         </Card>
 
-        <Card title="运行地址与数据库">
+        {canManageUsers ? (
+          <Card title="角色、界面与数据范围">
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="菜单隐藏与后端权限使用同一套角色定义"
+              description="页面按钮用于改善操作体验；后端仍会对直接访问、接口请求和数据范围进行最终校验。"
+            />
+            <Table
+              rowKey="role"
+              size="small"
+              pagination={false}
+              dataSource={roleDirectory}
+              columns={[
+                { title: "角色", dataIndex: "label", width: 130, render: (value) => <Tag color="blue">{value}</Tag> },
+                { title: "职责", dataIndex: "description", width: 280 },
+                { title: "数据范围", dataIndex: "role", width: 250, render: (value) => roleDataScopeLabels[value] ?? "按账号角色限制" },
+                {
+                  title: "授权界面",
+                  render: (_, row) => <Space wrap>{pagesForPermissions(row.permissions).map((page) => <Tag key={page.path}>{page.label}</Tag>)}</Space>
+                },
+                {
+                  title: "写操作",
+                  width: 360,
+                  render: (_, row) => {
+                    const actions = row.permissions.filter((permission) => !permission.endsWith(":read"));
+                    return actions.length ? <Space wrap>{actions.map((permission) => <Tag color="gold" key={permission}>{permissionLabelByCode.get(permission) ?? permission}</Tag>)}</Space> : <Tag>仅查看</Tag>;
+                  }
+                }
+              ]}
+              scroll={{ x: 1300 }}
+            />
+          </Card>
+        ) : null}
+
+        {canViewOperations ? <Card title="运行地址与数据库">
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Descriptions column={1}>
-              <Descriptions.Item label="前端访问地址">http://localhost:5173/</Descriptions.Item>
               <Descriptions.Item label="后端接口地址">{apiBaseUrl}</Descriptions.Item>
-              <Descriptions.Item label="本地后端端口">4000</Descriptions.Item>
-              <Descriptions.Item label="本地数据库">prisma/dev.db</Descriptions.Item>
-              <Descriptions.Item label="线上后端接口">https://cross-border-finance-server.onrender.com/api</Descriptions.Item>
+              <Descriptions.Item label="数据库类型">PostgreSQL</Descriptions.Item>
+              <Descriptions.Item label="数据存储说明">数据库连接由后端 DATABASE_URL 管理，页面不保存或显示数据库密码</Descriptions.Item>
             </Descriptions>
             <Alert
               type="info"
@@ -700,18 +769,18 @@ export default function Settings() {
               message="表头模版规范已写入后台，后续 Excel 导入会按后台模板进行字段匹配和质量校验。"
               description="系统备份会导出表头模板、参数规则、导入批次、锁账状态、确认单、操作日志和导出记录，便于审计和迁移。"
             />
-            <Space wrap>
+            {canExport ? <Space wrap>
               <Button loading={backupLoading === "month"} onClick={() => downloadBackup("month")}>
                 导出本月系统备份 Excel
               </Button>
               <Button loading={backupLoading === "all"} onClick={() => downloadBackup("all")}>
                 导出全量系统备份 Excel
               </Button>
-            </Space>
+            </Space> : null}
           </Space>
-        </Card>
+        </Card> : null}
 
-        <Card
+        {canViewOperations ? <Card
           title={`系统运行与就绪状态（${selectedMonth}）`}
           extra={(
             <Button
@@ -774,9 +843,9 @@ export default function Settings() {
               />
             )}
           </Space>
-        </Card>
+        </Card> : null}
 
-        <Card title="后台表头模板规范" extra={<Button onClick={loadTemplates} loading={templatesLoading}>刷新模板</Button>}>
+        {canImport ? <Card title="后台表头模板规范" extra={<Button onClick={loadTemplates} loading={templatesLoading}>刷新模板</Button>}>
           <Alert
             type="success"
             showIcon
@@ -792,9 +861,9 @@ export default function Settings() {
             dataSource={templates}
             pagination={false}
           />
-        </Card>
+        </Card> : null}
 
-        <Card title={`月度锁账控制（${selectedMonth}）`}>
+        {canViewMonthClose ? <Card title={`月度锁账控制（${selectedMonth}）`}>
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <Space wrap>
               <span>当前状态</span>
@@ -843,9 +912,9 @@ export default function Settings() {
               description={isMonthLocked ? "锁账状态由后端强制执行，导入 Excel 和回滚导入批次都会被拒绝。" : "月度复核、提成确认和签名完成后，建议主管锁账，防止历史数据被覆盖。"}
             />
           </Space>
-        </Card>
+        </Card> : null}
 
-        <Card title="数据库参数规则" extra={<Button onClick={loadRules} loading={rulesLoading}>刷新规则</Button>}>
+        {canViewRules ? <Card title="数据库参数规则" extra={<Button onClick={loadRules} loading={rulesLoading}>刷新规则</Button>}>
           <Alert
             type="warning"
             showIcon
@@ -861,9 +930,9 @@ export default function Settings() {
             dataSource={rules}
             pagination={false}
           />
-        </Card>
+        </Card> : null}
 
-        <Card title={`导入批次记录（${selectedMonth}）`} extra={<Button onClick={loadBatches} loading={loading}>刷新</Button>}>
+        {canImport ? <Card title={`导入批次记录（${selectedMonth}）`} extra={<Button onClick={loadBatches} loading={loading}>刷新</Button>}>
           <Alert
             type="info"
             showIcon
@@ -880,9 +949,9 @@ export default function Settings() {
             pagination={{ pageSize: 6 }}
             scroll={{ x: 1500 }}
           />
-        </Card>
+        </Card> : null}
 
-        <Card title={`操作审计日志（${selectedMonth}）`} extra={<Button onClick={loadActionLogs} loading={logsLoading}>刷新日志</Button>}>
+        {canAudit ? <Card title={`操作审计日志（${selectedMonth}）`} extra={<Button onClick={loadActionLogs} loading={logsLoading}>刷新日志</Button>}>
           <Alert
             type="success"
             showIcon
@@ -891,19 +960,25 @@ export default function Settings() {
             description="当前已记录 Excel 导入、批次回滚、锁账/解锁、确认单生成、发送签名、员工签名、主管确认、风险复核和提成确认等操作。"
           />
           <Space wrap style={{ marginBottom: 12 }}>
-            <Input
+            <Select
               allowClear
+              showSearch
               style={{ width: 180 }}
-              placeholder="动作，如 import"
-              value={logFilters.action}
-              onChange={(event) => setLogFilters((current) => ({ ...current, action: event.target.value }))}
+              placeholder="选择操作动作"
+              options={auditActionOptions}
+              optionFilterProp="label"
+              value={logFilters.action || undefined}
+              onChange={(value) => setLogFilters((current) => ({ ...current, action: value ?? "" }))}
             />
-            <Input
+            <Select
               allowClear
+              showSearch
               style={{ width: 180 }}
-              placeholder="对象类型"
-              value={logFilters.entityType}
-              onChange={(event) => setLogFilters((current) => ({ ...current, entityType: event.target.value }))}
+              placeholder="选择对象类型"
+              options={auditEntityOptions}
+              optionFilterProp="label"
+              value={logFilters.entityType || undefined}
+              onChange={(value) => setLogFilters((current) => ({ ...current, entityType: value ?? "" }))}
             />
             <Input
               allowClear
@@ -927,9 +1002,11 @@ export default function Settings() {
             loading={logsLoading}
             columns={logColumns}
             dataSource={actionLogs}
-            pagination={{ pageSize: 8 }}
+            locale={{ emptyText: "当前筛选条件下暂无审计日志" }}
+            pagination={{ pageSize: 8, showSizeChanger: false, showTotal: (total) => `共 ${total} 条` }}
+            scroll={{ x: 1100 }}
           />
-        </Card>
+        </Card> : null}
       </Space>
 
       <Modal
@@ -1038,7 +1115,12 @@ export default function Settings() {
           <Input value={newUser.displayName} onChange={(event) => setNewUser((value) => ({ ...value, displayName: event.target.value }))} placeholder="姓名" />
           <Input.Password value={newUser.password} onChange={(event) => setNewUser((value) => ({ ...value, password: event.target.value }))} placeholder="初始密码，至少 10 位" />
           <Input value={newUser.dingtalkUserId} onChange={(event) => setNewUser((value) => ({ ...value, dingtalkUserId: event.target.value }))} placeholder="钉钉用户 ID（可后续维护）" />
-          <Select value={newUser.role} onChange={(role) => setNewUser((value) => ({ ...value, role }))} options={[{ value: "sales", label: "销售" }, { value: "finance", label: "财务" }, { value: "supervisor", label: "主管" }, { value: "admin", label: "管理员" }]} />
+          <Select
+            value={newUser.role}
+            onChange={(role) => setNewUser((value) => ({ ...value, role }))}
+            options={roleDirectory.map((role) => ({ value: role.role, label: role.label }))}
+            placeholder="选择账号角色"
+          />
         </Space>
       </Modal>
       <Modal

@@ -8,72 +8,72 @@ datasource db {
 }
 
 model AppUser {
-  id           Int      @id @default(autoincrement())
-  username     String   @unique
-  displayName  String
-  role         String
-  passwordHash String
-  passwordSalt String
-  isActive     Boolean  @default(true)
-  mustChangePassword Boolean @default(false)
-  passwordChangedAt DateTime?
-  lastLoginAt       DateTime?
-  dingtalkUserId    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 Int       @id @default(autoincrement())
+  username           String    @unique
+  displayName        String
+  role               String
+  passwordHash       String
+  passwordSalt       String
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(false)
+  passwordChangedAt  DateTime?
+  lastLoginAt        DateTime?
+  dingtalkUserId     String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 }
 
 model FinanceOrder {
-  id                          Int                     @id @default(autoincrement())
-  importBatchId               Int?
-  importBatch                 ImportBatch?            @relation(fields: [importBatchId], references: [id])
-  orderNo                     String
-  customerOrderNo             String?
-  orderDate                   DateTime
-  month                       String
-  customerName                String
-  customerType                String
-  salespersonName             String
-  customerServiceName         String?
-  businessType                String
-  supplierName                String?
-  currency                    String
-  exchangeRate                Float?
-  exchangeRateSource          String?
-  exchangeRateStatus          String
-  receivableFreight           Float                   @default(0)
-  receivableClearance         Float                   @default(0)
-  receivableDelivery          Float                   @default(0)
-  receivableCompensation      Float                   @default(0)
-  otherReceivable             Float                   @default(0)
-  payableFreight              Float                   @default(0)
-  payableClearance            Float                   @default(0)
-  payableDelivery             Float                   @default(0)
-  payableCompensation         Float                   @default(0)
-  otherCost                   Float                   @default(0)
-  adjustedReceivable          Float                   @default(0)
-  adjustedPayable             Float                   @default(0)
-  adjustedGrossProfit         Float                   @default(0)
-  adjustedGrossProfitRate     Float?
-  receivedAmount              Float                   @default(0)
-  paidAmount                  Float                   @default(0)
-  orderStatus                 String
-  receivableStatus            String
-  payableStatus               String
-  isServiceBusiness           Boolean                 @default(false)
-  isCompanyCustomerAdjusted   Boolean                 @default(false)
-  needSupervisorConfirm       Boolean                 @default(false)
-  calculationNote             String?
-  remark                      String?
-  createdAt                   DateTime                @default(now())
-  updatedAt                   DateTime                @updatedAt
-  chargeLines                 FinanceChargeLine[]
-  commissionRecords           CommissionRecord[]
-  riskRecords                 RiskRecord[]
-  costAdjustments             CostAdjustment[]
-  serviceBusinessRecords      ServiceBusinessRecord[]
-  settlementRecords           SettlementRecord[]
-  invoices                    FinanceInvoice[]
+  id                        Int                     @id @default(autoincrement())
+  importBatchId             Int?
+  importBatch               ImportBatch?            @relation(fields: [importBatchId], references: [id])
+  orderNo                   String
+  customerOrderNo           String?
+  orderDate                 DateTime
+  month                     String
+  customerName              String
+  customerType              String
+  salespersonName           String
+  customerServiceName       String?
+  businessType              String
+  supplierName              String?
+  currency                  String
+  exchangeRate              Float?
+  exchangeRateSource        String?
+  exchangeRateStatus        String
+  receivableFreight         Float                   @default(0)
+  receivableClearance       Float                   @default(0)
+  receivableDelivery        Float                   @default(0)
+  receivableCompensation    Float                   @default(0)
+  otherReceivable           Float                   @default(0)
+  payableFreight            Float                   @default(0)
+  payableClearance          Float                   @default(0)
+  payableDelivery           Float                   @default(0)
+  payableCompensation       Float                   @default(0)
+  otherCost                 Float                   @default(0)
+  adjustedReceivable        Float                   @default(0)
+  adjustedPayable           Float                   @default(0)
+  adjustedGrossProfit       Float                   @default(0)
+  adjustedGrossProfitRate   Float?
+  receivedAmount            Float                   @default(0)
+  paidAmount                Float                   @default(0)
+  orderStatus               String
+  receivableStatus          String
+  payableStatus             String
+  isServiceBusiness         Boolean                 @default(false)
+  isCompanyCustomerAdjusted Boolean                 @default(false)
+  needSupervisorConfirm     Boolean                 @default(false)
+  calculationNote           String?
+  remark                    String?
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
+  chargeLines               FinanceChargeLine[]
+  commissionRecords         CommissionRecord[]
+  riskRecords               RiskRecord[]
+  costAdjustments           CostAdjustment[]
+  serviceBusinessRecords    ServiceBusinessRecord[]
+  settlementRecords         SettlementRecord[]
+  invoices                  FinanceInvoice[]
 
   @@unique([month, orderNo])
   @@index([orderNo])
@@ -105,21 +105,21 @@ model OperatorPerformanceMonthSetting {
 }
 
 model SettlementRecord {
-  id              Int          @id @default(autoincrement())
-  financeOrderId  Int
-  financeOrder    FinanceOrder @relation(fields: [financeOrderId], references: [id])
-  month           String
-  direction       String
-  amount          Float
-  settledAt       DateTime
-  counterparty    String?
-  status          String       @default("active")
-  operator        String       @default("finance")
-  note            String?
-  voidedBy        String?
-  voidedAt        DateTime?
-  voidReason      String?
-  createdAt       DateTime     @default(now())
+  id                 Int                        @id @default(autoincrement())
+  financeOrderId     Int
+  financeOrder       FinanceOrder               @relation(fields: [financeOrderId], references: [id])
+  month              String
+  direction          String
+  amount             Float
+  settledAt          DateTime
+  counterparty       String?
+  status             String                     @default("active")
+  operator           String                     @default("finance")
+  note               String?
+  voidedBy           String?
+  voidedAt           DateTime?
+  voidReason         String?
+  createdAt          DateTime                   @default(now())
   invoiceAllocations FinanceInvoiceAllocation[]
 
   @@index([month, direction])
@@ -127,9 +127,9 @@ model SettlementRecord {
 }
 
 model RawLedgerLine {
-  id              Int         @id @default(autoincrement())
+  id              Int                 @id @default(autoincrement())
   importBatchId   Int
-  importBatch     ImportBatch @relation(fields: [importBatchId], references: [id])
+  importBatch     ImportBatch         @relation(fields: [importBatchId], references: [id])
   month           String
   orderNo         String?
   customerOrderNo String?
@@ -139,61 +139,78 @@ model RawLedgerLine {
   rowHash         String
   rawJson         String
   canonicalJson   String?
-  parseStatus     String      @default("parsed")
+  parseStatus     String              @default("parsed")
   parseMessage    String?
-  createdAt       DateTime    @default(now())
+  createdAt       DateTime            @default(now())
   chargeLines     FinanceChargeLine[]
 
+  @@unique([importBatchId, rowIndex])
   @@index([month, orderNo])
   @@index([importBatchId, rowIndex])
-  @@unique([importBatchId, rowIndex])
 }
 
 model BusinessPartner {
-  id              Int      @id @default(autoincrement())
-  partnerCode     String   @unique
-  partnerType     String
-  name            String
-  taxNumber       String?
-  contactName     String?
-  contactPhone    String?
-  currency        String   @default("CNY")
-  creditLimit     Float    @default(0)
-  paymentTermDays Int      @default(30)
-  isActive        Boolean  @default(true)
-  source          String   @default("manual")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  invoices        FinanceInvoice[]
+  id               Int                    @id @default(autoincrement())
+  partnerCode      String                 @unique
+  partnerType      String
+  name             String
+  taxNumber        String?
+  contactName      String?
+  contactPhone     String?
+  currency         String                 @default("CNY")
+  creditLimit      Float                  @default(0)
+  paymentTermDays  Int                    @default(30)
+  isActive         Boolean                @default(true)
+  source           String                 @default("manual")
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  invoices         FinanceInvoice[]
   bankTransactions BankTransaction[]
+  aliases          BusinessPartnerAlias[]
 
   @@index([partnerType, isActive])
   @@index([name])
 }
 
+model BusinessPartnerAlias {
+  id                Int             @id @default(autoincrement())
+  businessPartnerId Int
+  businessPartner   BusinessPartner @relation(fields: [businessPartnerId], references: [id], onDelete: Cascade)
+  partnerType       String
+  alias             String
+  normalizedAlias   String
+  source            String          @default("manual")
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([partnerType, normalizedAlias])
+  @@index([businessPartnerId])
+  @@index([alias])
+}
+
 model FinanceInvoice {
-  id              Int      @id @default(autoincrement())
-  invoiceNo       String   @unique
-  month           String
-  invoiceType     String
-  partnerId       Int?
-  partner         BusinessPartner? @relation(fields: [partnerId], references: [id])
-  financeOrderId  Int?
-  financeOrder    FinanceOrder? @relation(fields: [financeOrderId], references: [id])
-  orderNo         String?
-  currency        String   @default("CNY")
-  exchangeRate    Float    @default(1)
-  originalAmount  Float    @default(0)
-  localAmount     Float    @default(0)
-  allocatedAmount Float    @default(0)
-  issuedAt        DateTime
-  dueAt           DateTime
-  status          String   @default("open")
-  source          String   @default("finance_order")
-  note            String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  allocations     FinanceInvoiceAllocation[]
+  id                    Int                        @id @default(autoincrement())
+  invoiceNo             String                     @unique
+  month                 String
+  invoiceType           String
+  partnerId             Int?
+  partner               BusinessPartner?           @relation(fields: [partnerId], references: [id])
+  financeOrderId        Int?
+  financeOrder          FinanceOrder?              @relation(fields: [financeOrderId], references: [id])
+  orderNo               String?
+  currency              String                     @default("CNY")
+  exchangeRate          Float                      @default(1)
+  originalAmount        Float                      @default(0)
+  localAmount           Float                      @default(0)
+  allocatedAmount       Float                      @default(0)
+  issuedAt              DateTime
+  dueAt                 DateTime
+  status                String                     @default("open")
+  source                String                     @default("finance_order")
+  note                  String?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  allocations           FinanceInvoiceAllocation[]
   reconciliationMatches ReconciliationMatch[]
 
   @@unique([month, invoiceType, financeOrderId])
@@ -202,48 +219,48 @@ model FinanceInvoice {
 }
 
 model FinanceInvoiceAllocation {
-  id                 Int      @id @default(autoincrement())
+  id                 Int               @id @default(autoincrement())
   invoiceId          Int
-  invoice             FinanceInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice            FinanceInvoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   settlementRecordId Int?
   settlementRecord   SettlementRecord? @relation(fields: [settlementRecordId], references: [id])
   bankTransactionId  Int?
-  bankTransaction    BankTransaction? @relation(fields: [bankTransactionId], references: [id])
+  bankTransaction    BankTransaction?  @relation(fields: [bankTransactionId], references: [id])
   amount             Float
-  status             String   @default("active")
-  createdBy          String   @default("finance")
-  createdAt          DateTime @default(now())
+  status             String            @default("active")
+  createdBy          String            @default("finance")
+  createdAt          DateTime          @default(now())
 
+  @@unique([invoiceId, settlementRecordId])
   @@index([invoiceId, status])
   @@index([settlementRecordId])
   @@index([bankTransactionId])
-  @@unique([invoiceId, settlementRecordId])
 }
 
 model BankTransaction {
-  id              Int      @id @default(autoincrement())
-  transactionNo   String   @unique
-  month           String
-  transactionDate DateTime
-  direction       String
-  partnerId       Int?
-  partner         BusinessPartner? @relation(fields: [partnerId], references: [id])
-  manualLedgerEntryId Int? @unique
-  manualLedgerEntry ManualLedgerEntry? @relation(fields: [manualLedgerEntryId], references: [id])
-  counterparty    String
-  bankReference   String?
-  currency        String   @default("CNY")
-  exchangeRate    Float    @default(1)
-  originalAmount  Float
-  localAmount     Float
-  matchedAmount   Float    @default(0)
-  status          String   @default("unmatched")
-  source          String   @default("manual")
-  note            String?
-  createdBy       String   @default("finance")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  allocations     FinanceInvoiceAllocation[]
+  id                    Int                        @id @default(autoincrement())
+  transactionNo         String                     @unique
+  month                 String
+  transactionDate       DateTime
+  direction             String
+  partnerId             Int?
+  partner               BusinessPartner?           @relation(fields: [partnerId], references: [id])
+  manualLedgerEntryId   Int?                       @unique
+  manualLedgerEntry     ManualLedgerEntry?         @relation(fields: [manualLedgerEntryId], references: [id])
+  counterparty          String
+  bankReference         String?
+  currency              String                     @default("CNY")
+  exchangeRate          Float                      @default(1)
+  originalAmount        Float
+  localAmount           Float
+  matchedAmount         Float                      @default(0)
+  status                String                     @default("unmatched")
+  source                String                     @default("manual")
+  note                  String?
+  createdBy             String                     @default("finance")
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  allocations           FinanceInvoiceAllocation[]
   reconciliationMatches ReconciliationMatch[]
 
   @@index([month, direction, status])
@@ -251,27 +268,27 @@ model BankTransaction {
 }
 
 model ReconciliationMatch {
-  id                Int      @id @default(autoincrement())
+  id                Int             @id @default(autoincrement())
   bankTransactionId Int
   bankTransaction   BankTransaction @relation(fields: [bankTransactionId], references: [id], onDelete: Cascade)
   invoiceId         Int
-  invoice           FinanceInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice           FinanceInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   suggestedAmount   Float
   score             Float
   matchReason       String
-  status            String   @default("suggested")
+  status            String          @default("suggested")
   confirmedBy       String?
   confirmedAt       DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   @@unique([bankTransactionId, invoiceId])
   @@index([status, score])
 }
 
 model WorkflowTask {
-  id          Int      @id @default(autoincrement())
-  sourceKey   String   @unique
+  id          Int       @id @default(autoincrement())
+  sourceKey   String    @unique
   month       String
   taskType    String
   entityType  String
@@ -280,27 +297,27 @@ model WorkflowTask {
   description String?
   ownerRole   String
   ownerName   String?
-  priority    String   @default("normal")
-  status      String   @default("pending")
+  priority    String    @default("normal")
+  status      String    @default("pending")
   route       String?
   dueAt       DateTime?
   resolvedBy  String?
   resolvedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([month, status, priority])
   @@index([ownerRole, ownerName, status])
 }
 
 model FinanceChargeLine {
-  id                  Int             @id @default(autoincrement())
+  id                  Int            @id @default(autoincrement())
   importBatchId       Int
-  importBatch         ImportBatch     @relation(fields: [importBatchId], references: [id])
+  importBatch         ImportBatch    @relation(fields: [importBatchId], references: [id])
   financeOrderId      Int?
-  financeOrder        FinanceOrder?   @relation(fields: [financeOrderId], references: [id])
+  financeOrder        FinanceOrder?  @relation(fields: [financeOrderId], references: [id])
   rawLedgerLineId     Int?
-  rawLedgerLine       RawLedgerLine?  @relation(fields: [rawLedgerLineId], references: [id])
+  rawLedgerLine       RawLedgerLine? @relation(fields: [rawLedgerLineId], references: [id])
   month               String
   orderNo             String
   customerOrderNo     String?
@@ -313,14 +330,14 @@ model FinanceChargeLine {
   supplierName        String?
   currency            String?
   exchangeRate        Float?
-  originalAmount      Float           @default(0)
-  localAmount         Float           @default(0)
-  signedAmount        Float           @default(0)
-  isCompensation      Boolean         @default(false)
-  isServiceBusiness   Boolean         @default(false)
+  originalAmount      Float          @default(0)
+  localAmount         Float          @default(0)
+  signedAmount        Float          @default(0)
+  isCompensation      Boolean        @default(false)
+  isServiceBusiness   Boolean        @default(false)
   rowIndex            Int
   sourceFileName      String?
-  createdAt           DateTime        @default(now())
+  createdAt           DateTime       @default(now())
 
   @@index([month, orderNo])
   @@index([importBatchId, rowIndex])
@@ -330,30 +347,30 @@ model FinanceChargeLine {
 }
 
 model ImportBatch {
-  id                      Int            @id @default(autoincrement())
-  batchNo                 String         @unique
+  id                      Int                 @id @default(autoincrement())
+  batchNo                 String              @unique
   month                   String
   fileName                String
   sheetName               String
-  importMode              String         @default("replace_month")
-  status                  String         @default("active")
-  importedRows            Int            @default(0)
-  importedOrders          Int            @default(0)
-  logisticsOrders         Int            @default(0)
-  serviceOrders           Int            @default(0)
-  totalReceivable         Float          @default(0)
-  totalPayable            Float          @default(0)
-  totalGrossProfit        Float          @default(0)
-  riskOrderCount          Int            @default(0)
-  abnormalHighProfitCount Int            @default(0)
+  importMode              String              @default("replace_month")
+  status                  String              @default("active")
+  importedRows            Int                 @default(0)
+  importedOrders          Int                 @default(0)
+  logisticsOrders         Int                 @default(0)
+  serviceOrders           Int                 @default(0)
+  totalReceivable         Float               @default(0)
+  totalPayable            Float               @default(0)
+  totalGrossProfit        Float               @default(0)
+  riskOrderCount          Int                 @default(0)
+  abnormalHighProfitCount Int                 @default(0)
   templateAuditJson       String?
   previewJson             String?
   sourceFileData          Bytes?
   sourceFileSha256        String?
   sourceFileSize          Int?
-  createdBy               String         @default("system")
-  createdAt               DateTime       @default(now())
-  updatedAt               DateTime       @updatedAt
+  createdBy               String              @default("system")
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
   revertedAt              DateTime?
   financeOrders           FinanceOrder[]
   rawLedgerLines          RawLedgerLine[]
@@ -363,166 +380,183 @@ model ImportBatch {
 }
 
 model FinanceSummary {
-  id                              Int      @id @default(autoincrement())
-  month                           String   @unique
-  totalReceivable                 Float    @default(0)
-  totalPayable                    Float    @default(0)
-  totalReceived                   Float    @default(0)
-  totalPaid                       Float    @default(0)
-  totalGrossProfit                Float    @default(0)
-  grossProfitRate                 Float?
-  totalCommission                 Float    @default(0)
-  riskOrderCount                  Int      @default(0)
-  abnormalHighProfitOrderCount    Int      @default(0)
-  pendingSupervisorConfirmCount   Int      @default(0)
-  createdAt                       DateTime @default(now())
-  updatedAt                       DateTime @updatedAt
+  id                            Int      @id @default(autoincrement())
+  month                         String   @unique
+  totalReceivable               Float    @default(0)
+  totalPayable                  Float    @default(0)
+  totalReceived                 Float    @default(0)
+  totalPaid                     Float    @default(0)
+  totalGrossProfit              Float    @default(0)
+  grossProfitRate               Float?
+  totalCommission               Float    @default(0)
+  riskOrderCount                Int      @default(0)
+  abnormalHighProfitOrderCount  Int      @default(0)
+  pendingSupervisorConfirmCount Int      @default(0)
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
 }
 
 model MonthClose {
-  id              Int       @id @default(autoincrement())
-  month           String    @unique
-  status          String    @default("open")
-  lockedBy        String?
-  lockedAt        DateTime?
-  unlockedBy      String?
-  unlockedAt      DateTime?
-  closeNote       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id         Int       @id @default(autoincrement())
+  month      String    @unique
+  status     String    @default("open")
+  lockedBy   String?
+  lockedAt   DateTime?
+  unlockedBy String?
+  unlockedAt DateTime?
+  closeNote  String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 }
 
 model ExcelImportTemplate {
-  id              Int      @id @default(autoincrement())
-  templateKey     String   @unique
-  fileName        String
-  sheetName       String
-  headerRowIndex  Int      @default(1)
-  headersJson     String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             Int      @id @default(autoincrement())
+  templateKey    String   @unique
+  fileName       String
+  sheetName      String
+  headerRowIndex Int      @default(1)
+  headersJson    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model ParameterRule {
-  id          Int      @id @default(autoincrement())
-  ruleKey     String   @unique
+  id          Int                    @id @default(autoincrement())
+  ruleKey     String                 @unique
   ruleGroup   String
   label       String
   valueJson   String
   description String?
-  isActive    Boolean  @default(true)
-  updatedBy   String   @default("system")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive    Boolean                @default(true)
+  updatedBy   String                 @default("system")
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  versions    ParameterRuleVersion[]
 
   @@index([ruleGroup, isActive])
 }
 
+model ParameterRuleVersion {
+  id              Int           @id @default(autoincrement())
+  parameterRuleId Int
+  parameterRule   ParameterRule @relation(fields: [parameterRuleId], references: [id], onDelete: Cascade)
+  effectiveMonth  String
+  valueJson       String
+  description     String?
+  isActive        Boolean       @default(true)
+  updatedBy       String        @default("system")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([parameterRuleId, effectiveMonth])
+  @@index([effectiveMonth, isActive])
+}
+
 model CommissionRecord {
-  id                      Int          @id @default(autoincrement())
-  financeOrderId          Int
-  financeOrder            FinanceOrder @relation(fields: [financeOrderId], references: [id])
-  salespersonName         String
-  customerType            String
-  businessType            String
-  grossProfit             Float
-  commissionRate          Float
-  commissionAmount        Float
-  manualCommissionAmount  Float?
-  adjustReason            String?
-  needSupervisorConfirm   Boolean      @default(false)
-  confirmStatus           String       @default("pending")
-  createdAt               DateTime     @default(now())
-  updatedAt               DateTime     @updatedAt
+  id                     Int          @id @default(autoincrement())
+  financeOrderId         Int
+  financeOrder           FinanceOrder @relation(fields: [financeOrderId], references: [id])
+  salespersonName        String
+  customerType           String
+  businessType           String
+  grossProfit            Float
+  commissionRate         Float
+  commissionAmount       Float
+  manualCommissionAmount Float?
+  adjustReason           String?
+  needSupervisorConfirm  Boolean      @default(false)
+  confirmStatus          String       @default("pending")
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
 }
 
 model RiskRecord {
-  id              Int          @id @default(autoincrement())
-  financeOrderId  Int
-  financeOrder    FinanceOrder @relation(fields: [financeOrderId], references: [id])
-  riskLevel       String
-  riskType        String
-  riskReasons     String
-  suggestion      String
-  status          String       @default("open")
-  reviewNote      String?
+  id               Int          @id @default(autoincrement())
+  financeOrderId   Int
+  financeOrder     FinanceOrder @relation(fields: [financeOrderId], references: [id])
+  riskLevel        String
+  riskType         String
+  riskReasons      String
+  suggestion       String
+  status           String       @default("open")
+  reviewNote       String?
   reviewConclusion String?
-  reviewedBy      String?
-  reviewedAt      DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  reviewedBy       String?
+  reviewedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 }
 
 model CostAdjustment {
-  id                      Int          @id @default(autoincrement())
-  financeOrderId          Int
-  financeOrder            FinanceOrder @relation(fields: [financeOrderId], references: [id])
-  fieldName               String
-  oldValue                Float?
-  newValue                Float?
-  adjustmentLogic         String
-  reason                  String
-  operatorName            String
-  needSupervisorConfirm   Boolean      @default(false)
-  createdAt               DateTime     @default(now())
+  id                    Int          @id @default(autoincrement())
+  financeOrderId        Int
+  financeOrder          FinanceOrder @relation(fields: [financeOrderId], references: [id])
+  fieldName             String
+  oldValue              Float?
+  newValue              Float?
+  adjustmentLogic       String
+  reason                String
+  operatorName          String
+  needSupervisorConfirm Boolean      @default(false)
+  createdAt             DateTime     @default(now())
 }
 
 model ServiceBusinessRecord {
-  id                          Int          @id @default(autoincrement())
-  financeOrderId              Int
-  financeOrder                FinanceOrder @relation(fields: [financeOrderId], references: [id])
-  serviceType                 String
-  originalPrice               Float
-  suggestedPrice              Float?
-  suggestedCommissionMin      Float?
-  suggestedCommissionMax      Float?
-  costAmount                  Float?
-  grossProfit                 Float?
-  supervisorFinalPrice        Float?
-  supervisorFinalCommission   Float?
-  confirmStatus               String       @default("pending")
-  remark                      String?
-  createdAt                   DateTime     @default(now())
-  updatedAt                   DateTime     @updatedAt
+  id                        Int          @id @default(autoincrement())
+  financeOrderId            Int
+  financeOrder              FinanceOrder @relation(fields: [financeOrderId], references: [id])
+  serviceType               String
+  originalPrice             Float
+  suggestedPrice            Float?
+  suggestedCommissionMin    Float?
+  suggestedCommissionMax    Float?
+  costAmount                Float?
+  grossProfit               Float?
+  supervisorFinalPrice      Float?
+  supervisorFinalCommission Float?
+  confirmStatus             String       @default("pending")
+  remark                    String?
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
 }
 
 model ConfirmationDocument {
-  id                  Int       @id @default(autoincrement())
-  month               String
-  documentType        String
-  ownerName           String
-  version             Int       @default(1)
-  businessType        String?
-  orderCount          Int       @default(0)
-  grossProfit         Float     @default(0)
-  commissionAmount    Float     @default(0)
-  payloadJson         String?
-  documentStatus      String    @default("generated")
-  sendStatus          String    @default("unsent")
-  notificationChannel String?
-  notifiedAt          DateTime?
+  id                      Int       @id @default(autoincrement())
+  month                   String
+  documentType            String
+  ownerName               String
+  version                 Int       @default(1)
+  businessType            String?
+  orderCount              Int       @default(0)
+  grossProfit             Float     @default(0)
+  commissionAmount        Float     @default(0)
+  payloadJson             String?
+  documentStatus          String    @default("generated")
+  sendStatus              String    @default("unsent")
+  notificationChannel     String?
+  notifiedAt              DateTime?
   notificationReceiptJson String?
-  notificationError   String?
-  signatureStatus     String    @default("pending")
-  supervisorStatus    String    @default("pending")
-  signatureToken      String?   @unique
-  signatureUrl        String?
+  notificationError       String?
+  signatureStatus         String    @default("pending")
+  supervisorStatus        String    @default("pending")
+  signatureToken          String?   @unique
+  signatureUrl            String?
   signatureTokenExpiresAt DateTime?
-  signerIp            String?
-  signerUserAgent     String?
-  signerRole          String?
-  signatureEvidenceJson String?
-  adjustReason        String?
-  voidReason          String?
-  signedAt            DateTime?
-  confirmedAt         DateTime?
-  voidedAt            DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  signerIp                String?
+  signerUserAgent         String?
+  signerRole              String?
+  signatureEvidenceJson   String?
+  adjustReason            String?
+  voidReason              String?
+  signedAt                DateTime?
+  confirmedAt             DateTime?
+  voidedAt                DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
+  @@unique([month, documentType, ownerName, version])
   @@index([month, documentType])
   @@index([month, documentType, ownerName])
-  @@unique([month, documentType, ownerName, version])
 }
 
 model ExportJob {
@@ -587,19 +621,28 @@ model LedgerAttachment {
   fileData    Bytes
   createdAt   DateTime          @default(now())
 
-  @@index([entryId])
   @@unique([entryId, sha256])
+  @@index([entryId])
 }
 
 model ActionLog {
-  id          Int      @id @default(autoincrement())
-  month       String?
-  entityType  String
-  entityId    String
-  action      String
-  operator    String   @default("主管")
-  payloadJson String?
-  createdAt   DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  month          String?
+  entityType     String
+  entityId       String
+  action         String
+  operator       String   @default("主管")
+  operatorUserId Int?
+  operatorRole   String?
+  ipAddress      String?
+  userAgent      String?
+  requestId      String?
+  beforeJson     String?
+  afterJson      String?
+  payloadJson    String?
+  createdAt      DateTime @default(now())
 
   @@index([entityType, entityId])
+  @@index([month, action])
+  @@index([operatorUserId, createdAt])
 }

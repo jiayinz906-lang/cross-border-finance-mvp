@@ -1,9 +1,11 @@
 import { prisma } from "../prisma/client.js";
+import { allFinanceAccess, scopedFinanceOrderWhere } from "../security/finance-access.js";
+import type { FinanceAccessScope } from "../security/finance-access.js";
 
 export const commissionRepository = {
-  listCommissions(month?: string) {
+  listCommissions(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     return prisma.commissionRecord.findMany({
-      where: month ? { financeOrder: { month } } : undefined,
+      where: { financeOrder: { is: scopedFinanceOrderWhere(month ? { month } : {}, scope) } },
       include: { financeOrder: true },
       orderBy: { id: "asc" }
     });

@@ -74,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           logout();
           return;
         }
-        setUser({ ...current, auth: { role: response.data.role, label: response.data.label, permissions: response.data.permissions } });
+        setUser(current);
       })
       .catch(() => {
         if (mounted) logout();

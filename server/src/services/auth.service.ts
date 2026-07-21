@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import type { AppUser } from "@prisma/client";
-import { authContext, resolveRole, type UserRole } from "../config/rbac.js";
+import { authContext, resolveAssignableRole, resolveRole, type AssignableUserRole, type UserRole } from "../config/rbac.js";
 import { env } from "../config/env.js";
 import { prisma } from "../prisma/client.js";
 import { AppError } from "../errors/app-error.js";
@@ -22,16 +22,17 @@ type TokenPayload = {
 type UserInput = {
   username: string;
   displayName: string;
-  role: UserRole;
+  role: AssignableUserRole;
   password: string;
 };
 
 const legacyDefaultUsers: UserInput[] = [
-  { username: "admin", displayName: "系统管理员", role: "admin", password: "admin123" },
+  { username: "admin", displayName: "系统管理员", role: "admin", password: "admin12345" },
   { username: "finance", displayName: "财务", role: "finance", password: "finance123" },
   { username: "supervisor", displayName: "主管", role: "supervisor", password: "supervisor123" },
-  { username: "boss", displayName: "老板/管理层", role: "executive", password: "boss123" },
-  { username: "sales", displayName: "销售/客服", role: "sales", password: "sales123" }
+  { username: "boss", displayName: "老板/管理层", role: "executive", password: "boss123456" },
+  { username: "sales", displayName: "销售代表", role: "sales", password: "sales12345" },
+  { username: "operator", displayName: "操作员", role: "operator", password: "operator12345" }
 ];
 
 function hashPassword(password: string, salt: string) {
@@ -205,9 +206,11 @@ export const authService = {
     if (!displayName) throw new AppError(400, "DISPLAY_NAME_REQUIRED", "请输入显示姓名。");
     const exists = await prisma.appUser.findUnique({ where: { username } });
     if (exists) throw new AppError(409, "USERNAME_EXISTS", "该账号已存在。");
+    const role = resolveAssignableRole(input.role);
+    if (!role) throw new AppError(400, "INVALID_ROLE", "请选择有效的账号角色。");
     const password = makePassword(input.password);
     const user = await prisma.appUser.create({
-      data: { username, displayName, role: resolveRole(input.role), passwordHash: password.hash, passwordSalt: password.salt, mustChangePassword: true, dingtalkUserId: input.dingtalkUserId?.trim() || null }
+      data: { username, displayName, role, passwordHash: password.hash, passwordSalt: password.salt, mustChangePassword: true, dingtalkUserId: input.dingtalkUserId?.trim() || null }
     });
     await authLog("create_user", String(user.id), { operator, username, role: user.role });
     return publicUser(user);
@@ -223,7 +226,11 @@ export const authService = {
       if (!input.displayName.trim()) throw new AppError(400, "DISPLAY_NAME_REQUIRED", "请输入显示姓名。");
       data.displayName = input.displayName.trim();
     }
-    if (input.role !== undefined) data.role = resolveRole(input.role);
+    if (input.role !== undefined) {
+      const role = resolveAssignableRole(input.role);
+      if (!role) throw new AppError(400, "INVALID_ROLE", "请选择有效的账号角色。");
+      data.role = role;
+    }
     if (input.isActive !== undefined) data.isActive = input.isActive;
     if (input.dingtalkUserId !== undefined) data.dingtalkUserId = input.dingtalkUserId?.trim() || null;
     if (input.resetPassword !== undefined && input.resetPassword !== "") {

@@ -2,6 +2,8 @@ import { payableRepository } from "../repositories/payable.repository.js";
 import { financeRepository } from "../repositories/finance.repository.js";
 import { prisma } from "../prisma/client.js";
 import * as XLSX from "xlsx";
+import { allFinanceAccess } from "../security/finance-access.js";
+import type { FinanceAccessScope } from "../security/finance-access.js";
 
 type AgingBucket = "0-30" | "31-60" | "61-90" | "90+";
 type BillingStatus = "unsettled" | "partial" | "settled" | "refund_due";
@@ -93,9 +95,9 @@ function addSupplierAmount(
 }
 
 export const payableService = {
-  async listPayables(month?: string) {
+  async listPayables(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     const selectedMonth = month ?? (await financeRepository.getLatestSummary())?.month;
-    const rows = await payableRepository.listPayables(selectedMonth);
+    const rows = await payableRepository.listPayables(selectedMonth, scope);
     const asOfDate = monthEnd(selectedMonth);
     const agingBuckets: Record<AgingBucket, number> = { "0-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
     const supplierMap = new Map<string, SupplierAccumulator>();
@@ -206,8 +208,8 @@ export const payableService = {
     };
   },
 
-  async exportPayables(month?: string) {
-    const result = await payableService.listPayables(month);
+  async exportPayables(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
+    const result = await payableService.listPayables(month, scope);
     const rows = result.rows.map((row) => ({
       供应商: row.supplierName || "未指定供应商",
       系统订单号: row.orderNo,

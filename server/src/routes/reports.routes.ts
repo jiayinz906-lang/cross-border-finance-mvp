@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { monthlyReportController, monthlyReportExportController } from "../controllers/reports.controller.js";
+import { monthlyReportController, monthlyReportExportController, serviceRecordsController } from "../controllers/reports.controller.js";
 import { requirePermission } from "../middleware/rbac.middleware.js";
 
 export const reportsRoutes = Router();
 
-reportsRoutes.get("/monthly", monthlyReportController);
-reportsRoutes.get("/monthly/export", requirePermission("reports:export"), monthlyReportExportController);
+reportsRoutes.get("/service-records", requirePermission("service:read"), serviceRecordsController);
+reportsRoutes.get("/monthly", requirePermission("reports:read"), monthlyReportController);
+reportsRoutes.get("/monthly/export", requirePermission("reports:read"), requirePermission("reports:export"), monthlyReportExportController);

@@ -1,8 +1,9 @@
 import type { Request, Response } from "express";
 import { riskService } from "../services/risk.service.js";
+import { currentFinanceAccess, requiredCurrentUser } from "../middleware/rbac.middleware.js";
 
 export async function risksController(req: Request, res: Response) {
-  res.json(await riskService.listRisks(req.query.month as string | undefined));
+  res.json(await riskService.listRisks(req.query.month as string | undefined, currentFinanceAccess(req)));
 }
 
 export async function reviewRiskController(req: Request, res: Response) {
@@ -12,5 +13,9 @@ export async function reviewRiskController(req: Request, res: Response) {
     return;
   }
 
-  res.json(await riskService.reviewRisk(id, req.body ?? {}));
+  const actor = requiredCurrentUser(req);
+  res.json(await riskService.reviewRisk(id, {
+    ...(req.body ?? {}),
+    reviewedBy: actor.displayName || actor.username
+  }));
 }

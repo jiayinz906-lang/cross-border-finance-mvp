@@ -12,10 +12,6 @@ let lastAuthNoticeAt = 0;
 request.interceptors.request.use((config) => {
   const token = localStorage.getItem("xjd-finance-token");
   if (token) config.headers.set("Authorization", `Bearer ${token}`);
-  if (import.meta.env.DEV) {
-    const role = localStorage.getItem("xjd-finance-role") || "admin";
-    config.headers.set("x-finance-role", role);
-  }
   return config;
 });
 

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
+import { resolveVerificationCredentials } from "./lib/runtime-config.js";
 
 const prisma = new PrismaClient();
 const apiUrl = process.env.UI_SMOKE_API_URL || "http://localhost:4000/api";
@@ -21,10 +22,14 @@ async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function main() {
+  const credentials = resolveVerificationCredentials();
+  if (!credentials.username || !credentials.password) {
+    throw new Error("Manual ledger verification requires VERIFY_USERNAME and VERIFY_PASSWORD.");
+  }
   const login = await jsonRequest<{ token: string }>("/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: process.env.UI_SMOKE_USERNAME || "admin", password: process.env.UI_SMOKE_PASSWORD || "admin123" })
+    body: JSON.stringify(credentials)
   });
   token = login.token;
   assert.ok(token, "login token should be returned");

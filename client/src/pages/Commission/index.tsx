@@ -20,6 +20,7 @@ import { formatPercent } from "../../utils/formatPercent";
 import { ReasonActionModal } from "../../components/ReasonActionModal";
 import { copyText } from "../../utils/copyText";
 import { externalSignatureUrl, productionAppUrl, usesLocalSignatureBackend } from "../../utils/externalSignatureUrl";
+import { useAuth } from "../../contexts/AuthContext";
 
 type CommissionOrder = {
   orderNo: string;
@@ -90,6 +91,8 @@ function statusTag(value: string, confirmedText = "已确认", pendingText = "�
 
 export default function Commission() {
   const { selectedMonth } = useSelectedMonth();
+  const { user } = useAuth();
+  const canApprove = Boolean(user?.auth?.permissions.includes("confirmation:approve"));
   const [records, setRecords] = useState<CommissionRecord[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
@@ -99,6 +102,8 @@ export default function Commission() {
   const [documentsOpen, setDocumentsOpen] = useState(false);
   const [adjustingSalesperson, setAdjustingSalesperson] = useState<SalespersonCommission | null>(null);
   const [adjustmentPercent, setAdjustmentPercent] = useState<number>(15);
+  const [adjustingDetail, setAdjustingDetail] = useState<CommissionRecord | null>(null);
+  const [detailAdjustmentPercent, setDetailAdjustmentPercent] = useState<number>(15);
   const [supervisorDocument, setSupervisorDocument] = useState<ConfirmationDocument | null>(null);
   const [voidingDocument, setVoidingDocument] = useState<ConfirmationDocument | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -173,11 +178,9 @@ export default function Commission() {
     message.success(document ? `${row.salespersonName} 确认单已保存到数据库` : "确认单已刷新");
   };
 
-  const handleDetailRateChange = async (row: CommissionRecord, percent?: number | null) => {
-    if (percent === null || percent === undefined || Number.isNaN(percent)) return;
-    await updateCommissionRate(row.id, percent / 100);
-    message.success(`${row.financeOrder?.orderNo ?? row.salespersonName} 提成比例已更新`);
-    await loadData();
+  const handleAdjustDetail = (row: CommissionRecord) => {
+    setAdjustingDetail(row);
+    setDetailAdjustmentPercent(Number(((row.commissionRate ?? 0) * 100).toFixed(2)));
   };
 
   const handleSendDocument = async (row: ConfirmationDocument) => {
@@ -319,11 +322,11 @@ export default function Commission() {
       fixed: "right",
       width: 220,
       render: (_, row) => (
-        <Space size={6}>
+        canApprove ? <Space size={6}>
           <Button size="small" onClick={() => handleAdjustSalesperson(row)}>调整</Button>
           <Button size="small" onClick={() => handleConfirmSalesperson(row)}>确认</Button>
           <Button size="small" onClick={() => handleGenerateOne(row)}>确认单</Button>
-        </Space>
+        </Space> : <Typography.Text type="secondary">只读</Typography.Text>
       )
     }
   ];
@@ -339,15 +342,10 @@ export default function Commission() {
       align: "right",
       width: 150,
       render: (value: number, row) => (
-        <InputNumber
-          min={0}
-          max={100}
-          precision={2}
-          defaultValue={Number(((value ?? 0) * 100).toFixed(2))}
-          addonAfter="%"
-          onPressEnter={(event) => handleDetailRateChange(row, Number((event.target as HTMLInputElement).value))}
-          onBlur={(event) => handleDetailRateChange(row, Number(event.target.value))}
-        />
+        <Space size={6}>
+          <Typography.Text>{rateText(value)}</Typography.Text>
+          {canApprove ? <Button size="small" onClick={() => handleAdjustDetail(row)}>调整</Button> : null}
+        </Space>
       )
     },
     { title: "提成金额", dataIndex: "commissionAmount", align: "right", render: (_, row) => toPlainMoney(effectiveCommissionAmount(row)) },
@@ -376,11 +374,11 @@ export default function Commission() {
       width: 390,
       render: (_, row) => (
         <Space size={6}>
-          <Button size="small" onClick={() => handleSendDocument(row)}>发送链接</Button>
           <Button size="small" onClick={() => handleDownloadDocument(row, "pdf")}>PDF</Button>
           <Button size="small" onClick={() => handleDownloadDocument(row, "png")}>PNG</Button>
-          <Button size="small" onClick={() => handleSupervisorConfirm(row)}>主管确认</Button>
-          <Button size="small" danger onClick={() => handleVoidDocument(row)}>作废</Button>
+          {canApprove ? <Button size="small" onClick={() => handleSendDocument(row)}>发送链接</Button> : null}
+          {canApprove ? <Button size="small" onClick={() => handleSupervisorConfirm(row)}>主管确认</Button> : null}
+          {canApprove ? <Button size="small" danger onClick={() => handleVoidDocument(row)}>作废</Button> : null}
         </Space>
       )
     }
@@ -405,7 +403,7 @@ export default function Commission() {
         extra={(
           <Space size={10} wrap>
             <Tag bordered={false} className="commission-policy-tag">销售代表按自然月毛利阶梯比例</Tag>
-            <Button onClick={handleGenerateDocuments}>生成个人确认单</Button>
+            {canApprove ? <Button onClick={handleGenerateDocuments}>生成个人确认单</Button> : null}
             <Button onClick={handleViewSignatureStatus}>查看签名状态</Button>
           </Space>
         )}
@@ -481,6 +479,33 @@ export default function Commission() {
           scroll={{ x: 1320 }}
         />
       </Modal>
+
+      <ReasonActionModal
+        open={Boolean(adjustingDetail)}
+        title={`调整单票提成：${adjustingDetail?.financeOrder?.orderNo ?? ""}`}
+        description="调整只影响当前订单。请核对调整后比例和预计提成，并填写调整原因；操作将写入审计记录。"
+        confirmText="保存调整"
+        loading={actionLoading}
+        onCancel={() => setAdjustingDetail(null)}
+        onConfirm={async (reason) => {
+          if (!adjustingDetail) return;
+          setActionLoading(true);
+          try {
+            await updateCommissionRate(adjustingDetail.id, detailAdjustmentPercent / 100, reason);
+            message.success(`${adjustingDetail.financeOrder?.orderNo ?? adjustingDetail.salespersonName} 提成比例已更新`);
+            setAdjustingDetail(null);
+            await loadData();
+          } finally {
+            setActionLoading(false);
+          }
+        }}
+      >
+        <div className="action-impact-grid">
+          <span>当前比例<b>{rateText(adjustingDetail?.commissionRate)}</b></span>
+          <span>调整后比例<InputNumber min={0} max={100} precision={2} value={detailAdjustmentPercent} addonAfter="%" onChange={(value) => setDetailAdjustmentPercent(value ?? 0)} /></span>
+          <span>预计提成<b>{toPlainMoney((adjustingDetail?.grossProfit ?? 0) * detailAdjustmentPercent / 100)}</b></span>
+        </div>
+      </ReasonActionModal>
 
       <ReasonActionModal
         open={Boolean(adjustingSalesperson)}

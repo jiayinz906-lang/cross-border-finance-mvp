@@ -1,6 +1,20 @@
 import { prisma } from "../prisma/client.js";
+import { allFinanceAccess, scopedFinanceOrderWhere } from "../security/finance-access.js";
+import type { FinanceAccessScope } from "../security/finance-access.js";
 
 export const reportRepository = {
+  listServiceRecords(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
+    return prisma.serviceBusinessRecord.findMany({
+      where: {
+        financeOrder: {
+          is: scopedFinanceOrderWhere({ ...(month ? { month } : {}), isServiceBusiness: true }, scope)
+        }
+      },
+      include: { financeOrder: true },
+      orderBy: { id: "asc" }
+    });
+  },
+
   async getMonthlyReport(month?: string) {
     const summary = month
       ? await prisma.financeSummary.findUnique({ where: { month } })

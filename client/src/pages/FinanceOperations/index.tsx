@@ -122,12 +122,13 @@ export default function FinanceOperations() {
   const partnerColumns: ColumnsType<BusinessPartner> = [
     { title: "编码", dataIndex: "partnerCode" },
     { title: "名称", dataIndex: "name" },
+    { title: "别名", width: 220, render: (_, row) => row.aliases?.length ? row.aliases.map((item) => item.alias).join("、") : "-" },
     { title: "类型", dataIndex: "partnerType", render: (value) => ({ customer: "客户", supplier: "供应商", both: "客户/供应商" } as Record<string, string>)[String(value)] || String(value) },
     { title: "账期", dataIndex: "paymentTermDays", render: (value) => `${value} 天` },
     { title: "信用额度", dataIndex: "creditLimit", render: formatMoney },
     { title: "联系人", render: (_, row) => [row.contactName, row.contactPhone].filter(Boolean).join(" / ") || "-" },
     { title: "状态", dataIndex: "isActive", render: (value) => <Tag color={value ? "green" : "default"}>{value ? "启用" : "停用"}</Tag> },
-    { title: "操作", render: (_, row) => <Button size="small" onClick={() => { setEditingPartner(row); partnerForm.setFieldsValue(row); setPartnerModal(true); }}>编辑</Button> }
+    { title: "操作", render: (_, row) => <Button size="small" onClick={() => { setEditingPartner(row); partnerForm.setFieldsValue({ ...row, aliases: row.aliases?.map((item) => item.alias).join("\n") }); setPartnerModal(true); }}>编辑</Button> }
   ];
 
   const savePartner = async () => {
@@ -169,6 +170,7 @@ export default function FinanceOperations() {
       <Modal title={editingPartner ? "编辑往来单位" : "新增往来单位"} open={partnerModal} onCancel={() => setPartnerModal(false)} onOk={savePartner} destroyOnClose>
         <Form form={partnerForm} layout="vertical">
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="aliases" label="别名" extra="每行一个，可填写 Excel 中出现的简称、旧称或不同空格写法。"><Input.TextArea rows={3} placeholder={'例如：\n上海供应商A\n上海供应商 A'} /></Form.Item>
           <Form.Item name="partnerType" label="类型" rules={[{ required: true }]}><Select options={[{ value: "customer", label: "客户" }, { value: "supplier", label: "供应商" }, { value: "both", label: "客户/供应商" }]} /></Form.Item>
           <Form.Item name="partnerCode" label="自定义编码"><Input placeholder="留空自动生成" /></Form.Item>
           <Form.Item name="taxNumber" label="税号"><Input /></Form.Item>

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { can } from "../server/src/config/rbac.js";
+import { authContext, can, resolveRole } from "../server/src/config/rbac.js";
 import { prisma } from "../server/src/prisma/client.js";
 import { authService, parseAuthToken } from "../server/src/services/auth.service.js";
 import { analyticsService } from "../server/src/services/analytics.service.js";
@@ -12,8 +12,10 @@ import { receivableService } from "../server/src/services/receivable.service.js"
 import { reportService } from "../server/src/services/report.service.js";
 import { riskService } from "../server/src/services/risk.service.js";
 import { settlementService } from "../server/src/services/settlement.service.js";
+import { commissionService } from "../server/src/services/commission.service.js";
 import { excelService } from "../server/src/services/excel.service.js";
 import { workflowService } from "../server/src/services/workflow.service.js";
+import { financeAccessForUser } from "../server/src/security/finance-access.js";
 import * as XLSX from "xlsx";
 
 type Check = {
@@ -184,7 +186,7 @@ async function verifyImport(checks: Check[]) {
   };
 }
 
-async function verifyRbac(checks: Check[]) {
+async function verifyRbac(checks: Check[], month: string) {
   const login = await authService.login("finance", "finance123");
   const payload = parseAuthToken(login.token);
   assertCheck(checks, "Default finance user can login", login.user.role === "finance", login.user.role);
@@ -194,7 +196,81 @@ async function verifyRbac(checks: Check[]) {
   assertCheck(checks, "Sales cannot rollback", !can("sales", "finance:rollback"));
   assertCheck(checks, "Finance can import", can("finance", "finance:import"));
   assertCheck(checks, "Finance can review risk", can("finance", "risk:review"));
+  assertCheck(checks, "Finance cannot manage users", !can("finance", "users:manage"));
+  assertCheck(checks, "Finance cannot approve confirmations", !can("finance", "confirmation:approve"));
+  assertCheck(checks, "Supervisor can approve confirmations", can("supervisor", "confirmation:approve"));
+  assertCheck(checks, "Supervisor cannot manage users", !can("supervisor", "users:manage"));
   assertCheck(checks, "Executive cannot write rules", !can("executive", "rules:write"));
+  assertCheck(checks, "Executive can read reports", can("executive", "reports:read"));
+  assertCheck(checks, "Executive cannot import", !can("executive", "finance:import"));
+  assertCheck(checks, "Sales can read own commission page", can("sales", "commission:read"));
+  assertCheck(checks, "Sales cannot read receivables", !can("sales", "receivables:read"));
+  assertCheck(checks, "Operator can read performance page", can("operator", "performance:read"));
+  assertCheck(checks, "Operator cannot read business profit", !can("operator", "profit:read"));
+  const unknownRole = resolveRole("root");
+  assertCheck(checks, "Unknown role resolves to restricted", unknownRole === "restricted", unknownRole);
+  assertCheck(checks, "Restricted role has no finance read access", !can(unknownRole, "finance:read"));
+  const salesScope = financeAccessForUser({ username: "sales-user", displayName: "销售甲", role: "sales" });
+  assertCheck(
+    checks,
+    "Sales role receives self-only imported-name scope",
+    salesScope.mode === "self" && salesScope.field === "salesperson" && salesScope.names.includes("销售甲") && salesScope.names.includes("sales-user"),
+    JSON.stringify(salesScope)
+  );
+  const operatorScope = financeAccessForUser({ username: "operator-user", displayName: "操作员甲", role: "operator" });
+  assertCheck(
+    checks,
+    "Operator role receives customer-service-only scope",
+    operatorScope.mode === "self" && operatorScope.field === "operator" && operatorScope.names.includes("操作员甲"),
+    JSON.stringify(operatorScope)
+  );
+  const roleContext = authContext("sales");
+  assertCheck(
+    checks,
+    "Role context exposes Chinese responsibility and permission labels",
+    roleContext.description.includes("销售代表") && roleContext.permissionDetails.every((item) => Boolean(item.label)),
+    roleContext.description
+  );
+
+  const sampleService = await prisma.serviceBusinessRecord.findFirst({
+    where: { financeOrder: { month } },
+    include: { financeOrder: true }
+  });
+  if (sampleService) {
+    const sampleSalesScope = financeAccessForUser({
+      username: "verify-sales",
+      displayName: sampleService.financeOrder.salespersonName,
+      role: "sales"
+    });
+    const scopedServices = await reportService.listServiceRecords(month, sampleSalesScope);
+    assertCheck(
+      checks,
+      "Service records are restricted to the signed-in salesperson",
+      scopedServices.length > 0 && scopedServices.every((row) => row.financeOrder.salespersonName === sampleService.financeOrder.salespersonName),
+      scopedServices.map((row) => row.financeOrder.salespersonName).join(",")
+    );
+  }
+
+  const sampleOrder = await prisma.financeOrder.findFirst({ where: { month }, orderBy: { id: "asc" } });
+  if (sampleOrder) {
+    const sampleSalesScope = financeAccessForUser({
+      username: "verify-sales",
+      displayName: sampleOrder.salespersonName,
+      role: "sales"
+    });
+    const [scopedMonths, scopedOrders] = await Promise.all([
+      financeService.listMonths(sampleSalesScope),
+      prisma.financeOrder.findMany({ where: { month, salespersonName: sampleOrder.salespersonName } })
+    ]);
+    const scopedMonth = scopedMonths.rows.find((row) => row.month === month);
+    const expectedReceivable = scopedOrders.reduce((sum, row) => sum + row.adjustedReceivable, 0);
+    assertCheck(
+      checks,
+      "Month totals are restricted to the signed-in salesperson",
+      Boolean(scopedMonth) && closeEnough(scopedMonth?.totalReceivable ?? 0, expectedReceivable),
+      `${scopedMonth?.totalReceivable ?? 0} / ${expectedReceivable}`
+    );
+  }
 }
 
 async function verifyRiskReview(checks: Check[], month: string) {
@@ -330,6 +406,20 @@ async function verifySignature(checks: Check[], month: string) {
   assertCheck(checks, "Employee signed by token", signed.signatureStatus === "signed", signed.signatureStatus);
   assertCheck(checks, "Employee evidence stored", Boolean(signed.signatureEvidenceJson), signed.signatureEvidenceJson ?? undefined);
 
+  let tokenReuseBlocked = false;
+  try {
+    await workflowService.signByToken(sent.signatureToken!, {
+      ip: "127.0.0.1",
+      userAgent: "verify-import-token-reuse",
+      role: "sales",
+      signedName: first.ownerName,
+      acceptedStatement: true
+    });
+  } catch (error) {
+    tokenReuseBlocked = /invalid|expired|无效|失效|过期/i.test(String((error as Error).message));
+  }
+  assertCheck(checks, "Signature token is single-use", tokenReuseBlocked);
+
   const regenerated = await workflowService.generateLogisticsDocuments(month);
   const preserved = regenerated.find((document) => document.id === signed.id);
   assertCheck(
@@ -347,6 +437,25 @@ async function verifySignature(checks: Check[], month: string) {
   const evidence = confirmed.signatureEvidenceJson ? JSON.parse(confirmed.signatureEvidenceJson) : null;
   assertCheck(checks, "Supervisor confirmed", confirmed.supervisorStatus === "confirmed", confirmed.supervisorStatus);
   assertCheck(checks, "Supervisor evidence stored", evidence?.supervisor?.role === "supervisor", JSON.stringify(evidence));
+
+  const confirmedCommission = await prisma.commissionRecord.findFirst({
+    where: { salespersonName: first.ownerName, financeOrder: { month } },
+    orderBy: { id: "asc" }
+  });
+  let confirmedDocumentBlocked = false;
+  if (confirmedCommission) {
+    try {
+      await commissionService.updateCommissionRate(
+        confirmedCommission.id,
+        confirmedCommission.commissionRate,
+        "verification immutable confirmation",
+        "verify-import"
+      );
+    } catch (error) {
+      confirmedDocumentBlocked = /已由主管确认|作废确认单|immutable/i.test(String((error as Error).message));
+    }
+  }
+  assertCheck(checks, "Supervisor-confirmed document blocks commission overwrite", Boolean(confirmedCommission) && confirmedDocumentBlocked);
 }
 
 async function verifySalaryDocuments(checks: Check[], month: string) {
@@ -407,6 +516,49 @@ async function verifySettlements(checks: Check[], month: string) {
     },
     orderBy: { orderNo: "asc" }
   });
+
+  const settlementCountBefore = await prisma.settlementRecord.count({
+    where: { financeOrderId: order.id, status: "active" }
+  });
+  let overReceiptBlocked = false;
+  let overPaymentBlocked = false;
+  try {
+    await settlementService.recordReceipt(order.id, {
+      amount: order.adjustedReceivable + 1,
+      operator: "verify-import",
+      note: "must be rejected"
+    });
+  } catch (error) {
+    overReceiptBlocked = /超过未结余额/.test(String((error as Error).message));
+  }
+  try {
+    await settlementService.recordPayment(order.id, {
+      amount: order.adjustedPayable + 1,
+      operator: "verify-import",
+      note: "must be rejected"
+    });
+  } catch (error) {
+    overPaymentBlocked = /超过未结余额/.test(String((error as Error).message));
+  }
+  const [orderAfterRejectedSettlement, settlementCountAfter] = await Promise.all([
+    prisma.financeOrder.findUniqueOrThrow({ where: { id: order.id } }),
+    prisma.settlementRecord.count({ where: { financeOrderId: order.id, status: "active" } })
+  ]);
+  assertCheck(checks, "Over-receipt is rejected", overReceiptBlocked);
+  assertCheck(checks, "Over-payment is rejected", overPaymentBlocked);
+  assertCheck(
+    checks,
+    "Rejected settlements leave order and records unchanged",
+    closeEnough(orderAfterRejectedSettlement.receivedAmount, 0)
+      && closeEnough(orderAfterRejectedSettlement.paidAmount, 0)
+      && settlementCountAfter === settlementCountBefore,
+    JSON.stringify({
+      receivedAmount: orderAfterRejectedSettlement.receivedAmount,
+      paidAmount: orderAfterRejectedSettlement.paidAmount,
+      settlementCountBefore,
+      settlementCountAfter
+    })
+  );
 
   const receipt = await settlementService.recordReceipt(order.id, {
     amount: 100,
@@ -505,6 +657,27 @@ async function verifyMonthClose(
   });
   assertCheck(checks, "Month close locks month", locked.status === "locked", locked.status);
 
+  const lockedOrder = await prisma.financeOrder.findFirstOrThrow({ where: { month: input.month } });
+  let lockedSettlementBlocked = false;
+  try {
+    await settlementService.recordReceipt(lockedOrder.id, {
+      amount: 1,
+      operator: "verify-import",
+      note: "must be blocked while locked"
+    });
+  } catch (error) {
+    lockedSettlementBlocked = String((error as Error).message).includes("已锁账");
+  }
+  assertCheck(checks, "Locked month blocks settlement writes", lockedSettlementBlocked);
+
+  let lockedDocumentGenerationBlocked = false;
+  try {
+    await workflowService.generateLogisticsDocuments(input.month, "verify-import");
+  } catch (error) {
+    lockedDocumentGenerationBlocked = String((error as Error).message).includes("已锁账");
+  }
+  assertCheck(checks, "Locked month blocks confirmation regeneration", lockedDocumentGenerationBlocked);
+
   let importBlocked = false;
   try {
     await excelService.importWorkbook(input.buffer, input.fileName);
@@ -530,10 +703,56 @@ async function verifyMonthClose(
   assertCheck(checks, "Month close action logs written", closeLogs.some((log) => log.action === "lock_month") && closeLogs.some((log) => log.action === "unlock_month"), closeLogs.map((log) => log.action).join(","));
 }
 
+async function verifyRollbackRestoration(
+  checks: Check[],
+  input: { month: string; buffer: Buffer; fileName: string; batchId: number }
+) {
+  const sourceBatch = await prisma.importBatch.findUniqueOrThrow({ where: { id: input.batchId } });
+  const replacement = await excelService.importWorkbook(
+    input.buffer,
+    input.fileName,
+    input.month,
+    "verify-import-replacement"
+  );
+  const supersededSource = await prisma.importBatch.findUniqueOrThrow({ where: { id: input.batchId } });
+  assertCheck(checks, "Replacement import supersedes prior active batch", supersededSource.status === "superseded", supersededSource.status);
+
+  const rollback = await excelService.rollbackImportBatch(replacement.batchId!, "verify-import-rollback");
+  const [activeBatch, revertedBatch, activeOrders, activeRawLines, rollbackLogs] = await Promise.all([
+    prisma.importBatch.findFirst({ where: { month: input.month, status: "active" }, orderBy: { id: "desc" } }),
+    prisma.importBatch.findUnique({ where: { id: replacement.batchId! } }),
+    prisma.financeOrder.findMany({ where: { month: input.month } }),
+    excelService.listRawLedgerLines({ month: input.month }),
+    workflowService.actionLogs({
+      month: input.month,
+      entityType: "import_batch",
+      entityId: String(replacement.batchId)
+    })
+  ]);
+
+  assertCheck(
+    checks,
+    "Rollback restores previous source as a new active batch",
+    Boolean(rollback.activeBatchId)
+      && activeBatch?.id === rollback.activeBatchId
+      && activeBatch?.sourceFileSha256 === sourceBatch.sourceFileSha256,
+    JSON.stringify({ rollback, activeBatchId: activeBatch?.id, sourceSha256: sourceBatch.sourceFileSha256, activeSha256: activeBatch?.sourceFileSha256 })
+  );
+  assertCheck(checks, "Rolled-back replacement is immutable audit history", revertedBatch?.status === "reverted", revertedBatch?.status);
+  assertCheck(checks, "Rollback restoration preserves imported orders", activeOrders.length === 25, String(activeOrders.length));
+  assertCheck(checks, "Rollback restoration preserves raw Excel lines", activeRawLines.rows.length === 102, String(activeRawLines.rows.length));
+  assertCheck(
+    checks,
+    "Rollback restoration writes explicit audit action",
+    rollbackLogs.some((log) => log.action === "rollback_and_restore_previous_import"),
+    rollbackLogs.map((log) => log.action).join(",")
+  );
+}
+
 async function main() {
   const checks: Check[] = [];
   const imported = await verifyImport(checks);
-  await verifyRbac(checks);
+  await verifyRbac(checks, imported.month);
   await verifyRiskReview(checks, imported.month);
   await verifyImportTemplateRegistry(checks);
   await verifyMonthlyReportExport(checks, imported.month);
@@ -543,6 +762,7 @@ async function main() {
   await verifyAging(checks, imported.month);
   await verifySettlements(checks, imported.month);
   await verifyMonthClose(checks, imported);
+  await verifyRollbackRestoration(checks, imported);
 
   const failed = checks.filter((check) => !check.pass);
   for (const check of checks) {

@@ -23,6 +23,7 @@ export type BusinessPartner = {
   creditLimit: number;
   paymentTermDays: number;
   isActive: boolean;
+  aliases?: Array<{ id: number; alias: string; normalizedAlias: string; source: string }>;
 };
 
 export type FinanceInvoice = {
