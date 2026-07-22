@@ -67,7 +67,9 @@ async function login(username: string) {
 }
 
 async function main() {
-  if (!["localhost", "127.0.0.1", "::1"].includes(databaseUrl.hostname)) {
+  const allowedDatabaseHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+  if (process.env.NODE_ENV === "development") allowedDatabaseHosts.add("postgres");
+  if (!allowedDatabaseHosts.has(databaseUrl.hostname)) {
     throw new Error(`Refusing to alter role-test accounts on non-local database host ${databaseUrl.hostname}.`);
   }
 

@@ -2,7 +2,6 @@ import { Alert, Button, Card, Descriptions, Input, Modal, Popconfirm, Select, Sp
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  getAuthContext,
   getImportBatches,
   getImportTemplates,
   importBatchSourcePath,
@@ -26,7 +25,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { MonthWorkflowStatus } from "../../components/MonthWorkflowStatus";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import { apiBaseUrl } from "../../api/request";
-import type { AuthContext, ImportBatch, ImportTemplate, OperationsStatus, ParameterRule, ReadinessStatus } from "../../types/finance.types";
+import type { ImportBatch, ImportTemplate, OperationsStatus, ParameterRule, ReadinessStatus } from "../../types/finance.types";
 import {
   auditActionLabel,
   auditActionOptions,
@@ -88,7 +87,6 @@ function formatUptime(seconds?: number) {
 export default function Settings() {
   const { selectedMonth } = useSelectedMonth();
   const currentAccount = useAuth();
-  const [auth, setAuth] = useState<AuthContext | null>(null);
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [templates, setTemplates] = useState<ImportTemplate[]>([]);
   const [rules, setRules] = useState<ParameterRule[]>([]);
@@ -135,10 +133,10 @@ export default function Settings() {
     }
   };
 
-  const effectivePermissions = currentAccount.user?.auth?.permissions ?? auth?.permissions ?? [];
+  const effectivePermissions = currentAccount.user?.auth?.permissions ?? [];
   const permissions = useMemo(() => new Set(effectivePermissions), [effectivePermissions]);
-  const roleDirectory = currentAccount.user?.auth?.roles ?? auth?.roles ?? [];
-  const permissionDirectory = currentAccount.user?.auth?.permissionCatalog ?? auth?.permissionCatalog ?? [];
+  const roleDirectory = currentAccount.user?.auth?.roles ?? [];
+  const permissionDirectory = currentAccount.user?.auth?.permissionCatalog ?? [];
   const permissionLabelByCode = useMemo(
     () => new Map(permissionDirectory.map((item) => [item.permission, item.label])),
     [permissionDirectory]
@@ -154,11 +152,6 @@ export default function Settings() {
   const canViewRules = permissions.has("rules:read");
   const canViewMonthClose = permissions.has("month-close:read");
   const isMonthLocked = monthClose?.status === "locked";
-
-  const loadAuth = useCallback(async () => {
-    const res = await getAuthContext();
-    setAuth(res.data);
-  }, []);
 
   const loadManagedUsers = useCallback(async () => {
     if (!canManageUsers) return;
@@ -302,10 +295,6 @@ export default function Settings() {
   }, [canAudit, logFilters, selectedMonth]);
 
   useEffect(() => {
-    loadAuth().catch(() => message.error("角色权限加载失败"));
-  }, [loadAuth]);
-
-  useEffect(() => {
     loadBatches();
   }, [loadBatches]);
 
@@ -349,7 +338,6 @@ export default function Settings() {
       setPasswordDraft({ currentPassword: "", nextPassword: "" });
       setPasswordModalOpen(false);
       message.success("密码已更新，请使用新密码登录。");
-      await loadAuth();
     } catch (error: any) {
       message.error(error?.response?.data?.message ?? "修改密码失败");
     } finally {
@@ -450,7 +438,7 @@ export default function Settings() {
       await updateParameterRule(rule.ruleKey, {
         valueJson: draft.valueJson,
         description: draft.description,
-        updatedBy: auth?.label ?? "finance-admin",
+        updatedBy: currentAccount.user?.auth?.label ?? "finance-admin",
         effectiveMonth: selectedMonth
       });
       message.success(`参数规则已保存，自 ${selectedMonth} 起生效`);
@@ -668,8 +656,8 @@ export default function Settings() {
             <Alert
               type="info"
               showIcon
-              message={currentAccount.user?.auth?.description ?? auth?.description ?? "当前账号已按角色授权"}
-              description={`数据范围：${roleDataScopeLabels[currentAccount.user?.role ?? auth?.role ?? "restricted"] ?? "按账号角色限制"}`}
+              message={currentAccount.user?.auth?.description ?? "当前账号已按角色授权"}
+              description={`数据范围：${roleDataScopeLabels[currentAccount.user?.role ?? "restricted"] ?? "按账号角色限制"}`}
             />
             <div>
               <Typography.Text strong>可使用界面</Typography.Text>
