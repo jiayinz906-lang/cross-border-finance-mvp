@@ -26,7 +26,9 @@ type UserInput = {
   password: string;
 };
 
-type StaffAccountRole = "sales" | "operator";
+type StaffAccountRole = "sales" | "operator" | "sales_operator";
+
+const staffAccountRoles = new Set<UserRole>(["sales", "operator", "sales_operator"]);
 
 const ignoredStaffNames = new Set(["", "-", "未分配", "待主管确认", "未知", "无"]);
 
@@ -237,18 +239,30 @@ export const authService = {
       throw new AppError(409, "ACTIVE_IMPORT_REQUIRED", `${month} 没有当前有效导入批次，不能同步员工账号。`);
     }
 
-    const orders = await prisma.financeOrder.findMany({
-      where: { month, importBatchId: activeBatch.id },
-      select: { salespersonName: true, customerServiceName: true }
-    });
-    const desired = [
-      ...Array.from(new Set(orders.map((row) => normalizedStaffName(row.salespersonName)).filter(Boolean)))
-        .sort((left, right) => left.localeCompare(right, "zh-Hans-CN"))
-        .map((displayName) => ({ displayName, role: "sales" as StaffAccountRole })),
-      ...Array.from(new Set(orders.map((row) => normalizedStaffName(row.customerServiceName)).filter(Boolean)))
-        .sort((left, right) => left.localeCompare(right, "zh-Hans-CN"))
-        .map((displayName) => ({ displayName, role: "operator" as StaffAccountRole }))
-    ];
+    const [orders, activeIdentityOrders] = await Promise.all([
+      prisma.financeOrder.findMany({
+        where: { month, importBatchId: activeBatch.id },
+        select: { salespersonName: true, customerServiceName: true }
+      }),
+      prisma.financeOrder.findMany({
+        where: { importBatch: { is: { status: "active" } } },
+        select: { salespersonName: true, customerServiceName: true }
+      })
+    ]);
+    const salesNames = new Set(orders.map((row) => normalizedStaffName(row.salespersonName)).filter(Boolean));
+    const operatorNames = new Set(orders.map((row) => normalizedStaffName(row.customerServiceName)).filter(Boolean));
+    const activeSalesNames = new Set(activeIdentityOrders.map((row) => normalizedStaffName(row.salespersonName)).filter(Boolean));
+    const activeOperatorNames = new Set(activeIdentityOrders.map((row) => normalizedStaffName(row.customerServiceName)).filter(Boolean));
+    const desired = Array.from(new Set([...salesNames, ...operatorNames]))
+      .sort((left, right) => left.localeCompare(right, "zh-Hans-CN"))
+      .map((displayName) => ({
+        displayName,
+        role: activeSalesNames.has(displayName) && activeOperatorNames.has(displayName)
+          ? "sales_operator" as const
+          : activeSalesNames.has(displayName)
+            ? "sales" as const
+            : "operator" as const
+      }));
     if (!desired.length) {
       throw new AppError(409, "NO_STAFF_IN_IMPORT", `${month} 的有效导入批次中没有销售代表或操作员姓名。`);
     }
@@ -256,8 +270,9 @@ export const authService = {
     const users = await prisma.appUser.findMany({ orderBy: { id: "asc" } });
     const usernames = new Set(users.map((user) => user.username));
     const nextUsername = (role: StaffAccountRole) => {
+      const prefix = role === "sales_operator" ? "staff" : role;
       for (let index = 1; index <= 9999; index += 1) {
-        const candidate = `${role}${String(index).padStart(3, "0")}`;
+        const candidate = `${prefix}${String(index).padStart(3, "0")}`;
         if (!usernames.has(candidate)) {
           usernames.add(candidate);
           return candidate;
@@ -268,10 +283,52 @@ export const authService = {
 
     const created: Array<ReturnType<typeof staffAccountSummary> & { initialPassword: string }> = [];
     const existing: Array<ReturnType<typeof staffAccountSummary>> = [];
+    const mergedAccounts: Array<{
+      account: ReturnType<typeof staffAccountSummary>;
+      previousRole: UserRole;
+      disabledDuplicateAccounts: string[];
+    }> = [];
+    const disabledDuplicateAccounts: string[] = [];
     for (const staff of desired) {
-      const matched = users.find((user) => user.role === staff.role && user.displayName.trim() === staff.displayName);
+      const candidates = users
+        .filter((user) => staffAccountRoles.has(resolveRole(user.role)) && user.displayName.trim() === staff.displayName)
+        .sort((left, right) => {
+          const roleRank = (user: AppUser) => {
+            const role = resolveRole(user.role);
+            if (role === staff.role) return 0;
+            if (staff.role === "sales_operator" && role === "sales") return 1;
+            if (staff.role === "sales_operator" && role === "operator") return 2;
+            if (role === "sales_operator") return 1;
+            return 2;
+          };
+          return Number(right.isActive) - Number(left.isActive) || roleRank(left) - roleRank(right) || left.id - right.id;
+        });
+      const matched = candidates[0];
       if (matched) {
-        existing.push(staffAccountSummary(matched));
+        const previousRole = resolveRole(matched.role);
+        const canonical = previousRole === staff.role && matched.isActive
+          ? matched
+          : await prisma.appUser.update({
+              where: { id: matched.id },
+              data: { role: staff.role, isActive: true }
+            });
+        const duplicates = candidates.slice(1).filter((user) => user.isActive);
+        if (duplicates.length) {
+          await prisma.appUser.updateMany({
+            where: { id: { in: duplicates.map((user) => user.id) } },
+            data: { isActive: false }
+          });
+          disabledDuplicateAccounts.push(...duplicates.map((user) => user.username));
+        }
+        const summary = staffAccountSummary(canonical);
+        existing.push(summary);
+        if (previousRole !== staff.role || duplicates.length) {
+          mergedAccounts.push({
+            account: summary,
+            previousRole,
+            disabledDuplicateAccounts: duplicates.map((user) => user.username)
+          });
+        }
         continue;
       }
       const username = nextUsername(staff.role);
@@ -310,6 +367,14 @@ export const authService = {
       sourceFileName: activeBatch.fileName,
       created: created.map((user) => ({ username: user.username, displayName: user.displayName, role: user.role })),
       existingCount: existing.length,
+      mergedAccounts: mergedAccounts.map((row) => ({
+        username: row.account.username,
+        displayName: row.account.displayName,
+        previousRole: row.previousRole,
+        role: row.account.role,
+        disabledDuplicateAccounts: row.disabledDuplicateAccounts
+      })),
+      disabledDuplicateAccounts,
       disabledPlaceholderAccounts: placeholders.map((user) => user.username)
     });
 
@@ -319,6 +384,8 @@ export const authService = {
       sourceFileName: activeBatch.fileName,
       created,
       existing,
+      mergedAccounts,
+      disabledDuplicateAccounts,
       disabledPlaceholderAccounts: placeholders.map((user) => user.username)
     };
   },

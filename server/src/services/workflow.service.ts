@@ -6,7 +6,7 @@ import { analyticsService } from "./analytics.service.js";
 import { env } from "../config/env.js";
 import { renderConfirmationPdf, renderConfirmationPng } from "./confirmation-renderer.js";
 import { resolveMonth } from "../utils/month.js";
-import { allFinanceAccess, ownerAccessWhere, scopedFinanceOrderWhere } from "../security/finance-access.js";
+import { allFinanceAccess, financeAccessForField, ownerAccessWhere, scopedFinanceOrderWhere } from "../security/finance-access.js";
 import type { FinanceAccessScope } from "../security/finance-access.js";
 import { AppError } from "../errors/app-error.js";
 import { assertMonthOpen } from "./month-lock.service.js";
@@ -103,11 +103,11 @@ function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], s
 }
 
 async function confirmationDocumentAccessWhere(month: string, documentType: DocumentType | undefined, scope: FinanceAccessScope) {
-  if (scope.mode !== "self" || scope.field !== "salesperson") return ownerAccessWhere(scope);
+  if (scope.mode !== "self" || (scope.field !== "salesperson" && scope.field !== "both")) return ownerAccessWhere(scope);
   if (documentType && documentType !== "service_commission") return ownerAccessWhere(scope);
 
   const serviceOrders = await prisma.financeOrder.findMany({
-    where: scopedFinanceOrderWhere({ month, isServiceBusiness: true }, scope),
+    where: scopedFinanceOrderWhere({ month, isServiceBusiness: true }, financeAccessForField(scope, "salesperson")),
     select: { orderNo: true }
   });
   const orderNos = serviceOrders.map((row) => row.orderNo);
@@ -123,9 +123,12 @@ async function canAccessConfirmationDocument(document: { month: string; document
   if (scope.mode === "all") return true;
   if (scope.mode === "none") return false;
   if (scope.names.includes(document.ownerName)) return true;
-  if (scope.field !== "salesperson" || document.documentType !== "service_commission") return false;
+  if ((scope.field !== "salesperson" && scope.field !== "both") || document.documentType !== "service_commission") return false;
   return Boolean(await prisma.financeOrder.findFirst({
-    where: scopedFinanceOrderWhere({ month: document.month, orderNo: document.ownerName, isServiceBusiness: true }, scope),
+    where: scopedFinanceOrderWhere(
+      { month: document.month, orderNo: document.ownerName, isServiceBusiness: true },
+      financeAccessForField(scope, "salesperson")
+    ),
     select: { id: true }
   }));
 }

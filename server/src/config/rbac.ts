@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "finance" | "supervisor" | "executive" | "sales" | "operator" | "restricted";
+export type UserRole = "admin" | "finance" | "supervisor" | "executive" | "sales" | "operator" | "sales_operator" | "restricted";
 export type AssignableUserRole = Exclude<UserRole, "restricted">;
 
 export type Permission =
@@ -41,6 +41,7 @@ export const roleLabels: Record<UserRole, string> = {
   executive: "老板/管理层",
   sales: "销售代表",
   operator: "操作员",
+  sales_operator: "销售/操作员",
   restricted: "未授权"
 };
 
@@ -51,6 +52,7 @@ export const roleDescriptions: Record<UserRole, string> = {
   executive: "只读查看经营、利润、风险、应收应付和薪资确认汇总。",
   sales: "仅查看本人作为销售代表的订单、利润、提成和确认单。",
   operator: "仅查看本人作为操作员（客服代表）负责的绩效和确认单。",
+  sales_operator: "同时查看本人作为销售代表的订单、提成，以及本人作为操作员负责的绩效和确认单。",
   restricted: "账号未分配有效角色，不能访问业务数据。"
 };
 
@@ -111,6 +113,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
   executive: ["dashboard:read", "profit:read", "commission:read", "service:read", "confirmation:read", "performance:read", "customer-profit:read", "risk:read", "receivables:read", "payables:read", "rules:read", "month-close:read", "settings:read", "reports:read", "finance:read", "reports:export", "audit:read"],
   sales: ["dashboard:read", "profit:read", "commission:read", "service:read", "confirmation:read", "customer-profit:read", "settings:read", "finance:read"],
   operator: ["confirmation:read", "performance:read", "settings:read", "finance:read"],
+  sales_operator: ["dashboard:read", "profit:read", "commission:read", "service:read", "confirmation:read", "performance:read", "customer-profit:read", "settings:read", "finance:read"],
   restricted: []
 };
 

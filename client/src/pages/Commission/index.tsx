@@ -92,7 +92,7 @@ function statusTag(value: string, confirmedText = "已确认", pendingText = "�
 export default function Commission() {
   const { selectedMonth } = useSelectedMonth();
   const { user } = useAuth();
-  const isSalesAccount = user?.role === "sales";
+  const isSalesAccount = user?.role === "sales" || user?.role === "sales_operator";
   const canApprove = Boolean(user?.auth?.permissions.includes("confirmation:approve"));
   const [records, setRecords] = useState<CommissionRecord[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);

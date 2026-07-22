@@ -5,7 +5,7 @@ import { currentFinanceAccess, requiredCurrentUser } from "../middleware/rbac.mi
 export async function commissionsController(req: Request, res: Response) {
   res.json({
     todo: commissionService.todo,
-    rows: await commissionService.listCommissions(req.query.month as string | undefined, currentFinanceAccess(req))
+    rows: await commissionService.listCommissions(req.query.month as string | undefined, currentFinanceAccess(req, "salesperson"))
   });
 }
 

@@ -4,7 +4,7 @@ import type { Permission } from "../config/rbac.js";
 import { env } from "../config/env.js";
 import { parseAuthToken, verifyAuthToken } from "../services/auth.service.js";
 import { AppError } from "../errors/app-error.js";
-import { financeAccessForUser } from "../security/finance-access.js";
+import { financeAccessForField, financeAccessForUser, type FinanceAccessField } from "../security/finance-access.js";
 
 type AuthenticatedRequest = Request & {
   financeAuth?: {
@@ -106,6 +106,7 @@ export function requiredCurrentUser(req: Request) {
   return user;
 }
 
-export function currentFinanceAccess(req: Request) {
-  return financeAccessForUser(currentUser(req));
+export function currentFinanceAccess(req: Request, field?: FinanceAccessField) {
+  const scope = financeAccessForUser(currentUser(req));
+  return field ? financeAccessForField(scope, field) : scope;
 }

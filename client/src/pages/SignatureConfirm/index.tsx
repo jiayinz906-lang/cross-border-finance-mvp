@@ -121,8 +121,9 @@ function salaryStatusLabel(status?: string | null, signatureStatus?: string | nu
 
 export default function SignatureConfirm() {
   const { user } = useAuth();
-  const isSalesAccount = user?.role === "sales";
-  const isOperatorAccount = user?.role === "operator";
+  const isSalesAccount = user?.role === "sales" || user?.role === "sales_operator";
+  const isOperatorAccount = user?.role === "operator" || user?.role === "sales_operator";
+  const isDualAccount = user?.role === "sales_operator";
   const isPersonalAccount = isSalesAccount || isOperatorAccount;
   const canApprove = Boolean(user?.auth?.permissions.includes("confirmation:approve"));
   const canExport = Boolean(user?.auth?.permissions.includes("reports:export"));
@@ -146,9 +147,9 @@ export default function SignatureConfirm() {
     setLoading(true);
     try {
       const [docRes, salesRes, customerServiceRes] = await Promise.all([
-        isOperatorAccount ? Promise.resolve({ data: { rows: [] as ConfirmationDocument[] } }) : getDocuments(selectedMonth, "logistics_commission"),
-        isOperatorAccount ? Promise.resolve({ data: { rows: [] as ConfirmationDocument[] } }) : getDocuments(selectedMonth, "sales_salary"),
-        isSalesAccount ? Promise.resolve({ data: { rows: [] as ConfirmationDocument[] } }) : getDocuments(selectedMonth, "customer_service_salary")
+        isOperatorAccount && !isDualAccount ? Promise.resolve({ data: { rows: [] as ConfirmationDocument[] } }) : getDocuments(selectedMonth, "logistics_commission"),
+        isOperatorAccount && !isDualAccount ? Promise.resolve({ data: { rows: [] as ConfirmationDocument[] } }) : getDocuments(selectedMonth, "sales_salary"),
+        isSalesAccount && !isDualAccount ? Promise.resolve({ data: { rows: [] as ConfirmationDocument[] } }) : getDocuments(selectedMonth, "customer_service_salary")
       ]);
       setDocuments(docRes.data.rows ?? []);
       setSalesSalaryDocuments(salesRes.data.rows ?? []);
@@ -158,7 +159,7 @@ export default function SignatureConfirm() {
     } finally {
       setLoading(false);
     }
-  }, [isOperatorAccount, isSalesAccount, selectedMonth]);
+  }, [isDualAccount, isOperatorAccount, isSalesAccount, selectedMonth]);
 
   useEffect(() => {
     loadData();
@@ -360,7 +361,7 @@ export default function SignatureConfirm() {
 
   return (
     <div className="signature-board">
-      {!isOperatorAccount ? <Card
+      {(!isPersonalAccount || isSalesAccount) ? <Card
         className="signature-confirm-card"
         title={<div className="signature-title-block"><strong>{isSalesAccount ? "我的物流提成确认单" : "员工电子签名确认中心"}</strong><span>{isSalesAccount ? "仅显示本人作为销售代表的物流订单、提成金额和签名状态。" : "主管生成个人提成确认单，员工在线签名后回传状态，最终由主管确认发放。"}</span></div>}
         extra={<Space size={10} wrap>{canApprove ? <Button type="primary" onClick={handleBatchGenerate}>批量生成确认单</Button> : null}{canExport ? <Button loading={exporting} onClick={handleExport}>导出签名汇总表</Button> : null}</Space>}
@@ -379,7 +380,7 @@ export default function SignatureConfirm() {
 
       <Card
         className="signature-confirm-card"
-        title={<div className="signature-title-block"><strong>{isSalesAccount ? "我的综合提成确认单" : isOperatorAccount ? "我的操作员绩效确认单" : "薪资汇总与确认单"}</strong><span>{isSalesAccount ? "合并列示本人物流提成和已由主管确认的注册/服务提成。" : isOperatorAccount ? "按本人负责业务的各绩效板块列示 Excel 票数、规则和绩效金额。" : "销售代表按物流提成与已主管确认的注册/服务提成汇总；操作员按各绩效板块汇总。金额仅来自当前月份已导入数据，不包含固定工资、社保及个税。"}</span></div>}
+        title={<div className="signature-title-block"><strong>{isDualAccount ? "我的综合提成与绩效确认单" : isSalesAccount ? "我的综合提成确认单" : isOperatorAccount ? "我的操作员绩效确认单" : "薪资汇总与确认单"}</strong><span>{isDualAccount ? "同时列示本人销售提成和本人作为操作员负责的绩效，两类金额分别计算、分别留痕。" : isSalesAccount ? "合并列示本人物流提成和已由主管确认的注册/服务提成。" : isOperatorAccount ? "按本人负责业务的各绩效板块列示 Excel 票数、规则和绩效金额。" : "销售代表按物流提成与已主管确认的注册/服务提成汇总；操作员按各绩效板块汇总。金额仅来自当前月份已导入数据，不包含固定工资、社保及个税。"}</span></div>}
         extra={canApprove ? <Button type="primary" loading={generatingSalary} onClick={handleGenerateSalaryDocuments}>批量生成薪资确认单</Button> : null}
       >
         <Alert
@@ -387,13 +388,23 @@ export default function SignatureConfirm() {
           showIcon
           style={{ marginBottom: 16 }}
           message={isPersonalAccount ? "个人确认范围" : "薪资确认范围说明"}
-          description={isSalesAccount
+          description={isDualAccount
+            ? "销售确认单仅汇总本人作为销售代表的物流与注册/服务提成；操作员确认单仅汇总本人作为客服代表的绩效，互不混算。"
+            : isSalesAccount
             ? "下方确认单只汇总本人的物流提成和已由主管确认的注册/服务提成。未完成主管确认的注册业务不会提前计入。"
             : isOperatorAccount
               ? "下方确认单只列示本人各绩效板块的 Excel 统计、规则基础票数、计发票数、单价和绩效小计。"
               : "销售代表确认单汇总物流提成及已主管确认的注册/服务提成；操作员确认单按各绩效板块列示 Excel 票数、基础票数、计发票数、规则和小计。生成后可发送外部签名链接，员工签名和主管确认均会写入确认单证据链。"}
         />
-        {isSalesAccount ? (
+        {isDualAccount ? (
+          <div className="signature-stat-grid">
+            <div><span>物流提成</span><strong>{toPlainMoney(personalLogisticsCommission)}</strong></div>
+            <div><span>注册/服务提成</span><strong>{toPlainMoney(personalServiceCommission)}</strong></div>
+            <div><span>销售提成合计</span><strong>{toPlainMoney(salesSalaryTotal)}</strong></div>
+            <div><span>操作员绩效</span><strong>{toPlainMoney(customerServiceSalaryTotal)}</strong></div>
+            <div><span>本月确认合计</span><strong>{toPlainMoney(salesSalaryTotal + customerServiceSalaryTotal)}</strong></div>
+          </div>
+        ) : isSalesAccount ? (
           <div className="signature-stat-grid signature-stat-grid-personal">
             <div><span>物流提成</span><strong>{toPlainMoney(personalLogisticsCommission)}</strong></div>
             <div><span>注册/服务提成</span><strong>{toPlainMoney(personalServiceCommission)}</strong></div>

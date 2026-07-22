@@ -31,6 +31,16 @@ const expectedNavigation: Record<UserRole, string[]> = {
     "/settings"
   ],
   operator: ["/signature-confirm", "/operator-performance", "/settings"],
+  sales_operator: [
+    "/dashboard",
+    "/profit-analysis",
+    "/commission",
+    "/service-confirm",
+    "/signature-confirm",
+    "/operator-performance",
+    "/customer-profit",
+    "/settings"
+  ],
   restricted: []
 };
 
@@ -65,7 +75,7 @@ for (const [role, permissions] of Object.entries(rolePermissions) as Array<[User
   }
 }
 
-for (const role of ["executive", "sales", "operator", "restricted"] as UserRole[]) {
+for (const role of ["executive", "sales", "operator", "sales_operator", "restricted"] as UserRole[]) {
   assert.equal(
     writePermissions.some((permission) => rolePermissions[role].includes(permission)),
     false,
@@ -86,6 +96,8 @@ const salesScope = financeAccessForUser({ username: "sales01", displayName: "销
 assert.deepEqual(salesScope, { mode: "self", names: ["销售甲", "sales01"], field: "salesperson" });
 const operatorScope = financeAccessForUser({ username: "operator01", displayName: "操作员乙", role: "operator" });
 assert.deepEqual(operatorScope, { mode: "self", names: ["操作员乙", "operator01"], field: "operator" });
+const dualScope = financeAccessForUser({ username: "staff01", displayName: "双身份丙", role: "sales_operator" });
+assert.deepEqual(dualScope, { mode: "self", names: ["双身份丙", "staff01"], field: "both" });
 assert.deepEqual(financeAccessForUser({ username: "blocked", displayName: "未授权", role: "restricted" }), { mode: "none", names: [] });
 
 console.log("Role interface and permission matrix verification passed.");

@@ -111,7 +111,7 @@ function serviceCondition(row: ServiceRecord) {
 
 export default function ServiceConfirm() {
   const { user } = useAuth();
-  const isSalesAccount = user?.role === "sales";
+  const isSalesAccount = user?.role === "sales" || user?.role === "sales_operator";
   const canApprove = Boolean(user?.auth?.permissions.includes("confirmation:approve"));
   const [rows, setRows] = useState<ServiceRecord[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);

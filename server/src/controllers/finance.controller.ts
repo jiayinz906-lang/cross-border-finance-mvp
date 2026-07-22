@@ -7,15 +7,15 @@ import { resetBusinessData, resetConfirmationPhrase } from "../services/business
 import { currentUser } from "../middleware/rbac.middleware.js";
 
 export async function listLedgerController(req: Request, res: Response) {
-  res.json(await financeService.listLedger(req.query.month as string | undefined, currentFinanceAccess(req)));
+  res.json(await financeService.listLedger(req.query.month as string | undefined, currentFinanceAccess(req, "salesperson")));
 }
 
 export async function summaryController(req: Request, res: Response) {
-  res.json(await financeService.getSummary(req.query.month as string | undefined, currentFinanceAccess(req)));
+  res.json(await financeService.getSummary(req.query.month as string | undefined, currentFinanceAccess(req, "salesperson")));
 }
 
 export async function dashboardController(req: Request, res: Response) {
-  res.json(await financeService.getDashboard(req.query.month as string | undefined, currentFinanceAccess(req)));
+  res.json(await financeService.getDashboard(req.query.month as string | undefined, currentFinanceAccess(req, "salesperson")));
 }
 
 export async function monthsController(req: Request, res: Response) {

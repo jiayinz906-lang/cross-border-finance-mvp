@@ -264,7 +264,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const permissions = user?.auth?.permissions;
-  const isSalesAccount = user?.role === "sales";
+  const isSalesAccount = user?.role === "sales" || user?.role === "sales_operator";
   const canImport = hasPermission(permissions, "finance:import");
   const canExport = hasPermission(permissions, "reports:export");
   const { selectedMonth, setSelectedMonth } = useSelectedMonth();

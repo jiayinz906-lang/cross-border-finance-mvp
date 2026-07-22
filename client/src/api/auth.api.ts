@@ -64,6 +64,12 @@ export type StaffAccountSyncResult = {
   sourceFileName: string;
   created: Array<StaffAccountSummary & { initialPassword: string }>;
   existing: StaffAccountSummary[];
+  mergedAccounts?: Array<{
+    account: StaffAccountSummary;
+    previousRole: string;
+    disabledDuplicateAccounts: string[];
+  }>;
+  disabledDuplicateAccounts?: string[];
   disabledPlaceholderAccounts: string[];
 };
 

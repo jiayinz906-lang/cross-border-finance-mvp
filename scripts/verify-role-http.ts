@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { prisma } from "../server/src/prisma/client.js";
 
-type Role = "admin" | "finance" | "supervisor" | "executive" | "sales" | "operator";
+type Role = "admin" | "finance" | "supervisor" | "executive" | "sales" | "operator" | "sales_operator";
 type HttpResult<T = unknown> = { status: number; body: T };
 
 const apiUrl = process.env.UI_SMOKE_API_URL || "http://127.0.0.1:4000/api";
@@ -62,7 +62,10 @@ async function login(username: string) {
     method: "POST",
     body: JSON.stringify({ username, password })
   });
-  assert(response.status === 200 && Boolean(response.body.token), `${username} can establish an authenticated session`);
+  if (response.status !== 200 || !response.body.token) {
+    throw new Error(`${username} cannot establish an authenticated session (status ${response.status}: ${JSON.stringify(response.body)})`);
+  }
+  console.log(`PASS ${username} can establish an authenticated session`);
   return response.body.token!;
 }
 
@@ -74,7 +77,7 @@ async function main() {
   }
 
   const month = process.env.FINANCE_TEST_MONTH || "2026-06";
-  const [serviceOwner, salesOwner, operatorOwner] = await Promise.all([
+  const [serviceOwner, salesOwner, operatorOwner, identityRows] = await Promise.all([
     prisma.financeOrder.findFirst({
       where: { month, isServiceBusiness: true, salespersonName: { not: "" }, importBatch: { is: { status: "active" } } },
       select: { salespersonName: true }
@@ -86,12 +89,21 @@ async function main() {
     prisma.financeOrder.findFirst({
       where: { month, customerServiceName: { not: "" }, importBatch: { is: { status: "active" } } },
       select: { customerServiceName: true }
+    }),
+    prisma.financeOrder.findMany({
+      where: { month, importBatch: { is: { status: "active" } } },
+      select: { salespersonName: true, customerServiceName: true }
     })
   ]);
   const salespersonName = serviceOwner?.salespersonName || salesOwner?.salespersonName;
   const operatorName = operatorOwner?.customerServiceName;
+  const importedSalesNames = new Set(identityRows.map((row) => row.salespersonName).filter(Boolean));
+  const dualIdentityName = identityRows
+    .map((row) => row.customerServiceName)
+    .find((name) => Boolean(name && importedSalesNames.has(name)));
   assert(Boolean(salespersonName), "Imported data contains a salesperson for self-scope verification");
   assert(Boolean(operatorName), "Imported data contains an operator for self-scope verification");
+  assert(Boolean(dualIdentityName), "Imported data contains one person serving as both salesperson and operator");
 
   const accounts: Array<[string, string, Role]> = [
     ["verify_admin", "权限验收管理员", "admin"],
@@ -99,7 +111,8 @@ async function main() {
     ["verify_supervisor", "权限验收主管", "supervisor"],
     ["verify_executive", "权限验收管理层", "executive"],
     ["verify_sales", salespersonName!, "sales"],
-    ["verify_operator", operatorName!, "operator"]
+    ["verify_operator", operatorName!, "operator"],
+    ["verify_dual", dualIdentityName!, "sales_operator"]
   ];
   for (const account of accounts) await upsertAccount(...account);
 
@@ -110,7 +123,10 @@ async function main() {
   });
   assert(spoofed.status === 401, "Header role spoofing cannot bypass token authentication");
 
-  const tokens = Object.fromEntries(await Promise.all(accounts.map(async ([username, , role]) => [role, await login(username)]))) as Record<Role, string>;
+  const tokens = {} as Record<Role, string>;
+  for (const [username, , role] of accounts) {
+    tokens[role] = await login(username);
+  }
 
   assert((await request("/auth/users", {}, tokens.admin)).status === 200, "Administrator can manage accounts");
   assert((await request("/workflow/month-status?month=2026-06", {}, tokens.finance)).status === 200, "Finance can read the monthly workflow");
@@ -161,6 +177,17 @@ async function main() {
   assert((await request("/workflow/month-close?month=2026-06", {}, tokens.operator)).status === 403, "Operator cannot read company month-close controls");
   assert((await request("/workflow/month-status?month=2026-06", {}, tokens.operator)).status === 403, "Operator cannot read company workflow counts");
 
+  const dualDashboard = await request<{ salespersonSummary?: Array<{ salespersonName?: string }> }>(`/finance/dashboard?month=${month}`, {}, tokens.sales_operator);
+  assert(dualDashboard.status === 200, "Dual-role account can open the personal sales dashboard");
+  assert((dualDashboard.body.salespersonSummary ?? []).every((row) => row.salespersonName === dualIdentityName), "Dual-role dashboard remains limited to the person's salesperson records");
+  const dualServiceRows = await request<{ rows?: Array<{ financeOrder?: { salespersonName?: string } }> }>(`/reports/service-records?month=${month}`, {}, tokens.sales_operator);
+  assert(dualServiceRows.status === 200, "Dual-role account can open personal service commissions");
+  assert((dualServiceRows.body.rows ?? []).every((row) => row.financeOrder?.salespersonName === dualIdentityName), "Dual-role service commissions remain limited to the person's salesperson records");
+  const dualPerformance = await request<{ rows?: Array<{ operatorName?: string }> }>(`/analytics/operator-performance?month=${month}`, {}, tokens.sales_operator);
+  assert(dualPerformance.status === 200, "Dual-role account can open personal operator performance");
+  assert((dualPerformance.body.rows ?? []).every((row) => row.operatorName === dualIdentityName), "Dual-role performance remains limited to the person's operator records");
+  assert((await request("/receivables?month=2026-06", {}, tokens.sales_operator)).status === 403, "Dual-role account cannot read company receivables");
+
   console.log("Role HTTP authorization verification passed.");
 }
 
@@ -170,5 +197,6 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
+    await prisma.appUser.deleteMany({ where: { username: { startsWith: "verify_" } } }).catch(() => undefined);
     await prisma.$disconnect();
   });

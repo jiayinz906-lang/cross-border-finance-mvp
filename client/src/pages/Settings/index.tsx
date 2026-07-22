@@ -384,6 +384,8 @@ export default function Settings() {
       await loadManagedUsers();
       if (response.data.created.length) {
         message.success(`已按 ${selectedMonth} 有效导入批次创建 ${response.data.created.length} 个个人账号`);
+      } else if (response.data.mergedAccounts?.length) {
+        message.success(`已合并 ${response.data.mergedAccounts.length} 个双身份员工账号`);
       } else {
         message.info(`${selectedMonth} 的销售与操作员个人账号均已存在`);
       }
@@ -1190,7 +1192,15 @@ export default function Settings() {
               { title: "首次登录", render: () => <Tag color="gold">必须修改密码</Tag> }
             ]}
           />
-          <Typography.Text type="secondary">已存在账号：{staffSyncResult?.existing.length ?? 0} 个；已停用通用占位账号：{staffSyncResult?.disabledPlaceholderAccounts.join("、") || "无"}。</Typography.Text>
+          {staffSyncResult?.mergedAccounts?.length ? <Alert
+            type="success"
+            showIcon
+            message={`已合并 ${staffSyncResult.mergedAccounts.length} 个双身份账号`}
+            description={staffSyncResult.mergedAccounts.map((row) => (
+              `${row.account.displayName}：保留 ${row.account.username}，身份更新为销售/操作员${row.disabledDuplicateAccounts.length ? `，停用重复账号 ${row.disabledDuplicateAccounts.join("、")}` : ""}`
+            )).join("；")}
+          /> : null}
+          <Typography.Text type="secondary">已存在账号：{staffSyncResult?.existing.length ?? 0} 个；已停用重复账号：{staffSyncResult?.disabledDuplicateAccounts?.join("、") || "无"}；已停用通用占位账号：{staffSyncResult?.disabledPlaceholderAccounts.join("、") || "无"}。</Typography.Text>
         </Space>
       </Modal>
     </>

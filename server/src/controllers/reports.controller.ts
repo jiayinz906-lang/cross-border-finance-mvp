@@ -6,7 +6,7 @@ export async function serviceRecordsController(req: Request, res: Response) {
   res.json({
     rows: await reportService.listServiceRecords(
       req.query.month as string | undefined,
-      currentFinanceAccess(req)
+      currentFinanceAccess(req, "salesperson")
     )
   });
 }
