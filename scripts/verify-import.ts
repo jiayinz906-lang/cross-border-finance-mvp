@@ -169,11 +169,21 @@ async function verifyImport(checks: Check[]) {
       month: imported.month,
       operatorName: airGroup.operatorName,
       category: airRow.category,
+      orderCount: airRow.rawOrderCount + 1,
       rate: 60,
       updatedBy: "verify-import"
     });
     const overriddenAir = overridden.rows.find((group) => group.operatorName === airGroup.operatorName)?.rows.find((row) => row.category === "air_white");
-    assertCheck(checks, "Operator performance override persists without changing Excel source", closeEnough(overriddenAir?.commissionAmount ?? 0, airRow.rawOrderCount * 60), `${overriddenAir?.commissionAmount} / ${airRow.rawOrderCount * 60}`);
+    assertCheck(
+      checks,
+      "Air-white ticket count can be reviewed while its fixed 50 yuan rate cannot be overridden",
+      overriddenAir?.rawOrderCount === airRow.rawOrderCount
+        && overriddenAir.orderCount === airRow.rawOrderCount + 1
+        && overriddenAir.baseCount === 0
+        && overriddenAir.rate === 50
+        && closeEnough(overriddenAir.commissionAmount, (airRow.rawOrderCount + 1) * 50),
+      JSON.stringify(overriddenAir)
+    );
     const payout = await analyticsService.updateOperatorPerformancePayoutNote(imported.month, "随验证月份工资发放", "verify-import");
     assertCheck(checks, "Operator performance payout note persists", payout.payoutNote === "随验证月份工资发放", payout.payoutNote);
   }

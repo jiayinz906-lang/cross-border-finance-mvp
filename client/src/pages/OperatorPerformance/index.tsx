@@ -130,8 +130,8 @@ export default function OperatorPerformance() {
         operatorName: row.operatorName,
         category: row.category,
         orderCount: row.calculationMode === "ticket" ? row.orderCount : null,
-        baseCount: row.calculationMode === "ticket" ? row.baseCount : null,
-        rate: row.rate
+        baseCount: row.calculationMode === "ticket" && row.category !== "air_white" ? row.baseCount : null,
+        rate: row.category === "air_white" ? null : row.rate
       });
       setOperatorGroups(response.data.rows ?? []);
       setPayoutNote(response.data.payoutNote ?? payoutNote);
@@ -245,7 +245,7 @@ export default function OperatorPerformance() {
       dataIndex: "baseCount",
       align: "right",
       width: 120,
-      render: (value: number, row) => <InputNumber min={0} precision={0} disabled={!canApprove || row.calculationMode === "gross_profit"} value={value} onChange={(next) => handleNumberChange(row.id, "baseCount", next)} />
+      render: (value: number, row) => <InputNumber min={0} precision={0} disabled={!canApprove || row.calculationMode === "gross_profit" || row.category === "air_white"} value={value} onChange={(next) => handleNumberChange(row.id, "baseCount", next)} />
     },
     {
       title: "自动匹配档位",
@@ -265,7 +265,7 @@ export default function OperatorPerformance() {
       dataIndex: "rate",
       align: "right",
       width: 150,
-      render: (value: number, row) => <Space size={4}><InputNumber min={0} precision={2} disabled={!canApprove} value={value} onChange={(next) => handleNumberChange(row.id, "rate", next)} /><Typography.Text type="secondary">{row.rateUnit}</Typography.Text></Space>
+      render: (value: number, row) => <Space size={4}><InputNumber min={0} precision={2} disabled={!canApprove || row.category === "air_white"} value={value} onChange={(next) => handleNumberChange(row.id, "rate", next)} /><Typography.Text type="secondary">{row.rateUnit}</Typography.Text></Space>
     },
     { title: "分类绩效金额", dataIndex: "commissionAmount", align: "right", width: 120 },
     {
@@ -333,8 +333,8 @@ export default function OperatorPerformance() {
         <Alert
           type="info"
           showIcon
-          message="Excel 原始票数和毛利基数始终保留；可手动调整绩效票数、基础票数和规则值，保存后自动重算总绩效金额。"
-          description="手工调整只写入绩效覆盖记录，不会修改、增加或删除导入 Excel 原始数据；最终绩效金额不执行 80% 折算。"
+          message="Excel 原始票数和毛利基数始终保留；除固定口径外，可手动调整绩效票数、基础票数和规则值。"
+          description="空运白关固定 50 元/票且基础票数为 0；其他手工调整只写入绩效覆盖记录，不会修改导入 Excel 原始数据，保存后自动重算总绩效金额。"
           style={{ marginBottom: 12 }}
         />
         <div className="operator-rule-panel">

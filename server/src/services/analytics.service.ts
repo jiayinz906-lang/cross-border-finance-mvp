@@ -143,14 +143,15 @@ function operatorRows(operatorName: string, orders: FinanceOrder[], overrides: M
     const rawOrderCount = counts.get(rule.key) ?? 0;
     const rawGrossProfit = Math.round((grossProfits.get(rule.key) ?? 0) * 100) / 100;
     const override = overrides.get(overrideKey(operatorName, rule.key));
+    const hasFixedAirWhiteRule = rule.key === "air_white";
     const orderCount = override?.orderCount ?? rawOrderCount;
     const bracket = performanceBracket(rule.key, orderCount);
-    const baseCount = override?.baseCount ?? bracket.baseCount;
-    const rate = override?.rate ?? bracket.rate;
+    const baseCount = hasFixedAirWhiteRule ? 0 : (override?.baseCount ?? bracket.baseCount);
+    const rate = hasFixedAirWhiteRule ? 50 : (override?.rate ?? bracket.rate);
     const commissionOrderCount = Math.max(orderCount - baseCount, 0);
     const manuallyAdjusted = override?.orderCount !== null && override?.orderCount !== undefined
-      || override?.baseCount !== null && override?.baseCount !== undefined
-      || override?.rate !== null && override?.rate !== undefined;
+      || (!hasFixedAirWhiteRule && override?.baseCount !== null && override?.baseCount !== undefined)
+      || (!hasFixedAirWhiteRule && override?.rate !== null && override?.rate !== undefined);
     return {
       id: `${operatorName}-${rule.key}`,
       category: rule.key,
@@ -244,21 +245,23 @@ export const analyticsService = {
     if (!allowedCategories.has(input.category)) throw new Error("Unsupported operator performance category.");
     const close = await prisma.monthClose.findUnique({ where: { month: input.month } });
     if (close?.status === "locked") throw new Error("Locked month cannot change operator performance.");
+    const fixedAirWhiteRule = input.category === "air_white";
+    const overrideValues = {
+      orderCount: asOptionalNonNegativeInteger(input.orderCount, "orderCount"),
+      baseCount: fixedAirWhiteRule ? null : asOptionalNonNegativeInteger(input.baseCount, "baseCount"),
+      rate: fixedAirWhiteRule ? null : asOptionalNonNegativeNumber(input.rate, "rate")
+    };
     await prisma.operatorPerformanceOverride.upsert({
       where: { month_operatorName_category: { month: input.month, operatorName: input.operatorName, category: input.category } },
       create: {
         month: input.month,
         operatorName: input.operatorName,
         category: input.category,
-        orderCount: asOptionalNonNegativeInteger(input.orderCount, "orderCount"),
-        baseCount: asOptionalNonNegativeInteger(input.baseCount, "baseCount"),
-        rate: asOptionalNonNegativeNumber(input.rate, "rate"),
+        ...overrideValues,
         updatedBy: input.updatedBy
       },
       update: {
-        orderCount: asOptionalNonNegativeInteger(input.orderCount, "orderCount"),
-        baseCount: asOptionalNonNegativeInteger(input.baseCount, "baseCount"),
-        rate: asOptionalNonNegativeNumber(input.rate, "rate"),
+        ...overrideValues,
         updatedBy: input.updatedBy
       }
     });
@@ -269,11 +272,7 @@ export const analyticsService = {
         entityId: `${input.operatorName}:${input.category}`,
         action: "update_operator_performance_override",
         operator: input.updatedBy,
-        payloadJson: JSON.stringify({
-          orderCount: asOptionalNonNegativeInteger(input.orderCount, "orderCount"),
-          baseCount: asOptionalNonNegativeInteger(input.baseCount, "baseCount"),
-          rate: asOptionalNonNegativeNumber(input.rate, "rate")
-        })
+        payloadJson: JSON.stringify(overrideValues)
       }
     });
     return this.operatorPerformanceWithSettings(input.month);
