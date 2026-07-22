@@ -56,7 +56,7 @@ financeRoutes.get("/ledger", requirePermission("ledger:read"), listLedgerControl
 financeRoutes.get("/auth-context", authContextController);
 financeRoutes.get("/summary", requirePermission("dashboard:read"), summaryController);
 financeRoutes.get("/dashboard", requirePermission("dashboard:read"), dashboardController);
-financeRoutes.get("/months", requirePermission("dashboard:read"), monthsController);
+financeRoutes.get("/months", requirePermission("finance:read"), monthsController);
 financeRoutes.get("/parameter-rules", requirePermission("rules:read"), parameterRulesController);
 financeRoutes.put("/parameter-rules/:ruleKey", requirePermission("rules:write"), updateParameterRuleController);
 financeRoutes.get("/import-templates", requirePermission("finance:import"), importTemplatesController);

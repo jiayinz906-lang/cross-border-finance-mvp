@@ -56,6 +56,21 @@ export function createUser(payload: { username: string; password: string; displa
   return request.post<ManagedUser>("/auth/users", payload);
 }
 
+export type StaffAccountSummary = Pick<ManagedUser, "id" | "username" | "displayName" | "role" | "isActive" | "mustChangePassword">;
+
+export type StaffAccountSyncResult = {
+  month: string;
+  importBatchNo: string;
+  sourceFileName: string;
+  created: Array<StaffAccountSummary & { initialPassword: string }>;
+  existing: StaffAccountSummary[];
+  disabledPlaceholderAccounts: string[];
+};
+
+export function syncStaffUsers(month: string) {
+  return request.post<StaffAccountSyncResult>("/auth/users/sync-staff", { month });
+}
+
 export function updateUser(id: number, payload: { displayName?: string; role?: string; isActive?: boolean; resetPassword?: string; dingtalkUserId?: string | null }) {
   return request.patch<ManagedUser>(`/auth/users/${id}`, payload);
 }

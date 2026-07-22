@@ -92,6 +92,7 @@ function statusTag(value: string, confirmedText = "已确认", pendingText = "�
 export default function Commission() {
   const { selectedMonth } = useSelectedMonth();
   const { user } = useAuth();
+  const isSalesAccount = user?.role === "sales";
   const canApprove = Boolean(user?.auth?.permissions.includes("confirmation:approve"));
   const [records, setRecords] = useState<CommissionRecord[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -399,10 +400,12 @@ export default function Commission() {
 
       <Card
         className="commission-confirm-card"
-        title="物流销售代表提成确认"
+        title={isSalesAccount ? "我的物流提成" : "物流销售代表提成确认"}
         extra={(
           <Space size={10} wrap>
-            <Tag bordered={false} className="commission-policy-tag">销售代表按自然月毛利阶梯比例</Tag>
+            <Tag bordered={false} className="commission-policy-tag">
+              {isSalesAccount ? "仅显示本人订单与物流提成" : "销售代表按自然月毛利阶梯比例"}
+            </Tag>
             {canApprove ? <Button onClick={handleGenerateDocuments}>生成个人确认单</Button> : null}
             <Button onClick={handleViewSignatureStatus}>查看签名状态</Button>
           </Space>

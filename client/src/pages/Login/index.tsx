@@ -3,23 +3,30 @@ import { Alert, Button, Card, Form, Input, Typography } from "antd";
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { firstAllowedPath, isPathAllowed } from "../../config/access";
 
 export default function Login() {
-  const { login, token, ready } = useAuth();
+  const { login, token, ready, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const from = (location.state as { from?: string } | null)?.from || "/dashboard";
+  const from = (location.state as { from?: string } | null)?.from || "";
 
-  if (ready && token) return <Navigate to={from} replace />;
+  if (ready && token) {
+    const defaultPath = firstAllowedPath(user?.auth?.permissions, user?.role);
+    const target = from && isPathAllowed(from, user?.auth?.permissions, user?.role) ? from : defaultPath;
+    return <Navigate to={target} replace />;
+  }
 
   const submit = async (values: { username: string; password: string }) => {
     setLoading(true);
     setError("");
     try {
       const signedInUser = await login(values.username.trim(), values.password);
-      navigate(signedInUser.mustChangePassword ? "/settings" : from, { replace: true });
+      const defaultPath = firstAllowedPath(signedInUser.auth.permissions, signedInUser.role);
+      const target = from && isPathAllowed(from, signedInUser.auth.permissions, signedInUser.role) ? from : defaultPath;
+      navigate(signedInUser.mustChangePassword ? "/settings" : target, { replace: true });
     } catch (requestError: any) {
       setError(requestError?.response?.data?.message ?? requestError?.response?.data?.detail ?? "登录失败，请检查账号和密码。  ");
     } finally {

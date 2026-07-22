@@ -61,6 +61,8 @@ type ConfirmationPayload = {
     accruedCommission: number;
     supervisorAdjustmentAmount: number;
     finalCommission: number;
+    logisticsCommission?: number;
+    serviceCommission?: number;
     abnormalNote: string;
     payoutNote?: string;
     status: string;
@@ -106,7 +108,7 @@ function notificationChannelLabel(channel?: string | null) {
 
 function salaryDocumentTypeLabel(fileType?: string | null) {
   if (fileType === "sales_salary_confirmation") return "销售提成薪资确认单";
-  if (fileType === "operator_salary_confirmation") return "操作员薪资确认单";
+  if (fileType === "customer_service_salary_confirmation" || fileType === "operator_salary_confirmation") return "操作员薪资确认单";
   return "个人薪资确认单";
 }
 
@@ -119,6 +121,9 @@ function salaryStatusLabel(status?: string | null, signatureStatus?: string | nu
 
 export default function SignatureConfirm() {
   const { user } = useAuth();
+  const isSalesAccount = user?.role === "sales";
+  const isOperatorAccount = user?.role === "operator";
+  const isPersonalAccount = isSalesAccount || isOperatorAccount;
   const canApprove = Boolean(user?.auth?.permissions.includes("confirmation:approve"));
   const canExport = Boolean(user?.auth?.permissions.includes("reports:export"));
   const [documents, setDocuments] = useState<ConfirmationDocument[]>([]);
@@ -141,9 +146,9 @@ export default function SignatureConfirm() {
     setLoading(true);
     try {
       const [docRes, salesRes, customerServiceRes] = await Promise.all([
-        getDocuments(selectedMonth, "logistics_commission"),
-        getDocuments(selectedMonth, "sales_salary"),
-        getDocuments(selectedMonth, "customer_service_salary")
+        isOperatorAccount ? Promise.resolve({ data: { rows: [] as ConfirmationDocument[] } }) : getDocuments(selectedMonth, "logistics_commission"),
+        isOperatorAccount ? Promise.resolve({ data: { rows: [] as ConfirmationDocument[] } }) : getDocuments(selectedMonth, "sales_salary"),
+        isSalesAccount ? Promise.resolve({ data: { rows: [] as ConfirmationDocument[] } }) : getDocuments(selectedMonth, "customer_service_salary")
       ]);
       setDocuments(docRes.data.rows ?? []);
       setSalesSalaryDocuments(salesRes.data.rows ?? []);
@@ -153,7 +158,7 @@ export default function SignatureConfirm() {
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth]);
+  }, [isOperatorAccount, isSalesAccount, selectedMonth]);
 
   useEffect(() => {
     loadData();
@@ -246,6 +251,13 @@ export default function SignatureConfirm() {
   ];
   const salesSalaryTotal = salesSalaryDocuments.reduce((sum, row) => sum + row.commissionAmount, 0);
   const customerServiceSalaryTotal = customerServiceSalaryDocuments.reduce((sum, row) => sum + row.commissionAmount, 0);
+  const personalSalesPayload = parsePayload(salesSalaryDocuments[0]);
+  const personalLogisticsCommission = personalSalesPayload?.summary.logisticsCommission
+    ?? personalSalesPayload?.details.filter((row) => row.salaryComponent !== "注册/服务提成").reduce((sum, row) => sum + row.commissionAmount, 0)
+    ?? 0;
+  const personalServiceCommission = personalSalesPayload?.summary.serviceCommission
+    ?? personalSalesPayload?.details.filter((row) => row.salaryComponent === "注册/服务提成").reduce((sum, row) => sum + row.commissionAmount, 0)
+    ?? 0;
 
   const columns: ColumnsType<ConfirmationDocument> = [
     { title: "销售代表", dataIndex: "ownerName", fixed: "left", width: 110 },
@@ -348,9 +360,9 @@ export default function SignatureConfirm() {
 
   return (
     <div className="signature-board">
-      <Card
+      {!isOperatorAccount ? <Card
         className="signature-confirm-card"
-        title={<div className="signature-title-block"><strong>员工电子签名确认中心</strong><span>主管生成个人提成确认单，员工在线签名后回传状态，最终由主管确认发放。</span></div>}
+        title={<div className="signature-title-block"><strong>{isSalesAccount ? "我的物流提成确认单" : "员工电子签名确认中心"}</strong><span>{isSalesAccount ? "仅显示本人作为销售代表的物流订单、提成金额和签名状态。" : "主管生成个人提成确认单，员工在线签名后回传状态，最终由主管确认发放。"}</span></div>}
         extra={<Space size={10} wrap>{canApprove ? <Button type="primary" onClick={handleBatchGenerate}>批量生成确认单</Button> : null}{canExport ? <Button loading={exporting} onClick={handleExport}>导出签名汇总表</Button> : null}</Space>}
       >
         <div className="signature-stat-grid">
@@ -363,27 +375,47 @@ export default function SignatureConfirm() {
 
         <Progress className="signature-progress" percent={progressPercent} showInfo={false} strokeColor={{ "0%": "#5274ef", "100%": "#40c58d" }} trailColor="#eef3f9" />
         <Table rowKey="id" className="signature-summary-table" loading={loading} columns={columns} dataSource={documents} pagination={false} scroll={{ x: 1680 }} />
-      </Card>
+      </Card> : null}
 
       <Card
         className="signature-confirm-card"
-        title={<div className="signature-title-block"><strong>薪资汇总与确认单</strong><span>销售代表按物流提成与已主管确认的注册/服务提成汇总；操作员按各绩效板块汇总。金额仅来自当前月份已导入数据，不包含固定工资、社保及个税。</span></div>}
+        title={<div className="signature-title-block"><strong>{isSalesAccount ? "我的综合提成确认单" : isOperatorAccount ? "我的操作员绩效确认单" : "薪资汇总与确认单"}</strong><span>{isSalesAccount ? "合并列示本人物流提成和已由主管确认的注册/服务提成。" : isOperatorAccount ? "按本人负责业务的各绩效板块列示 Excel 票数、规则和绩效金额。" : "销售代表按物流提成与已主管确认的注册/服务提成汇总；操作员按各绩效板块汇总。金额仅来自当前月份已导入数据，不包含固定工资、社保及个税。"}</span></div>}
         extra={canApprove ? <Button type="primary" loading={generatingSalary} onClick={handleGenerateSalaryDocuments}>批量生成薪资确认单</Button> : null}
       >
         <Alert
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="薪资确认范围说明"
-          description="销售代表确认单汇总物流提成及已主管确认的注册/服务提成；操作员确认单按各绩效板块列示 Excel 票数、基础票数、计发票数、规则和小计。生成后可发送外部签名链接，员工签名和主管确认均会写入确认单证据链。"
+          message={isPersonalAccount ? "个人确认范围" : "薪资确认范围说明"}
+          description={isSalesAccount
+            ? "下方确认单只汇总本人的物流提成和已由主管确认的注册/服务提成。未完成主管确认的注册业务不会提前计入。"
+            : isOperatorAccount
+              ? "下方确认单只列示本人各绩效板块的 Excel 统计、规则基础票数、计发票数、单价和绩效小计。"
+              : "销售代表确认单汇总物流提成及已主管确认的注册/服务提成；操作员确认单按各绩效板块列示 Excel 票数、基础票数、计发票数、规则和小计。生成后可发送外部签名链接，员工签名和主管确认均会写入确认单证据链。"}
         />
-        <div className="signature-stat-grid">
-          <div><span>销售代表确认人数</span><strong>{salesSalaryDocuments.length}</strong></div>
-          <div><span>销售提成确认金额</span><strong>{toPlainMoney(salesSalaryTotal)}</strong></div>
-          <div><span>操作员确认人数</span><strong>{customerServiceSalaryDocuments.length}</strong></div>
-          <div><span>操作员绩效确认金额</span><strong>{toPlainMoney(customerServiceSalaryTotal)}</strong></div>
-          <div><span>薪资确认合计</span><strong>{toPlainMoney(salesSalaryTotal + customerServiceSalaryTotal)}</strong></div>
-        </div>
+        {isSalesAccount ? (
+          <div className="signature-stat-grid signature-stat-grid-personal">
+            <div><span>物流提成</span><strong>{toPlainMoney(personalLogisticsCommission)}</strong></div>
+            <div><span>注册/服务提成</span><strong>{toPlainMoney(personalServiceCommission)}</strong></div>
+            <div><span>本月确认合计</span><strong>{toPlainMoney(salesSalaryTotal)}</strong></div>
+            <div><span>确认单状态</span><strong>{salesSalaryDocuments[0]?.signatureStatus === "signed" ? "已签名" : salesSalaryDocuments.length ? "待签名" : "未生成"}</strong></div>
+          </div>
+        ) : isOperatorAccount ? (
+          <div className="signature-stat-grid signature-stat-grid-personal">
+            <div><span>本人业务量</span><strong>{customerServiceSalaryDocuments[0]?.orderCount ?? 0}</strong></div>
+            <div><span>绩效确认金额</span><strong>{toPlainMoney(customerServiceSalaryTotal)}</strong></div>
+            <div><span>员工签名</span><strong>{customerServiceSalaryDocuments[0]?.signatureStatus === "signed" ? "已签名" : customerServiceSalaryDocuments.length ? "待签名" : "未生成"}</strong></div>
+            <div><span>主管确认</span><strong>{customerServiceSalaryDocuments[0]?.supervisorStatus === "confirmed" ? "已确认" : "待确认"}</strong></div>
+          </div>
+        ) : (
+          <div className="signature-stat-grid">
+            <div><span>销售代表确认人数</span><strong>{salesSalaryDocuments.length}</strong></div>
+            <div><span>销售提成确认金额</span><strong>{toPlainMoney(salesSalaryTotal)}</strong></div>
+            <div><span>操作员确认人数</span><strong>{customerServiceSalaryDocuments.length}</strong></div>
+            <div><span>操作员绩效确认金额</span><strong>{toPlainMoney(customerServiceSalaryTotal)}</strong></div>
+            <div><span>薪资确认合计</span><strong>{toPlainMoney(salesSalaryTotal + customerServiceSalaryTotal)}</strong></div>
+          </div>
+        )}
         <Table
           rowKey={(row) => `${row.salaryRole}-${row.id}`}
           className="signature-summary-table"

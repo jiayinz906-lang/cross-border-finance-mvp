@@ -570,6 +570,10 @@ body {
   margin-bottom: 14px;
 }
 
+.overview-three-grid.is-personal {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+}
+
 .overview-risk-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -1672,6 +1676,10 @@ body {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 16px;
+}
+
+.signature-stat-grid-personal {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .signature-stat-grid div {

@@ -133,6 +133,13 @@ async function main() {
   const serviceRows = await request<{ rows?: Array<{ financeOrder?: { salespersonName?: string } }> }>(`/reports/service-records?month=${month}`, {}, tokens.sales);
   assert(serviceRows.status === 200, "Salesperson can read service commission rows");
   assert((serviceRows.body.rows ?? []).every((row) => row.financeOrder?.salespersonName === salespersonName), "Service commission rows are limited to the signed-in salesperson");
+  const serviceDocuments = await request<{ rows?: Array<{ ownerName?: string }> }>(`/workflow/documents?month=${month}&documentType=service_commission`, {}, tokens.sales);
+  const accessibleServiceOrders = new Set((await prisma.financeOrder.findMany({
+    where: { month, isServiceBusiness: true, salespersonName, importBatch: { is: { status: "active" } } },
+    select: { orderNo: true }
+  })).map((row) => row.orderNo));
+  assert(serviceDocuments.status === 200, "Salesperson can read own service confirmation documents");
+  assert((serviceDocuments.body.rows ?? []).every((row) => Boolean(row.ownerName && accessibleServiceOrders.has(row.ownerName))), "Service confirmation documents are limited to the salesperson's own orders");
   assert((await request("/reports/monthly?month=2026-06", {}, tokens.sales)).status === 403, "Salesperson cannot read company-wide reports");
   assert((await request("/receivables?month=2026-06", {}, tokens.sales)).status === 403, "Salesperson cannot read company receivables");
   assert((await request("/operations/overview?month=2026-06", {}, tokens.sales)).status === 403, "Salesperson cannot read finance operations data");
@@ -146,6 +153,8 @@ async function main() {
   const operatorPerformance = await request<{ rows?: Array<{ operatorName?: string }> }>(`/analytics/operator-performance?month=${month}`, {}, tokens.operator);
   assert(operatorPerformance.status === 200, "Operator can open personal performance");
   assert((operatorPerformance.body.rows ?? []).every((row) => row.operatorName === operatorName), "Performance rows are limited to the signed-in operator");
+  assert((await request("/finance/months", {}, tokens.operator)).status === 200, "Operator can switch between months containing personal performance");
+  assert((await request("/finance/dashboard?month=2026-06", {}, tokens.operator)).status === 403, "Operator cannot read the company dashboard");
   assert((await request("/profit/analysis?month=2026-06", {}, tokens.operator)).status === 403, "Operator cannot read business profit");
   assert((await request("/operations/overview?month=2026-06", {}, tokens.operator)).status === 403, "Operator cannot read finance operations data");
   assert((await request("/health/status", {}, tokens.operator)).status === 403, "Operator cannot read operational telemetry");

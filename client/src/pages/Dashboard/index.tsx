@@ -264,6 +264,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const permissions = user?.auth?.permissions;
+  const isSalesAccount = user?.role === "sales";
   const canImport = hasPermission(permissions, "finance:import");
   const canExport = hasPermission(permissions, "reports:export");
   const { selectedMonth, setSelectedMonth } = useSelectedMonth();
@@ -350,7 +351,9 @@ export default function Dashboard() {
     { title: "毛利率", value: formatPercent(grossRate), color: "#8a5ce5", icon: "%", mom: pctPoint(data?.comparison?.momGrossProfitRate), yoy: pctPoint(data?.comparison?.yoyGrossProfitRate) },
     { title: "总票数", value: `${data?.orderCount ?? 0}票`, color: "#3d78ed", icon: "▤", mom: pct(data?.comparison?.momOrderCount), yoy: pct(data?.comparison?.yoyOrderCount) },
     { title: "物流提成", value: toMoney(logisticsCommission), color: "#4e76ee", icon: "♟", mom: pct(data?.comparison?.momCommission), yoy: pct(data?.comparison?.yoyCommission) },
-    { title: "高风险票数", value: `${riskCount}票`, color: "#ec454d", icon: "!", mom: pct(data?.comparison?.momRiskOrderCount), yoy: pct(data?.comparison?.yoyRiskOrderCount) }
+    ...(hasPermission(permissions, "risk:read")
+      ? [{ title: "高风险票数", value: `${riskCount}票`, color: "#ec454d", icon: "!", mom: pct(data?.comparison?.momRiskOrderCount), yoy: pct(data?.comparison?.yoyRiskOrderCount) }]
+      : [])
   ];
 
   return (
@@ -358,8 +361,8 @@ export default function Dashboard() {
       <header className="overview-topbar">
         <div className="overview-title-block">
           {hasPermission(permissions, "ledger:read") ? <Button type="text" icon={<MenuOutlined />} className="overview-menu-btn" onClick={() => navigate("/finance-ledger")} /> : null}
-          <h1>经营总览</h1>
-          <span>数据概览与经营分析</span>
+          <h1>{isSalesAccount ? "我的经营" : "经营总览"}</h1>
+          <span>{isSalesAccount ? "仅显示本人销售订单、利润与提成" : "数据概览与经营分析"}</span>
         </div>
         <div className="overview-actions">
           <div className="overview-select"><FileExcelOutlined /> 数据源：<b>{summary?.month ? `${summary.month} 数据库` : "Excel 数据"}</b></div>
@@ -408,8 +411,8 @@ export default function Dashboard() {
         </Card>
       </section>
 
-      <section className="overview-three-grid">
-        <Card className="overview-card" title="业务员毛利排行（本月）" extra={hasPermission(permissions, "commission:read") ? <Button type="link" onClick={() => navigate("/commission")}>查看更多</Button> : null}>
+      <section className={`overview-three-grid${isSalesAccount ? " is-personal" : ""}`}>
+        <Card className="overview-card" title={isSalesAccount ? "我的毛利与提成（本月）" : "业务员毛利排行（本月）"} extra={hasPermission(permissions, "commission:read") ? <Button type="link" onClick={() => navigate("/commission")}>查看更多</Button> : null}>
           <Table rowKey="rank" columns={rankingColumns} dataSource={rankingRows} pagination={false} size="small" />
         </Card>
         <Card className="overview-card" title="客户利润概览" extra={hasPermission(permissions, "customer-profit:read") ? <Button type="link" onClick={() => navigate("/customer-profit")}>查看更多</Button> : null}>
@@ -427,7 +430,7 @@ export default function Dashboard() {
             </div>
           </div>
         </Card>
-        <Card className="overview-card" title="上游应付集中度" extra={hasPermission(permissions, "payables:read") ? <Button type="link" onClick={() => navigate("/payables")}>查看更多</Button> : null}>
+        {hasPermission(permissions, "payables:read") ? <Card className="overview-card" title="上游应付集中度" extra={<Button type="link" onClick={() => navigate("/payables")}>查看更多</Button>}>
           <Table
             rowKey="supplierName"
             pagination={false}
@@ -445,10 +448,10 @@ export default function Dashboard() {
             <span>未指定供应商应付 <b>{toMoney(unassignedSupplierPayable)}</b></span>
             <span>单票平均应付成本 <b>{toMoney(averageLogisticsPayable)}</b></span>
           </div>
-        </Card>
+        </Card> : null}
       </section>
 
-      <section className="overview-risk-grid">
+      {hasPermission(permissions, "risk:read") ? <section className="overview-risk-grid">
         <Card className="overview-card risk-card" title="风险趋势（本月）" extra={hasPermission(permissions, "risk:read") ? <Button type="link" onClick={() => navigate("/risks")}>查看更多</Button> : null}>
           <div className="risk-mini-grid">
             {riskItem("高风险票数", riskOverview?.highRiskCount ?? riskCount, "待复核")}
@@ -464,7 +467,7 @@ export default function Dashboard() {
             {riskOverview?.topRiskReason ? ` 首要风险：${riskOverview.topRiskReason}` : " 暂无待复核风险。"}
           </div>
         </Card>
-      </section>
+      </section> : null}
 
       <footer className="overview-footer">XJD Finance UI 财务提成分析系统 © 2026 All Rights Reserved.</footer>
 

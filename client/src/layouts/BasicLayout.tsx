@@ -13,7 +13,7 @@ import { useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSelectedMonth } from "../contexts/MonthContext";
-import { appPages, hasPermission } from "../config/access";
+import { pageLabelForRole, pagesForPermissions } from "../config/access";
 
 const { Sider, Content } = Layout;
 
@@ -39,9 +39,8 @@ export function BasicLayout() {
   const isMobile = !screens.md;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { user, logout } = useAuth();
-  const menuItems: MenuProps["items"] = appPages
-    .filter((page) => page.navigation && hasPermission(user?.auth?.permissions, page.permission))
-    .map((page) => ({ key: page.path, icon: <MenuMark />, label: page.label }));
+  const menuItems: MenuProps["items"] = pagesForPermissions(user?.auth?.permissions, user?.role)
+    .map((page) => ({ key: page.path, icon: <MenuMark />, label: pageLabelForRole(page, user?.role) }));
 
   const handleNavigate: MenuProps["onClick"] = ({ key }) => {
     navigate(key);

@@ -111,6 +111,7 @@ function serviceCondition(row: ServiceRecord) {
 
 export default function ServiceConfirm() {
   const { user } = useAuth();
+  const isSalesAccount = user?.role === "sales";
   const canApprove = Boolean(user?.auth?.permissions.includes("confirmation:approve"));
   const [rows, setRows] = useState<ServiceRecord[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -347,10 +348,12 @@ export default function ServiceConfirm() {
 
       <Card
         className="service-confirm-card"
-        title="注册/证书/店铺服务主管确认"
+        title={isSalesAccount ? "我的注册/证书/店铺服务提成" : "注册/证书/店铺服务主管确认"}
         extra={(
           <Space size={10} wrap>
-            <Tag bordered={false} className="service-policy-tag">按图一红框规则，可手动修改比例</Tag>
+            <Tag bordered={false} className="service-policy-tag">
+              {isSalesAccount ? "主管确认后计入本人综合薪资确认单" : "按图一红框规则，可手动修改比例"}
+            </Tag>
             {canApprove ? <Button onClick={handleGenerateServiceDocuments}>生成注册业务确认单</Button> : null}
             <Button onClick={handleViewSignatureStatus}>查看签名状态</Button>
           </Space>

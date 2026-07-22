@@ -26,6 +26,10 @@ type UserInput = {
   password: string;
 };
 
+type StaffAccountRole = "sales" | "operator";
+
+const ignoredStaffNames = new Set(["", "-", "未分配", "待主管确认", "未知", "无"]);
+
 const legacyDefaultUsers: UserInput[] = [
   { username: "admin", displayName: "系统管理员", role: "admin", password: "admin12345" },
   { username: "finance", displayName: "财务", role: "finance", password: "finance123" },
@@ -65,6 +69,15 @@ function validatePassword(password: string) {
   }
 }
 
+function normalizedStaffName(value: string | null | undefined) {
+  const name = String(value ?? "").trim();
+  return ignoredStaffNames.has(name) ? "" : name;
+}
+
+function generatedInitialPassword() {
+  return `Xjd#${crypto.randomBytes(5).toString("hex")}`;
+}
+
 function publicUser(user: AppUser) {
   const role = resolveRole(user.role);
   return {
@@ -78,6 +91,17 @@ function publicUser(user: AppUser) {
     passwordChangedAt: user.passwordChangedAt?.toISOString() ?? null,
     dingtalkUserId: user.dingtalkUserId,
     auth: authContext(role)
+  };
+}
+
+function staffAccountSummary(user: AppUser) {
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    role: resolveRole(user.role),
+    isActive: user.isActive,
+    mustChangePassword: user.mustChangePassword
   };
 }
 
@@ -196,6 +220,107 @@ export const authService = {
     await ensureBootstrapUsers();
     const users = await prisma.appUser.findMany({ orderBy: [{ role: "asc" }, { username: "asc" }] });
     return users.map(publicUser);
+  },
+
+  async syncStaffUsers(monthInput: string, operator: string) {
+    const month = String(monthInput ?? "").trim();
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      throw new AppError(400, "INVALID_MONTH", "请选择需要同步员工账号的有效月份。");
+    }
+
+    const activeBatch = await prisma.importBatch.findFirst({
+      where: { month, status: "active" },
+      orderBy: { id: "desc" },
+      select: { id: true, batchNo: true, fileName: true }
+    });
+    if (!activeBatch) {
+      throw new AppError(409, "ACTIVE_IMPORT_REQUIRED", `${month} 没有当前有效导入批次，不能同步员工账号。`);
+    }
+
+    const orders = await prisma.financeOrder.findMany({
+      where: { month, importBatchId: activeBatch.id },
+      select: { salespersonName: true, customerServiceName: true }
+    });
+    const desired = [
+      ...Array.from(new Set(orders.map((row) => normalizedStaffName(row.salespersonName)).filter(Boolean)))
+        .sort((left, right) => left.localeCompare(right, "zh-Hans-CN"))
+        .map((displayName) => ({ displayName, role: "sales" as StaffAccountRole })),
+      ...Array.from(new Set(orders.map((row) => normalizedStaffName(row.customerServiceName)).filter(Boolean)))
+        .sort((left, right) => left.localeCompare(right, "zh-Hans-CN"))
+        .map((displayName) => ({ displayName, role: "operator" as StaffAccountRole }))
+    ];
+    if (!desired.length) {
+      throw new AppError(409, "NO_STAFF_IN_IMPORT", `${month} 的有效导入批次中没有销售代表或操作员姓名。`);
+    }
+
+    const users = await prisma.appUser.findMany({ orderBy: { id: "asc" } });
+    const usernames = new Set(users.map((user) => user.username));
+    const nextUsername = (role: StaffAccountRole) => {
+      for (let index = 1; index <= 9999; index += 1) {
+        const candidate = `${role}${String(index).padStart(3, "0")}`;
+        if (!usernames.has(candidate)) {
+          usernames.add(candidate);
+          return candidate;
+        }
+      }
+      throw new AppError(409, "STAFF_USERNAME_EXHAUSTED", `${role} 员工账号编号已用尽。`);
+    };
+
+    const created: Array<ReturnType<typeof staffAccountSummary> & { initialPassword: string }> = [];
+    const existing: Array<ReturnType<typeof staffAccountSummary>> = [];
+    for (const staff of desired) {
+      const matched = users.find((user) => user.role === staff.role && user.displayName.trim() === staff.displayName);
+      if (matched) {
+        existing.push(staffAccountSummary(matched));
+        continue;
+      }
+      const username = nextUsername(staff.role);
+      const initialPassword = generatedInitialPassword();
+      const password = makePassword(initialPassword);
+      const user = await prisma.appUser.create({
+        data: {
+          username,
+          displayName: staff.displayName,
+          role: staff.role,
+          passwordHash: password.hash,
+          passwordSalt: password.salt,
+          mustChangePassword: true,
+          isActive: true
+        }
+      });
+      users.push(user);
+      created.push({ ...staffAccountSummary(user), initialPassword });
+    }
+
+    const placeholders = users.filter((user) => (
+      user.isActive
+      && ((user.username === "sales" && user.role === "sales")
+        || (user.username === "operator" && user.role === "operator"))
+    ));
+    if (placeholders.length) {
+      await prisma.appUser.updateMany({
+        where: { id: { in: placeholders.map((user) => user.id) } },
+        data: { isActive: false }
+      });
+    }
+
+    await authLog("sync_staff_users", month, {
+      operator,
+      importBatchNo: activeBatch.batchNo,
+      sourceFileName: activeBatch.fileName,
+      created: created.map((user) => ({ username: user.username, displayName: user.displayName, role: user.role })),
+      existingCount: existing.length,
+      disabledPlaceholderAccounts: placeholders.map((user) => user.username)
+    });
+
+    return {
+      month,
+      importBatchNo: activeBatch.batchNo,
+      sourceFileName: activeBatch.fileName,
+      created,
+      existing,
+      disabledPlaceholderAccounts: placeholders.map((user) => user.username)
+    };
   },
 
   async createUser(input: UserInput & { dingtalkUserId?: string }, operator: string) {

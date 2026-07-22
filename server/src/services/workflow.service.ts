@@ -6,7 +6,7 @@ import { analyticsService } from "./analytics.service.js";
 import { env } from "../config/env.js";
 import { renderConfirmationPdf, renderConfirmationPng } from "./confirmation-renderer.js";
 import { resolveMonth } from "../utils/month.js";
-import { allFinanceAccess, ownerAccessWhere } from "../security/finance-access.js";
+import { allFinanceAccess, ownerAccessWhere, scopedFinanceOrderWhere } from "../security/finance-access.js";
 import type { FinanceAccessScope } from "../security/finance-access.js";
 import { AppError } from "../errors/app-error.js";
 import { assertMonthOpen } from "./month-lock.service.js";
@@ -100,6 +100,34 @@ function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], s
     XLSX.utils.json_to_sheet(rows.length ? rows : [{ note: "no data" }]),
     sheetName.slice(0, 31)
   );
+}
+
+async function confirmationDocumentAccessWhere(month: string, documentType: DocumentType | undefined, scope: FinanceAccessScope) {
+  if (scope.mode !== "self" || scope.field !== "salesperson") return ownerAccessWhere(scope);
+  if (documentType && documentType !== "service_commission") return ownerAccessWhere(scope);
+
+  const serviceOrders = await prisma.financeOrder.findMany({
+    where: scopedFinanceOrderWhere({ month, isServiceBusiness: true }, scope),
+    select: { orderNo: true }
+  });
+  const orderNos = serviceOrders.map((row) => row.orderNo);
+  if (documentType === "service_commission") {
+    return orderNos.length ? { ownerName: { in: orderNos } } : { id: -1 };
+  }
+  return orderNos.length
+    ? { OR: [{ ownerName: { in: scope.names } }, { documentType: "service_commission", ownerName: { in: orderNos } }] }
+    : ownerAccessWhere(scope);
+}
+
+async function canAccessConfirmationDocument(document: { month: string; documentType: string; ownerName: string }, scope: FinanceAccessScope) {
+  if (scope.mode === "all") return true;
+  if (scope.mode === "none") return false;
+  if (scope.names.includes(document.ownerName)) return true;
+  if (scope.field !== "salesperson" || document.documentType !== "service_commission") return false;
+  return Boolean(await prisma.financeOrder.findFirst({
+    where: scopedFinanceOrderWhere({ month: document.month, orderNo: document.ownerName, isServiceBusiness: true }, scope),
+    select: { id: true }
+  }));
 }
 
 type NotificationChannel = "dingtalk_direct" | "dingtalk_webhook" | "wecom_webhook";
@@ -456,12 +484,14 @@ async function writeConfirmationDocument(input: {
 
 export const workflowService = {
   async listDocuments(month?: string, documentType?: DocumentType, includeHistory = false, scope: FinanceAccessScope = allFinanceAccess) {
+    const selectedMonth = monthOrDefault(month);
+    const accessWhere = await confirmationDocumentAccessWhere(selectedMonth, documentType, scope);
     const documents = await prisma.confirmationDocument.findMany({
       where: {
-        month: monthOrDefault(month),
+        month: selectedMonth,
         ...(documentType ? { documentType } : {}),
         ...(includeHistory ? {} : { documentStatus: { not: "voided" } }),
-        ...ownerAccessWhere(scope)
+        ...accessWhere
       },
       orderBy: [{ documentType: "asc" }, { ownerName: "asc" }, { version: "desc" }, { id: "desc" }]
     });
@@ -1390,7 +1420,7 @@ startxref
 
   async downloadConfirmationDocument(id: number, format: "pdf" | "png" = "pdf", scope: FinanceAccessScope = allFinanceAccess) {
     const document = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id } });
-    if (scope.mode === "none" || (scope.mode === "self" && !scope.names.includes(document.ownerName))) {
+    if (!(await canAccessConfirmationDocument(document, scope))) {
       throw new AppError(403, "DOCUMENT_ACCESS_DENIED", "只能查看和下载本人的确认单。");
     }
 

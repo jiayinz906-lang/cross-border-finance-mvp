@@ -30,7 +30,7 @@ const expectedNavigation: Record<UserRole, string[]> = {
     "/customer-profit",
     "/settings"
   ],
-  operator: ["/dashboard", "/signature-confirm", "/operator-performance", "/settings"],
+  operator: ["/signature-confirm", "/operator-performance", "/settings"],
   restricted: []
 };
 
@@ -55,7 +55,7 @@ function sorted(values: string[]) {
 
 for (const [role, permissions] of Object.entries(rolePermissions) as Array<[UserRole, Permission[]]>) {
   assert.deepEqual(
-    sorted(pagesForPermissions(permissions).map((page) => page.path)),
+    sorted(pagesForPermissions(permissions, role).map((page) => page.path)),
     sorted(expectedNavigation[role]),
     `${role} navigation does not match the approved interface matrix`
   );

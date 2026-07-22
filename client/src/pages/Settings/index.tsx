@@ -11,7 +11,16 @@ import {
 } from "../../api/finance.api";
 import { downloadAuthenticatedFile } from "../../api/download";
 import { getOperationsStatus, getReadiness } from "../../api/health.api";
-import { changePassword, createUser, getNotificationStatus, getUsers, updateUser, type ManagedUser } from "../../api/auth.api";
+import {
+  changePassword,
+  createUser,
+  getNotificationStatus,
+  getUsers,
+  syncStaffUsers,
+  updateUser,
+  type ManagedUser,
+  type StaffAccountSyncResult
+} from "../../api/auth.api";
 import {
   getActionLogs,
   getMonthCloseStatus,
@@ -37,7 +46,8 @@ import {
 } from "../../utils/auditLog";
 import { formatMoney } from "../../utils/formatMoney";
 import { useAuth } from "../../contexts/AuthContext";
-import { pagesForPermissions, roleDataScopeLabels } from "../../config/access";
+import { pageLabelForRole, pagesForPermissions, roleDataScopeLabels } from "../../config/access";
+import { copyText } from "../../utils/copyText";
 
 type RuleDraft = Record<string, { valueJson: string; description: string }>;
 
@@ -120,6 +130,8 @@ export default function Settings() {
   const [accountSaving, setAccountSaving] = useState(false);
   const [notificationConfigured, setNotificationConfigured] = useState<boolean | null>(null);
   const [notificationProvider, setNotificationProvider] = useState<string | null>(null);
+  const [staffSyncLoading, setStaffSyncLoading] = useState(false);
+  const [staffSyncResult, setStaffSyncResult] = useState<StaffAccountSyncResult | null>(null);
 
   const downloadBackup = async (scope: "month" | "all") => {
     setBackupLoading(scope);
@@ -361,6 +373,24 @@ export default function Settings() {
       message.error(error?.response?.data?.message ?? "创建账号失败");
     } finally {
       setAccountSaving(false);
+    }
+  };
+
+  const syncImportedStaffAccounts = async () => {
+    setStaffSyncLoading(true);
+    try {
+      const response = await syncStaffUsers(selectedMonth);
+      setStaffSyncResult(response.data);
+      await loadManagedUsers();
+      if (response.data.created.length) {
+        message.success(`已按 ${selectedMonth} 有效导入批次创建 ${response.data.created.length} 个个人账号`);
+      } else {
+        message.info(`${selectedMonth} 的销售与操作员个人账号均已存在`);
+      }
+    } catch (error: any) {
+      message.error(error?.response?.data?.message ?? "同步员工个人账号失败");
+    } finally {
+      setStaffSyncLoading(false);
     }
   };
 
@@ -662,7 +692,7 @@ export default function Settings() {
             <div>
               <Typography.Text strong>可使用界面</Typography.Text>
               <Space wrap style={{ marginTop: 8, display: "flex" }}>
-                {pagesForPermissions(effectivePermissions).map((page) => <Tag color="blue" key={page.path}>{page.label}</Tag>)}
+                {pagesForPermissions(effectivePermissions, currentAccount.user?.role).map((page) => <Tag color="blue" key={page.path}>{pageLabelForRole(page, currentAccount.user?.role)}</Tag>)}
               </Space>
             </div>
             <div>
@@ -679,7 +709,11 @@ export default function Settings() {
 
         <Card
           title="账号与通知管理"
-          extra={<Space><Button onClick={() => setPasswordModalOpen(true)}>修改我的密码</Button>{canManageUsers ? <Button type="primary" onClick={() => setUserModalOpen(true)}>新建账号</Button> : null}</Space>}
+          extra={<Space wrap>
+            <Button onClick={() => setPasswordModalOpen(true)}>修改我的密码</Button>
+            {canManageUsers ? <Button loading={staffSyncLoading} onClick={syncImportedStaffAccounts}>同步导入员工账号</Button> : null}
+            {canManageUsers ? <Button type="primary" onClick={() => setUserModalOpen(true)}>新建账号</Button> : null}
+          </Space>}
         >
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             {currentAccount.user?.mustChangePassword ? <Alert type="warning" showIcon message="首次登录请先修改密码" description="为保护财务数据，请将初始密码改为至少 10 位的新密码。" /> : null}
@@ -728,7 +762,7 @@ export default function Settings() {
                 { title: "数据范围", dataIndex: "role", width: 250, render: (value) => roleDataScopeLabels[value] ?? "按账号角色限制" },
                 {
                   title: "授权界面",
-                  render: (_, row) => <Space wrap>{pagesForPermissions(row.permissions).map((page) => <Tag key={page.path}>{page.label}</Tag>)}</Space>
+                  render: (_, row) => <Space wrap>{pagesForPermissions(row.permissions, row.role).map((page) => <Tag key={page.path}>{pageLabelForRole(page, row.role)}</Tag>)}</Space>
                 },
                 {
                   title: "写操作",
@@ -1121,6 +1155,43 @@ export default function Settings() {
       >
         <Typography.Paragraph type="secondary">用于将个人确认单链接发送至该员工的钉钉单聊；留空并保存即可移除映射。</Typography.Paragraph>
         <Input value={dingtalkUserIdDraft} onChange={(event) => setDingtalkUserIdDraft(event.target.value)} placeholder="钉钉用户 ID" autoFocus />
+      </Modal>
+      <Modal
+        title={`${staffSyncResult?.month ?? selectedMonth} 员工个人账号同步结果`}
+        open={Boolean(staffSyncResult)}
+        width={920}
+        onCancel={() => setStaffSyncResult(null)}
+        footer={<Space>
+          {staffSyncResult?.created.length ? <Button onClick={async () => {
+            const text = staffSyncResult.created.map((row) => `${roleDirectory.find((item) => item.role === row.role)?.label ?? row.role}\t${row.displayName}\t${row.username}\t${row.initialPassword}`).join("\n");
+            if (await copyText(text)) message.success("本次新建账号和初始密码已复制");
+          }}>复制本次新建账号</Button> : null}
+          <Button type="primary" onClick={() => setStaffSyncResult(null)}>关闭</Button>
+        </Space>}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Alert
+            type={staffSyncResult?.created.length ? "success" : "info"}
+            showIcon
+            message={staffSyncResult?.created.length ? `新建 ${staffSyncResult.created.length} 个个人账号` : "本月员工个人账号均已存在"}
+            description={`来源批次：${staffSyncResult?.importBatchNo ?? "-"}；文件：${staffSyncResult?.sourceFileName ?? "-"}。新账号首次登录必须修改密码，初始密码只在本次结果中显示。`}
+          />
+          <Table
+            rowKey={(row) => `${row.role}-${row.username}`}
+            size="small"
+            pagination={false}
+            dataSource={staffSyncResult?.created ?? []}
+            locale={{ emptyText: "没有新建账号" }}
+            columns={[
+              { title: "身份", dataIndex: "role", width: 110, render: (value) => roleDirectory.find((item) => item.role === value)?.label ?? value },
+              { title: "姓名", dataIndex: "displayName", width: 120 },
+              { title: "登录账号", dataIndex: "username", width: 150 },
+              { title: "初始密码", dataIndex: "initialPassword", render: (value) => <Typography.Text copyable code>{value}</Typography.Text> },
+              { title: "首次登录", render: () => <Tag color="gold">必须修改密码</Tag> }
+            ]}
+          />
+          <Typography.Text type="secondary">已存在账号：{staffSyncResult?.existing.length ?? 0} 个；已停用通用占位账号：{staffSyncResult?.disabledPlaceholderAccounts.join("、") || "无"}。</Typography.Text>
+        </Space>
       </Modal>
     </>
   );

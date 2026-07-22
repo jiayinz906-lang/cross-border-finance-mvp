@@ -19,19 +19,22 @@ export type AppPageAccess = {
   label: string;
   permission: PagePermission;
   navigation?: boolean;
+  roles?: string[];
 };
 
+const managerRoles = ["admin", "finance", "supervisor", "executive"];
+
 export const appPages: AppPageAccess[] = [
-  { path: "/dashboard", label: "经营总览", permission: "dashboard:read", navigation: true },
+  { path: "/dashboard", label: "经营总览", permission: "dashboard:read", navigation: true, roles: [...managerRoles, "sales"] },
   { path: "/raw-entry", label: "原始数据录入", permission: "ledger:read", navigation: true },
   { path: "/finance-ledger", label: "原始台账", permission: "ledger:read" },
   { path: "/finance-operations", label: "财务工作台", permission: "operations:read", navigation: true },
-  { path: "/profit-analysis", label: "业务利润", permission: "profit:read", navigation: true },
-  { path: "/commission", label: "物流提成", permission: "commission:read", navigation: true },
-  { path: "/service-confirm", label: "注册提成", permission: "service:read", navigation: true },
+  { path: "/profit-analysis", label: "业务利润", permission: "profit:read", navigation: true, roles: [...managerRoles, "sales"] },
+  { path: "/commission", label: "物流提成", permission: "commission:read", navigation: true, roles: [...managerRoles, "sales"] },
+  { path: "/service-confirm", label: "注册提成", permission: "service:read", navigation: true, roles: [...managerRoles, "sales"] },
   { path: "/signature-confirm", label: "电子签名确认", permission: "confirmation:read", navigation: true },
-  { path: "/operator-performance", label: "操作员绩效", permission: "performance:read", navigation: true },
-  { path: "/customer-profit", label: "客户利润分析", permission: "customer-profit:read", navigation: true },
+  { path: "/operator-performance", label: "操作员绩效", permission: "performance:read", navigation: true, roles: [...managerRoles, "operator"] },
+  { path: "/customer-profit", label: "客户利润分析", permission: "customer-profit:read", navigation: true, roles: [...managerRoles, "sales"] },
   { path: "/risks", label: "风险复查", permission: "risk:read", navigation: true },
   { path: "/receivables", label: "应收管理", permission: "receivables:read", navigation: true },
   { path: "/payables", label: "上游应付", permission: "payables:read", navigation: true },
@@ -46,7 +49,7 @@ export const roleDataScopeLabels: Record<string, string> = {
   supervisor: "全部业务数据",
   executive: "全部业务数据（只读）",
   sales: "仅销售代表为本人的订单与确认单",
-  operator: "仅客服代表为本人的订单与确认单",
+  operator: "仅操作员（客服代表）为本人的绩效与确认单",
   restricted: "无业务数据"
 };
 
@@ -54,10 +57,46 @@ export function hasPermission(permissions: string[] | undefined, permission: str
   return Boolean(permissions?.includes(permission));
 }
 
-export function firstAllowedPath(permissions: string[] | undefined) {
-  return appPages.find((page) => page.navigation && hasPermission(permissions, page.permission))?.path ?? "/settings";
+export function pageLabelForRole(page: AppPageAccess, role?: string) {
+  if (role === "sales") {
+    const labels: Record<string, string> = {
+      "/dashboard": "我的经营",
+      "/profit-analysis": "我的利润",
+      "/commission": "我的物流提成",
+      "/service-confirm": "我的注册提成",
+      "/signature-confirm": "我的确认单",
+      "/customer-profit": "我的客户利润",
+      "/settings": "账号与安全"
+    };
+    return labels[page.path] ?? page.label;
+  }
+  if (role === "operator") {
+    const labels: Record<string, string> = {
+      "/operator-performance": "我的绩效",
+      "/signature-confirm": "我的确认单",
+      "/settings": "账号与安全"
+    };
+    return labels[page.path] ?? page.label;
+  }
+  return page.label;
 }
 
-export function pagesForPermissions(permissions: string[] | undefined) {
-  return appPages.filter((page) => page.navigation && hasPermission(permissions, page.permission));
+export function pagesForPermissions(permissions: string[] | undefined, role?: string) {
+  return appPages.filter((page) => (
+    page.navigation
+    && hasPermission(permissions, page.permission)
+    && (!page.roles || !role || page.roles.includes(role))
+  ));
+}
+
+export function firstAllowedPath(permissions: string[] | undefined, role?: string) {
+  const pages = pagesForPermissions(permissions, role);
+  const preferred = role === "operator" ? "/operator-performance" : role === "sales" ? "/dashboard" : "/dashboard";
+  return pages.find((page) => page.path === preferred)?.path ?? pages[0]?.path ?? "/settings";
+}
+
+export function isPathAllowed(path: string, permissions: string[] | undefined, role?: string) {
+  const page = appPages.find((item) => item.path === path);
+  if (!page) return false;
+  return hasPermission(permissions, page.permission) && (!page.roles || !role || page.roles.includes(role));
 }

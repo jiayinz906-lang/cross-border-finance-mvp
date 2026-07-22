@@ -45,6 +45,14 @@ export async function createUserController(req: Request, res: Response) {
   res.status(201).json(await authService.createUser(req.body ?? {}, operator?.displayName ?? operator?.username ?? "管理员"));
 }
 
+export async function syncStaffUsersController(req: Request, res: Response) {
+  const operator = currentUser(req);
+  res.json(await authService.syncStaffUsers(
+    String(req.body?.month ?? ""),
+    operator?.displayName ?? operator?.username ?? "管理员"
+  ));
+}
+
 export async function updateUserController(req: Request, res: Response) {
   const operator = currentUser(req);
   res.json(await authService.updateUser(Number(req.params.id), req.body ?? {}, operator?.displayName ?? operator?.username ?? "管理员", operator?.id));
