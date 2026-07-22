@@ -1,4 +1,4 @@
-﻿-- CreateTable
+-- CreateTable
 CREATE TABLE "AppUser" (
     "id" SERIAL NOT NULL,
     "username" TEXT NOT NULL,

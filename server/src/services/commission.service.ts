@@ -14,7 +14,19 @@ import { workflowService } from "./workflow.service.js";
 export const commissionService = {
   async listCommissions(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     const selectedMonth = month ?? (await financeRepository.getLatestSummary())?.month;
-    return commissionRepository.listCommissions(selectedMonth, scope);
+    const rows = await commissionRepository.listCommissions(selectedMonth, scope);
+    if (scope.mode === "all") return rows;
+    return rows.map(({ financeOrder, ...record }) => ({
+      ...record,
+      financeOrder: {
+        orderNo: financeOrder.orderNo,
+        customerOrderNo: financeOrder.customerOrderNo,
+        customerName: financeOrder.customerName,
+        adjustedReceivable: financeOrder.adjustedReceivable,
+        adjustedGrossProfitRate: financeOrder.adjustedGrossProfitRate,
+        needSupervisorConfirm: financeOrder.needSupervisorConfirm
+      }
+    }));
   },
   async updateCommissionRate(id: number, commissionRate: number, adjustReason: string | undefined, operator: string) {
     if (!Number.isFinite(commissionRate) || commissionRate < 0 || commissionRate > 1) {

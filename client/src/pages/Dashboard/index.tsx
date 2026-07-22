@@ -73,10 +73,10 @@ function MetricCard({ item }: { item: Kpi }) {
   );
 }
 
-function TrendPanel({ data }: { data: MonthlyTrend[] }) {
+function TrendPanel({ data, showPayable }: { data: MonthlyTrend[]; showPayable: boolean }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const months = data.length ? data : [];
-  const max = Math.max(...months.flatMap((item) => [item.receivable, item.payable, item.grossProfit]), 1);
+  const max = Math.max(...months.flatMap((item) => [item.receivable, item.grossProfit, ...(showPayable ? [item.payable ?? 0] : [])]), 1);
   const width = 650;
   const height = 280;
   const xAt = (index: number) => 42 + (index * (width - 78)) / Math.max(months.length - 1, 1);
@@ -94,7 +94,7 @@ function TrendPanel({ data }: { data: MonthlyTrend[] }) {
     <Card className="overview-card" title="月度经营趋势图（近12个月）">
       <div className="overview-chart-legend">
         <span><i className="legend-blue" />总应收（元）</span>
-        <span><i className="legend-green" />总应付（元）</span>
+        {showPayable ? <span><i className="legend-green" />总应付（元）</span> : null}
         <span><i className="legend-orange" />调整后毛利（元）</span>
         <span><i className="legend-purple" />毛利率（%）</span>
       </div>
@@ -109,7 +109,7 @@ function TrendPanel({ data }: { data: MonthlyTrend[] }) {
           })() : null}
           {months.map((item, index) => (
             <g key={item.month} className={activeIndex !== null && activeIndex !== index ? "overview-month-dimmed" : ""}>
-              <rect x={xAt(index) - 7} y={yAt(item.payable)} width="14" height={height - 40 - yAt(item.payable)} rx="3" className={activeIndex === index ? "overview-payable-bar is-active" : "overview-payable-bar"} />
+              {showPayable ? <rect x={xAt(index) - 7} y={yAt(item.payable ?? 0)} width="14" height={height - 40 - yAt(item.payable ?? 0)} rx="3" className={activeIndex === index ? "overview-payable-bar is-active" : "overview-payable-bar"} /> : null}
               <text x={xAt(index)} y={height - 14} textAnchor="middle" className={activeIndex === index ? "overview-axis is-active" : "overview-axis"}>{item.month.slice(5)}</text>
             </g>
           ))}
@@ -157,7 +157,7 @@ function TrendPanel({ data }: { data: MonthlyTrend[] }) {
           >
             <strong>{activeMonth.month}</strong>
             <span><i className="legend-blue" />总应收<b>{toMoney(activeMonth.receivable)}</b></span>
-            <span><i className="legend-green" />总应付<b>{toMoney(activeMonth.payable)}</b></span>
+            {showPayable ? <span><i className="legend-green" />总应付<b>{toMoney(activeMonth.payable)}</b></span> : null}
             <span><i className="legend-orange" />调整后毛利<b>{toMoney(activeMonth.grossProfit)}</b></span>
             <span><i className="legend-purple" />毛利率<b>{formatPercent(activeMonth.grossProfitRate)}</b></span>
           </div>
@@ -344,7 +344,13 @@ export default function Dashboard() {
   const unassignedSupplierPayable = allSupplierRows.find((item) => item.supplierName === "未指定供应商")?.payable ?? 0;
   const averageLogisticsPayable = supplierPayableTotal / Math.max(data?.logisticsOrderCount ?? data?.orderCount ?? 1, 1);
 
-  const kpis: Kpi[] = [
+  const kpis: Kpi[] = isSalesAccount ? [
+    { title: "本人订单应收", value: toMoney(totalReceivable), color: "#4c7ee8", icon: "¥", mom: pct(data?.comparison?.momReceivable), yoy: pct(data?.comparison?.yoyReceivable) },
+    { title: "本人已核算毛利", value: toMoney(totalProfit), color: "#f28c2d", icon: "↗", mom: pct(data?.comparison?.momGrossProfit), yoy: pct(data?.comparison?.yoyGrossProfit) },
+    { title: "本人物流毛利率", value: formatPercent(grossRate), color: "#8a5ce5", icon: "%", mom: pctPoint(data?.comparison?.momGrossProfitRate), yoy: pctPoint(data?.comparison?.yoyGrossProfitRate) },
+    { title: "本人票数", value: `${data?.orderCount ?? 0}票`, color: "#3d78ed", icon: "▤", mom: pct(data?.comparison?.momOrderCount), yoy: pct(data?.comparison?.yoyOrderCount) },
+    { title: "本人物流提成", value: toMoney(logisticsCommission), color: "#4e76ee", icon: "♟", mom: pct(data?.comparison?.momCommission), yoy: pct(data?.comparison?.yoyCommission) }
+  ] : [
     { title: "总应收", value: toMoney(totalReceivable), color: "#4c7ee8", icon: "¥", mom: pct(data?.comparison?.momReceivable), yoy: pct(data?.comparison?.yoyReceivable) },
     { title: "总应付", value: toMoney(totalPayable), color: "#37b99d", icon: "□", mom: pct(data?.comparison?.momPayable), yoy: pct(data?.comparison?.yoyPayable) },
     { title: "调整后毛利", value: toMoney(totalProfit), color: "#f28c2d", icon: "↗", mom: pct(data?.comparison?.momGrossProfit), yoy: pct(data?.comparison?.yoyGrossProfit) },
@@ -405,7 +411,7 @@ export default function Dashboard() {
       </section>
 
       <section className="overview-main-grid">
-        <TrendPanel data={trend} />
+        <TrendPanel data={trend} showPayable={!isSalesAccount && data.visibility?.upstreamCosts !== false} />
         <Card className="overview-card" title="业务类型利润同比环比变化" extra={hasPermission(permissions, "profit:read") ? <Button type="link" onClick={() => navigate("/profit-analysis")}>查看更多</Button> : null}>
           <Table rowKey="businessType" columns={businessColumns} dataSource={businessRows.slice(0, 6)} pagination={false} size="small" />
         </Card>
@@ -415,7 +421,7 @@ export default function Dashboard() {
         <Card className="overview-card" title={isSalesAccount ? "我的毛利与提成（本月）" : "业务员毛利排行（本月）"} extra={hasPermission(permissions, "commission:read") ? <Button type="link" onClick={() => navigate("/commission")}>查看更多</Button> : null}>
           <Table rowKey="rank" columns={rankingColumns} dataSource={rankingRows} pagination={false} size="small" />
         </Card>
-        <Card className="overview-card" title="客户利润概览" extra={hasPermission(permissions, "customer-profit:read") ? <Button type="link" onClick={() => navigate("/customer-profit")}>查看更多</Button> : null}>
+        <Card className="overview-card" title={isSalesAccount ? "我的客户利润概览" : "客户利润概览"} extra={hasPermission(permissions, "customer-profit:read") ? <Button type="link" onClick={() => navigate("/customer-profit")}>查看更多</Button> : null}>
           <div className="customer-summary">
             <CustomerDonut topProfit={topCustomerProfit} otherProfit={otherCustomerProfit} />
             <div className="customer-side-metrics">

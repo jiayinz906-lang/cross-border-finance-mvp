@@ -23,14 +23,21 @@ function addTo(map: Map<string, Bucket>, key: string, receivable: number, payabl
   map.set(key, item);
 }
 
-function values(map: Map<string, Bucket>) {
+function values(map: Map<string, Bucket>, showUpstreamCosts: boolean) {
   return Array.from(map.values())
-    .map((item) => ({ ...item, grossProfitRate: rate(item.grossProfit, item.receivable) }))
+    .map((item) => {
+      const row = { ...item, grossProfitRate: rate(item.grossProfit, item.receivable) };
+      if (showUpstreamCosts) return row;
+      const { payable, ...visible } = row;
+      void payable;
+      return visible;
+    })
     .sort((a, b) => b.grossProfit - a.grossProfit);
 }
 
 export const profitService = {
   async getAnalysis(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
+    const showUpstreamCosts = scope.mode === "all";
     const selectedMonth = month ?? (await financeRepository.getLatestSummary())?.month;
     const orders = await financeRepository.listLogisticsOrders(selectedMonth, scope);
     const byBusinessType = new Map<string, Bucket>();
@@ -49,17 +56,18 @@ export const profitService = {
 
     return {
       scope: "logistics_only",
+      visibility: { upstreamCosts: showUpstreamCosts },
       note: "利润分析仅统计物流业务，注册、证书、店铺租赁、公司注销等服务类业务已排除。",
       totals: {
         orderCount: orders.length,
         totalReceivable,
-        totalPayable,
+        ...(showUpstreamCosts ? { totalPayable } : {}),
         totalGrossProfit,
         grossProfitRate: rate(totalGrossProfit, totalReceivable)
       },
-      byBusinessType: values(byBusinessType),
-      bySalesperson: values(bySalesperson),
-      byCustomer: values(byCustomer),
+      byBusinessType: values(byBusinessType, showUpstreamCosts),
+      bySalesperson: values(bySalesperson, showUpstreamCosts),
+      byCustomer: values(byCustomer, showUpstreamCosts),
       rows: orders.map((order) => ({
         id: order.id,
         orderNo: order.orderNo,
@@ -68,10 +76,10 @@ export const profitService = {
         salespersonName: order.salespersonName,
         businessType: order.businessType,
         adjustedReceivable: order.adjustedReceivable,
-        adjustedPayable: order.adjustedPayable,
+        ...(showUpstreamCosts ? { adjustedPayable: order.adjustedPayable } : {}),
         adjustedGrossProfit: order.adjustedGrossProfit,
         adjustedGrossProfitRate: order.adjustedGrossProfitRate,
-        calculationNote: order.calculationNote
+        ...(showUpstreamCosts ? { calculationNote: order.calculationNote } : {})
       }))
     };
   }

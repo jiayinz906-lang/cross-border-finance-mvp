@@ -3,6 +3,7 @@ import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCustomerProfitAnalysis } from "../../api/analytics.api";
 import { getFinanceDashboard } from "../../api/finance.api";
+import { useAuth } from "../../contexts/AuthContext";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
@@ -19,7 +20,7 @@ type MetricCard = {
 type CustomerRow = {
   customerName: string;
   receivable: number;
-  payable: number;
+  payable?: number;
   grossProfit: number;
   grossProfitRate: number | null;
   orderCount: number;
@@ -38,6 +39,7 @@ type MatrixRow = {
 };
 
 type CustomerAnalysis = {
+  visibility?: { upstreamCosts: boolean };
   rows: CustomerRow[];
   receivableRank: CustomerRow[];
   profitRank: CustomerRow[];
@@ -60,7 +62,7 @@ function compactCustomerRows(rows: CustomerRow[], sortKey: "receivable" | "gross
   const other = otherRows.reduce<CustomerRow>((sum, row) => ({
     customerName: "其余客户",
     receivable: sum.receivable + row.receivable,
-    payable: sum.payable + row.payable,
+    payable: (sum.payable ?? 0) + (row.payable ?? 0),
     grossProfit: sum.grossProfit + row.grossProfit,
     grossProfitRate: null,
     orderCount: sum.orderCount + row.orderCount
@@ -145,11 +147,11 @@ function DonutChart({ title, items }: { title: string; items: DonutItem[] }) {
   );
 }
 
-function makeMatrixRows(customers: CustomerRow[], mode: "receivable" | "profit"): MatrixRow[] {
+function makeMatrixRows(customers: CustomerRow[], mode: "receivable" | "profit", showPayable: boolean): MatrixRow[] {
   if (mode === "receivable") {
     return [
       { key: "receivable", label: "总应收", values: customers.map((item) => toPlainMoney(item.receivable)) },
-      { key: "payable", label: "总应付", values: customers.map((item) => toPlainMoney(item.payable)) },
+      ...(showPayable ? [{ key: "payable", label: "总应付", values: customers.map((item) => toPlainMoney(item.payable)) }] : []),
       { key: "profit", label: "总毛利", values: customers.map((item) => toPlainMoney(item.grossProfit)) },
       { key: "rate", label: "毛利率", values: customers.map((item) => pctText(item.grossProfitRate)) }
     ];
@@ -159,7 +161,7 @@ function makeMatrixRows(customers: CustomerRow[], mode: "receivable" | "profit")
     { key: "profit", label: "总毛利", values: customers.map((item) => toPlainMoney(item.grossProfit)) },
     { key: "rate", label: "毛利率", values: customers.map((item) => pctText(item.grossProfitRate)) },
     { key: "receivable", label: "总应收", values: customers.map((item) => toPlainMoney(item.receivable)) },
-    { key: "payable", label: "总应付", values: customers.map((item) => toPlainMoney(item.payable)) }
+    ...(showPayable ? [{ key: "payable", label: "总应付", values: customers.map((item) => toPlainMoney(item.payable)) }] : [])
   ];
 }
 
@@ -205,6 +207,8 @@ function CustomerMatrix({ title, tag, customers, rows }: { title: string; tag: s
 }
 
 export default function CustomerProfit() {
+  const { user } = useAuth();
+  const isSalesAccount = user?.role === "sales" || user?.role === "sales_operator";
   const { selectedMonth } = useSelectedMonth();
   const [analysis, setAnalysis] = useState<CustomerAnalysis | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -232,13 +236,15 @@ export default function CustomerProfit() {
 
   const summary = dashboard?.summary;
   const customerRows = analysis?.rows ?? [];
+  const showUpstreamCosts = !isSalesAccount && analysis?.visibility?.upstreamCosts !== false;
   const logisticsReceivable = customerRows.reduce((sum, item) => sum + item.receivable, 0);
-  const logisticsPayable = customerRows.reduce((sum, item) => sum + item.payable, 0);
+  const logisticsPayable = customerRows.reduce((sum, item) => sum + (item.payable ?? 0), 0);
   const logisticsProfit = customerRows.reduce((sum, item) => sum + item.grossProfit, 0);
   const logisticsGrossRate = logisticsReceivable > 0 ? logisticsProfit / logisticsReceivable : null;
   const logisticsOrderCount = customerRows.reduce((sum, item) => sum + item.orderCount, 0);
 
-  const metrics: MetricCard[] = useMemo(() => [
+  const metrics: MetricCard[] = useMemo(() => {
+    const rows: MetricCard[] = [
     {
       title: "总应收",
       value: toPlainMoney(logisticsReceivable),
@@ -265,7 +271,7 @@ export default function CustomerProfit() {
       value: `${summary?.riskOrderCount ?? 0}票`,
       accent: "red",
       tag: "需复核",
-      note: "汇率、负毛利、缺应付"
+      note: isSalesAccount ? "低毛利、异常毛利等需关注订单" : "汇率、负毛利、缺应付"
     },
     {
       title: "总票数",
@@ -273,15 +279,17 @@ export default function CustomerProfit() {
       accent: "blue",
       tag: "物流票",
       note: "服务类订单已排除"
-    },
-    {
+    }
+    ];
+    if (showUpstreamCosts) rows.push({
       title: "调整后应付",
       value: toPlainMoney(logisticsPayable),
       accent: "green",
       tag: "仅物流",
       note: "不含注册/证书/店铺等服务类应付"
-    }
-  ], [logisticsGrossRate, logisticsOrderCount, logisticsPayable, logisticsProfit, logisticsReceivable, summary]);
+    });
+    return rows;
+  }, [logisticsGrossRate, logisticsOrderCount, logisticsPayable, logisticsProfit, logisticsReceivable, showUpstreamCosts, summary]);
 
   const receivableCustomers = analysis?.receivableRank ?? compactCustomerRows(customerRows, "receivable");
   const profitCustomers = analysis?.profitRank ?? compactCustomerRows(customerRows, "grossProfit");
@@ -305,11 +313,11 @@ export default function CustomerProfit() {
     <div className="customer-board">
       <header className="profit-hero">
         <div>
-          <h1>{selectedMonth} 跨境物流财务管理</h1>
-          <p>基于 6月数据 Excel 汇总，统一汇率、倒推成本、物流提成和风险复核口径。</p>
+          <h1>{isSalesAccount ? `${selectedMonth} 我的客户利润` : `${selectedMonth} 跨境物流财务管理`}</h1>
+          <p>{isSalesAccount ? "仅显示本人名下客户的应收、已核算毛利、毛利率与订单数量。" : "基于当前有效导入批次汇总，统一汇率、倒推成本、物流提成和风险复核口径。"}</p>
         </div>
         <Space size={12} wrap>
-          <div className="profit-source">数据源：<b>6月数据 Excel</b></div>
+          <div className="profit-source">数据源：<b>{selectedMonth} 数据库</b></div>
           <Button type="primary" className="profit-month-btn">{selectedMonth}</Button>
           <Button className="profit-print-btn" onClick={() => window.print()}>打印 / 导出 PDF</Button>
           <Button onClick={loadData}>刷新</Button>
@@ -335,12 +343,12 @@ export default function CustomerProfit() {
         type="info"
         showIcon
         message="客户利润分析口径提醒"
-        description="本页应收、应付、毛利、图表和客户明细只统计物流业务；注册、证书、公司注销、店铺租赁等服务类订单已排除，需到“注册确认”页面单独查看。"
+        description={isSalesAccount ? "本页只统计本人名下物流客户的应收与已核算毛利；注册、证书、公司注销、店铺租赁等服务提成请到“我的注册提成”查看。" : "本页应收、应付、毛利、图表和客户明细只统计物流业务；注册、证书、公司注销、店铺租赁等服务类订单已排除，需到“注册提成”页面单独查看。"}
       />
 
       <Card
         className="customer-profit-card"
-        title="公司客户费用应收应付分析表"
+        title={isSalesAccount ? "我的客户应收与毛利分析" : "公司客户费用应收应付分析表"}
         extra={<Tag bordered={false} className="customer-sort-tag">按照流水大小</Tag>}
         loading={loading}
       >
@@ -368,17 +376,17 @@ export default function CustomerProfit() {
         </div>
 
         <CustomerMatrix
-          title="公司客户费用应收应付分析表"
+          title={isSalesAccount ? "我的客户应收与毛利分析" : "公司客户费用应收应付分析表"}
           tag="按照流水大小"
           customers={receivableCustomers}
-          rows={makeMatrixRows(receivableCustomers, "receivable")}
+          rows={makeMatrixRows(receivableCustomers, "receivable", showUpstreamCosts)}
         />
 
         <CustomerMatrix
-          title="公司客户利润分析表"
+          title={isSalesAccount ? "我的客户利润分析" : "公司客户利润分析表"}
           tag="按照毛利大小"
           customers={profitCustomers}
-          rows={makeMatrixRows(profitCustomers, "profit")}
+          rows={makeMatrixRows(profitCustomers, "profit", showUpstreamCosts)}
         />
       </Card>
     </div>

@@ -25,8 +25,22 @@ function appendSheet(workbook: XLSX.WorkBook, rows: Record<string, unknown>[], s
 }
 
 export const reportService = {
-  listServiceRecords(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
-    return reportRepository.listServiceRecords(month, scope);
+  async listServiceRecords(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
+    const rows = await reportRepository.listServiceRecords(month, scope);
+    if (scope.mode === "all") return rows;
+    return rows.map(({ costAmount, financeOrder, ...record }) => {
+      void costAmount;
+      return {
+        ...record,
+        financeOrder: {
+          orderNo: financeOrder.orderNo,
+          customerOrderNo: financeOrder.customerOrderNo,
+          customerName: financeOrder.customerName,
+          salespersonName: financeOrder.salespersonName,
+          customerServiceName: financeOrder.customerServiceName
+        }
+      };
+    });
   },
 
   getMonthlyReport(month?: string) {
@@ -81,7 +95,7 @@ export const reportService = {
       业务类型: item.businessType,
       票数: item.orderCount,
       应收: money(item.receivable),
-      应付: money(item.payable),
+      应付: money("payable" in item && typeof item.payable === "number" ? item.payable : 0),
       毛利: money(item.grossProfit),
       物流口径毛利: money(item.logisticsProfit),
       毛利率: rate(item.grossProfitRate),

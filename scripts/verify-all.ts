@@ -17,7 +17,8 @@ const verificationDatabaseUrl = process.env.VERIFY_DATABASE_URL || defaultDataba
 const clientUrl = process.env.UI_SMOKE_CLIENT_URL || "http://localhost:5173/";
 const apiUrl = process.env.UI_SMOKE_API_URL || "http://localhost:4000/api";
 const isolatedUsername = "finance";
-const isolatedPassword = "finance123";
+const initialIsolatedPassword = "finance123";
+const verifiedIsolatedPassword = "FinanceVerify123!";
 
 const preparationSteps: Step[] = [
   {
@@ -161,6 +162,45 @@ async function stopIsolatedApi(child: ChildProcessWithoutNullStreams) {
   if (child.exitCode === null) child.kill("SIGKILL");
 }
 
+async function loginVerificationAccount(apiUrl: string, password: string) {
+  const response = await fetch(`${apiUrl}/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: isolatedUsername, password })
+  });
+  if (!response.ok) return null;
+  return await response.json() as {
+    token: string;
+    user: { mustChangePassword: boolean };
+  };
+}
+
+async function prepareVerificationAccount(apiUrl: string) {
+  const verifiedLogin = await loginVerificationAccount(apiUrl, verifiedIsolatedPassword);
+  if (verifiedLogin) return verifiedIsolatedPassword;
+
+  const initialLogin = await loginVerificationAccount(apiUrl, initialIsolatedPassword);
+  if (!initialLogin) throw new Error("Unable to login with either verification account password.");
+  if (!initialLogin.user.mustChangePassword) return initialIsolatedPassword;
+
+  const response = await fetch(`${apiUrl}/auth/change-password`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${initialLogin.token}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      currentPassword: initialIsolatedPassword,
+      nextPassword: verifiedIsolatedPassword
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`Verification account password change failed: ${response.status} ${await response.text()}`);
+  }
+  console.log("PASS Verification account completed the required first-login password change");
+  return verifiedIsolatedPassword;
+}
+
 async function ensureRunningServices() {
   console.log("\n==> Check running frontend and API services");
   const [frontendOk, apiOk] = await Promise.all([
@@ -197,6 +237,7 @@ async function main() {
   console.log("\n==> Start isolated verification API");
   const isolatedApi = await startIsolatedApi();
   try {
+    const isolatedPassword = await prepareVerificationAccount(isolatedApi.apiUrl);
     const isolatedEnv = {
       DATABASE_URL: verificationDatabaseUrl,
       UI_SMOKE_API_URL: isolatedApi.apiUrl,

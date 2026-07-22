@@ -57,6 +57,43 @@ function updatePayloadJson(
   return JSON.stringify(updater(payload));
 }
 
+const employeeHiddenPayloadFields = new Set([
+  "totalPayable",
+  "totalPaid",
+  "payable",
+  "adjustedPayable",
+  "paidAmount",
+  "outstandingPayable",
+  "payableFreight",
+  "payableClearance",
+  "payableDelivery",
+  "payableCompensation",
+  "otherCost",
+  "costAmount",
+  "supplierName",
+  "supplierPayableSummary",
+  "chargeLines"
+]);
+
+function redactEmployeePayloadValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactEmployeePayloadValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !employeeHiddenPayloadFields.has(key))
+      .map(([key, child]) => [key, redactEmployeePayloadValue(child)])
+  );
+}
+
+function redactEmployeePayload(payload: Record<string, any>) {
+  return redactEmployeePayloadValue(payload) as Record<string, any>;
+}
+
+function redactConfirmationDocument<T extends { payloadJson: string | null }>(document: T): T {
+  const payload = safeJson<Record<string, any>>(document.payloadJson, {});
+  return { ...document, payloadJson: JSON.stringify(redactEmployeePayload(payload)) };
+}
+
 function token(ownerName: string, documentType: string) {
   return crypto
     .createHmac("sha256", process.env.AUTH_TOKEN_SECRET || "xjd-finance-local-dev-secret")
@@ -498,10 +535,11 @@ export const workflowService = {
       },
       orderBy: [{ documentType: "asc" }, { ownerName: "asc" }, { version: "desc" }, { id: "desc" }]
     });
-    if (includeHistory) return documents;
+    const visibleDocuments = scope.mode === "all" ? documents : documents.map(redactConfirmationDocument);
+    if (includeHistory) return visibleDocuments;
 
-    const current = new Map<string, typeof documents[number]>();
-    for (const document of documents) {
+    const current = new Map<string, typeof visibleDocuments[number]>();
+    for (const document of visibleDocuments) {
       const key = `${document.documentType}:${document.ownerName}`;
       if (!current.has(key)) current.set(key, document);
     }
@@ -1186,7 +1224,7 @@ export const workflowService = {
       throw new AppError(410, "SIGNATURE_LINK_EXPIRED", "签名链接已过期，请联系主管重新发送。");
     }
 
-    const payload = safeJson<Record<string, any>>(current.payloadJson, {});
+    const payload = redactEmployeePayload(safeJson<Record<string, any>>(current.payloadJson, {}));
     return {
       document: {
         id: current.id,
@@ -1426,9 +1464,10 @@ startxref
     if (!(await canAccessConfirmationDocument(document, scope))) {
       throw new AppError(403, "DOCUMENT_ACCESS_DENIED", "只能查看和下载本人的确认单。");
     }
+    const renderDocument = scope.mode === "all" ? document : redactConfirmationDocument(document);
 
     if (format === "pdf") {
-      const buffer = await renderConfirmationPdf(document);
+      const buffer = await renderConfirmationPdf(renderDocument);
       await logAction({
         month: document.month,
         entityType: "confirmation_document",
@@ -1444,7 +1483,7 @@ startxref
     }
 
     if (format === "png") {
-      const buffer = await renderConfirmationPng(document);
+      const buffer = await renderConfirmationPng(renderDocument);
       await logAction({
         month: document.month,
         entityType: "confirmation_document",

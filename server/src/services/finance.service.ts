@@ -124,6 +124,19 @@ function summarizeOrders(month: string, orders: FinanceOrder[], totalCommission 
   };
 }
 
+function omitSummaryUpstreamCosts<T extends { totalPayable: number; totalPaid: number }>(summary: T) {
+  const { totalPayable, totalPaid, ...visible } = summary;
+  void totalPayable;
+  void totalPaid;
+  return visible;
+}
+
+function omitRowPayable<T extends { payable: number }>(row: T) {
+  const { payable, ...visible } = row;
+  void payable;
+  return visible;
+}
+
 export async function resolveParameterRules(month?: string) {
   await ensureDefaultParameterRules();
   const rows = await prisma.parameterRule.findMany({
@@ -177,11 +190,11 @@ export const financeService = {
         where: { financeOrder: { is: scopedFinanceOrderWhere({ month: selectedMonth }, scope) } }
       })
     ]);
-    return summarizeOrders(
+    return omitSummaryUpstreamCosts(summarizeOrders(
       selectedMonth,
       orders,
       sumNumbers(commissions.map((row) => row.manualCommissionAmount ?? row.commissionAmount))
-    );
+    ));
   },
 
   async listMonths(scope: FinanceAccessScope = allFinanceAccess) {
@@ -358,6 +371,7 @@ export const financeService = {
   async getDashboard(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     const persistedSummary = await financeRepository.getLatestSummary(month);
     const selectedMonth = month ?? persistedSummary?.month;
+    const showUpstreamCosts = scope.mode === "all";
     const [orders, persistedSummaries, commissions, confirmationDocuments, risks, historyOrders, historyCommissions] = await Promise.all([
       financeRepository.listOrders(selectedMonth, scope),
       scope.mode === "all" ? financeRepository.listSummaries() : Promise.resolve([]),
@@ -404,8 +418,10 @@ export const financeService = {
 
     const logisticsOrders = orders.filter((order) => !order.isServiceBusiness);
     const serviceOrders = orders.filter((order) => order.isServiceBusiness);
-    const payableDashboard = await payableService.listPayables(selectedMonth, scope);
-    const logisticsPayableTotal = payableDashboard.totals.totalPayable;
+    const payableDashboard = showUpstreamCosts
+      ? await payableService.listPayables(selectedMonth, scope)
+      : null;
+    const logisticsPayableTotal = payableDashboard?.totals.totalPayable ?? 0;
     const businessMap = new Map<string, {
       businessType: string;
       category: "logistics" | "service";
@@ -545,36 +561,39 @@ export const financeService = {
     const previousBusinessProfit = grossProfitByBusinessType(previousOrders);
     const previousYearBusinessProfit = grossProfitByBusinessType(previousYearOrders);
 
+    const businessSummary = Array.from(businessMap.values())
+      .map((item) => ({
+        ...item,
+        grossProfitRate: safeRate(item.grossProfit, item.receivable),
+        momGrossProfitChange: percentChange(item.grossProfit, previousBusinessProfit.get(item.businessType) ?? 0),
+        yoyGrossProfitChange: percentChange(item.grossProfit, previousYearBusinessProfit.get(item.businessType) ?? 0)
+      }))
+      .sort((a, b) => b.grossProfit - a.grossProfit);
+
     return {
-      summary,
+      visibility: { upstreamCosts: showUpstreamCosts },
+      summary: summary && !showUpstreamCosts ? omitSummaryUpstreamCosts(summary) : summary,
       orderCount: orders.length,
       logisticsOrderCount: logisticsOrders.length,
       serviceOrderCount: serviceOrders.length,
       logisticsProfit: sumNumbers(logisticsOrders.map((order) => order.adjustedGrossProfit)),
       serviceProfit: sumNumbers(serviceOrders.map((order) => order.adjustedGrossProfit)),
-      businessSummary: Array.from(businessMap.values())
-        .map((item) => ({
-          ...item,
-          grossProfitRate: safeRate(item.grossProfit, item.receivable),
-          momGrossProfitChange: percentChange(item.grossProfit, previousBusinessProfit.get(item.businessType) ?? 0),
-          yoyGrossProfitChange: percentChange(item.grossProfit, previousYearBusinessProfit.get(item.businessType) ?? 0)
-        }))
-        .sort((a, b) => b.grossProfit - a.grossProfit),
+      businessSummary: showUpstreamCosts ? businessSummary : businessSummary.map(omitRowPayable),
       salespersonSummary: Array.from(salespersonMap.values())
         .sort((a, b) => b.grossProfit - a.grossProfit)
         .map((item, index) => ({ ...item, rank: index + 1 })),
-      supplierPayableSummary: payableDashboard.supplierAging
+      supplierPayableSummary: (payableDashboard?.supplierAging ?? [])
         .map((item) => ({
           ...item,
           ratio: safeRate(item.payable, logisticsPayableTotal) ?? 0
         }))
         .sort((a, b) => b.payable - a.payable),
-      customerProfitSummary,
+      customerProfitSummary: showUpstreamCosts ? customerProfitSummary : customerProfitSummary.map(omitRowPayable),
       riskOverview,
       monthlyTrend: summaries.map((item) => ({
         month: item.month,
         receivable: item.totalReceivable,
-        payable: item.totalPayable,
+        ...(showUpstreamCosts ? { payable: item.totalPayable } : {}),
         grossProfit: item.totalGrossProfit,
         grossProfitRate: item.grossProfitRate,
         commission: item.totalCommission
@@ -585,8 +604,10 @@ export const financeService = {
         yoyGrossProfit: percentChange(selected?.totalGrossProfit ?? 0, previousYear?.totalGrossProfit ?? 0),
         momReceivable: percentChange(selected?.totalReceivable ?? 0, previous?.totalReceivable ?? 0),
         yoyReceivable: percentChange(selected?.totalReceivable ?? 0, previousYear?.totalReceivable ?? 0),
-        momPayable: percentChange(selected?.totalPayable ?? 0, previous?.totalPayable ?? 0),
-        yoyPayable: percentChange(selected?.totalPayable ?? 0, previousYear?.totalPayable ?? 0),
+        ...(showUpstreamCosts ? {
+          momPayable: percentChange(selected?.totalPayable ?? 0, previous?.totalPayable ?? 0),
+          yoyPayable: percentChange(selected?.totalPayable ?? 0, previousYear?.totalPayable ?? 0)
+        } : {}),
         momGrossProfitRate: pointChange(selected?.grossProfitRate, previous?.grossProfitRate),
         yoyGrossProfitRate: pointChange(selected?.grossProfitRate, previousYear?.grossProfitRate),
         momOrderCount: percentChange(orders.length, previousOrderCount),

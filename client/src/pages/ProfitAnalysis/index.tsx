@@ -2,6 +2,7 @@ import { Button, Card, Space, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getFinanceDashboard } from "../../api/finance.api";
+import { useAuth } from "../../contexts/AuthContext";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { BusinessSummary, DashboardData } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
@@ -20,7 +21,7 @@ type ProfitSplit = {
   type: "total" | "logistics" | "service";
   orderCount: number;
   receivable: number;
-  payable: number;
+  payable?: number;
   grossProfit: number;
   grossProfitRate: number | null;
   note: string;
@@ -35,6 +36,8 @@ function toPlainMoney(value?: number | null) {
 }
 
 export default function ProfitAnalysis() {
+  const { user } = useAuth();
+  const isSalesAccount = user?.role === "sales" || user?.role === "sales_operator";
   const { selectedMonth } = useSelectedMonth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,13 +60,14 @@ export default function ProfitAnalysis() {
   }, [loadData]);
 
   const summary = data?.summary;
+  const showUpstreamCosts = !isSalesAccount && data?.visibility?.upstreamCosts !== false;
   const businessRows = data?.businessSummary ?? [];
   const logisticsRows = businessRows.filter((item) => item.category === "logistics");
   const serviceRows = businessRows.filter((item) => item.category === "service");
 
   function sumRows(rows: BusinessSummary[]) {
     const receivable = rows.reduce((sum, item) => sum + item.receivable, 0);
-    const payable = rows.reduce((sum, item) => sum + item.payable, 0);
+    const payable = rows.reduce((sum, item) => sum + (item.payable ?? 0), 0);
     const grossProfit = rows.reduce((sum, item) => sum + item.grossProfit, 0);
     return {
       orderCount: rows.reduce((sum, item) => sum + item.orderCount, 0),
@@ -102,7 +106,8 @@ export default function ProfitAnalysis() {
     }
   ];
 
-  const metrics: ProfitMetric[] = useMemo(() => [
+  const metrics: ProfitMetric[] = useMemo(() => {
+    const rows: ProfitMetric[] = [
     {
       title: "总应收",
       value: toPlainMoney(summary?.totalReceivable),
@@ -137,15 +142,17 @@ export default function ProfitAnalysis() {
       accent: "blue",
       tag: "Excel",
       note: "按运单口径去重"
-    },
-    {
+    }
+    ];
+    if (showUpstreamCosts) rows.push({
       title: "调整后应付",
       value: toPlainMoney(summary?.totalPayable),
       accent: "green",
       tag: "含暂估",
       note: "清关/派送缺应付补齐"
-    }
-  ], [data?.orderCount, summary]);
+    });
+    return rows;
+  }, [data?.orderCount, showUpstreamCosts, summary]);
 
   const columns: ColumnsType<BusinessSummary> = [
     {
@@ -161,7 +168,7 @@ export default function ProfitAnalysis() {
     { title: "业务类型", dataIndex: "businessType" },
     { title: "票数", dataIndex: "orderCount", width: 92 },
     { title: "修正后应收", dataIndex: "receivable", align: "right", render: toPlainMoney },
-    { title: "调整后应付", dataIndex: "payable", align: "right", render: toPlainMoney },
+    ...(showUpstreamCosts ? [{ title: "调整后应付", dataIndex: "payable", align: "right" as const, render: toPlainMoney }] : []),
     { title: "调整后毛利", dataIndex: "grossProfit", align: "right", render: toPlainMoney },
     { title: "毛利率", dataIndex: "grossProfitRate", align: "right", render: formatPercent },
     { title: "提成口径", dataIndex: "category", render: commissionBasis }
@@ -171,8 +178,8 @@ export default function ProfitAnalysis() {
     <div className="profit-board">
       <header className="profit-hero">
         <div>
-          <h1>{selectedMonth} 跨境物流财务管理</h1>
-          <p>基于当前选择月份的有效导入批次汇总，统一财务、提成和风险复核口径。</p>
+          <h1>{isSalesAccount ? `${selectedMonth} 我的业务利润` : `${selectedMonth} 跨境物流财务管理`}</h1>
+          <p>{isSalesAccount ? "仅显示本人销售订单的应收、已核算毛利、毛利率与提成口径。" : "基于当前选择月份的有效导入批次汇总，统一财务、提成和风险复核口径。"}</p>
         </div>
         <Space size={12} wrap>
           <div className="profit-source">数据源：<b>{selectedMonth} 数据库</b></div>
@@ -208,7 +215,7 @@ export default function ProfitAnalysis() {
             </div>
             <div className="profit-split-body">
               <div><span>应收</span><b>{toPlainMoney(item.receivable)}</b></div>
-              <div><span>应付</span><b>{toPlainMoney(item.payable)}</b></div>
+              {showUpstreamCosts ? <div><span>应付</span><b>{toPlainMoney(item.payable)}</b></div> : null}
               <div><span>毛利</span><b>{toPlainMoney(item.grossProfit)}</b></div>
             </div>
             <p>{item.note}</p>
@@ -218,7 +225,7 @@ export default function ProfitAnalysis() {
 
       <Card
         className="profit-summary-card"
-        title="业务类型利润汇总（物流 / 注册分开）"
+        title={isSalesAccount ? "我的业务类型利润汇总（物流 / 注册分开）" : "业务类型利润汇总（物流 / 注册分开）"}
         extra={(
           <Button
             type="text"

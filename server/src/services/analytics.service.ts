@@ -13,6 +13,12 @@ type CustomerRow = {
   orderCount: number;
 };
 
+function omitCustomerPayable(row: CustomerRow) {
+  const { payable, ...visible } = row;
+  void payable;
+  return visible;
+}
+
 function rate(numerator: number, denominator: number) {
   return denominator > 0 ? numerator / denominator : null;
 }
@@ -178,6 +184,7 @@ function operatorRows(operatorName: string, orders: FinanceOrder[], overrides: M
 export const analyticsService = {
   async customerProfit(month?: string, scope: FinanceAccessScope = allFinanceAccess) {
     month = resolveMonth(month);
+    const showUpstreamCosts = scope.mode === "all";
     const orders = await prisma.financeOrder.findMany({ where: scopedFinanceOrderWhere({ month, isServiceBusiness: false }, scope) });
     const map = new Map<string, CustomerRow>();
     for (const order of orders) {
@@ -191,10 +198,13 @@ export const analyticsService = {
       map.set(customerName, row);
     }
     const rows = Array.from(map.values());
+    const receivableRank = compactRows(rows, "receivable");
+    const profitRank = compactRows(rows, "grossProfit");
     return {
-      rows,
-      receivableRank: compactRows(rows, "receivable"),
-      profitRank: compactRows(rows, "grossProfit")
+      visibility: { upstreamCosts: showUpstreamCosts },
+      rows: showUpstreamCosts ? rows : rows.map(omitCustomerPayable),
+      receivableRank: showUpstreamCosts ? receivableRank : receivableRank.map(omitCustomerPayable),
+      profitRank: showUpstreamCosts ? profitRank : profitRank.map(omitCustomerPayable)
     };
   },
 

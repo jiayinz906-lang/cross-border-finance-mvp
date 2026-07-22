@@ -28,7 +28,7 @@ type ConfirmationPayloadDetail = {
   customerName?: string | null;
   businessType: string;
   receivable: number;
-  payable: number;
+  payable?: number;
   grossProfit: number;
   grossProfitRate: number | null;
   commissionRate: number;
@@ -55,7 +55,7 @@ type ConfirmationPayload = {
     businessType: string;
     orderCount: number;
     receivable: number;
-    payable: number;
+    payable?: number;
     grossProfit: number;
     commissionRate: number;
     accruedCommission: number;
@@ -463,7 +463,7 @@ export default function SignatureConfirm() {
               <Descriptions.Item label="订单数量">{selectedPayload.summary.orderCount}</Descriptions.Item>
               <Descriptions.Item label="提成比例">{formatPercent(selectedPayload.summary.commissionRate)}</Descriptions.Item>
               <Descriptions.Item label="应收金额">{toPlainMoney(selectedPayload.summary.receivable)}</Descriptions.Item>
-              <Descriptions.Item label="调整后应付">{toPlainMoney(selectedPayload.summary.payable)}</Descriptions.Item>
+              {!isSalesAccount ? <Descriptions.Item label="调整后应付">{toPlainMoney(selectedPayload.summary.payable)}</Descriptions.Item> : null}
               <Descriptions.Item label="调整后毛利">{toPlainMoney(selectedPayload.summary.grossProfit)}</Descriptions.Item>
               <Descriptions.Item label="应计提成">{toPlainMoney(selectedPayload.summary.accruedCommission)}</Descriptions.Item>
               <Descriptions.Item label="主管调整金额">{toPlainMoney(selectedPayload.summary.supervisorAdjustmentAmount)}</Descriptions.Item>

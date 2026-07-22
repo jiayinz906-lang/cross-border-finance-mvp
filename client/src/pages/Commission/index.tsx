@@ -210,50 +210,53 @@ export default function Commission() {
 
   const summary = dashboard?.summary;
 
-  const metrics: MetricCard[] = useMemo(() => [
+  const metrics: MetricCard[] = useMemo(() => {
+    const rows: MetricCard[] = [
     {
-      title: "总应收",
+      title: isSalesAccount ? "本人订单应收" : "总应收",
       value: toPlainMoney(summary?.totalReceivable),
       accent: "blue",
       tag: "优化后",
       note: "按原始表格汇率口径计算"
     },
     {
-      title: "调整后毛利",
+      title: isSalesAccount ? "本人已核算毛利" : "调整后毛利",
       value: toPlainMoney(summary?.totalGrossProfit),
       accent: "green",
       tag: formatPercent(summary?.grossProfitRate),
       note: "可用于经营分析口径"
     },
     {
-      title: "物流提成",
+      title: isSalesAccount ? "本人物流提成" : "物流提成",
       value: toPlainMoney(summary?.totalCommission),
       accent: "orange",
       tag: "阶梯",
       note: "按销售代表月毛利计提"
     },
     {
-      title: "高风险票",
+      title: isSalesAccount ? "本人需关注订单" : "高风险票",
       value: `${summary?.riskOrderCount ?? 0}票`,
       accent: "red",
       tag: "需复核",
-      note: "汇率、负毛利、缺应付"
+      note: isSalesAccount ? "低毛利、异常毛利等需关注订单" : "汇率、负毛利、缺应付"
     },
     {
-      title: "总票数",
+      title: isSalesAccount ? "本人票数" : "总票数",
       value: `${dashboard?.orderCount ?? 0}`,
       accent: "blue",
       tag: "Excel",
       note: "按运单口径去重"
-    },
-    {
+    }
+    ];
+    if (!isSalesAccount && dashboard?.visibility?.upstreamCosts !== false) rows.push({
       title: "调整后应付",
       value: toPlainMoney(summary?.totalPayable),
       accent: "green",
       tag: "含暂估",
       note: "清关/派送缺应付补齐"
-    }
-  ], [dashboard?.orderCount, summary]);
+    });
+    return rows;
+  }, [dashboard?.orderCount, dashboard?.visibility?.upstreamCosts, isSalesAccount, summary]);
 
   const salespersonRows = useMemo(() => {
     const group = new Map<string, SalespersonCommission & { receivable: number }>();

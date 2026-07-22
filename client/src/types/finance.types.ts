@@ -31,9 +31,9 @@ export type FinanceOrder = {
 export type FinanceSummary = {
   month: string;
   totalReceivable: number;
-  totalPayable: number;
+  totalPayable?: number;
   totalReceived: number;
-  totalPaid: number;
+  totalPaid?: number;
   totalGrossProfit: number;
   grossProfitRate: number | null;
   totalCommission: number;
@@ -47,7 +47,7 @@ export type BusinessSummary = {
   category: "logistics" | "service";
   orderCount: number;
   receivable: number;
-  payable: number;
+  payable?: number;
   grossProfit: number;
   logisticsProfit: number;
   grossProfitRate: number | null;
@@ -58,7 +58,7 @@ export type BusinessSummary = {
 export type MonthlyTrend = {
   month: string;
   receivable: number;
-  payable: number;
+  payable?: number;
   grossProfit: number;
   grossProfitRate: number | null;
   commission: number;
@@ -88,7 +88,7 @@ export type CustomerProfitSummary = {
   customerName: string;
   orderCount: number;
   receivable: number;
-  payable: number;
+  payable?: number;
   grossProfit: number;
   grossProfitRate: number | null;
   receivableRatio: number;
@@ -109,6 +109,9 @@ export type RiskOverview = {
 };
 
 export type DashboardData = {
+  visibility?: {
+    upstreamCosts: boolean;
+  };
   summary: FinanceSummary | null;
   orderCount: number;
   logisticsOrderCount: number;
@@ -127,8 +130,8 @@ export type DashboardData = {
     yoyGrossProfit: number | null;
     momReceivable: number | null;
     yoyReceivable: number | null;
-    momPayable: number | null;
-    yoyPayable: number | null;
+    momPayable?: number | null;
+    yoyPayable?: number | null;
     momGrossProfitRate: number | null;
     yoyGrossProfitRate: number | null;
     momOrderCount: number | null;
