@@ -3139,6 +3139,41 @@ body {
   gap: 0 14px;
 }
 
+.raw-entry-upload-field {
+  margin-top: 4px;
+}
+
+.raw-entry-upload-field .ant-upload-wrapper .ant-upload-drag {
+  min-height: 142px;
+  border-color: #c9d8ef;
+  background: #f8fbff;
+}
+
+.raw-entry-upload-field .ant-upload-wrapper .ant-upload-drag:hover {
+  border-color: #2f6fed;
+  background: #f2f7ff;
+}
+
+.raw-entry-upload-field .ant-upload-drag-icon {
+  margin-bottom: 6px !important;
+}
+
+.raw-entry-upload-field .ant-upload-drag-icon .anticon {
+  color: #2f6fed;
+  font-size: 30px;
+}
+
+.raw-entry-upload-field .ant-upload-text {
+  margin-bottom: 3px !important;
+  color: #13233f;
+  font-weight: 700;
+}
+
+.raw-entry-upload-field .ant-upload-hint,
+.raw-entry-upload-field .ant-form-item-extra {
+  color: #73819a;
+}
+
 .raw-entry-modal-actions {
   position: sticky;
   bottom: 0;

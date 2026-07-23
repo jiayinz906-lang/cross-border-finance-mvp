@@ -7,6 +7,7 @@ const apiUrl = process.env.UI_SMOKE_API_URL || "http://localhost:4000/api";
 const testMonth = "2099-12";
 let token = "";
 let entryId = 0;
+let manualEntryId = 0;
 
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, {
@@ -56,14 +57,34 @@ async function main() {
   assert.equal(created.localAmount, -85.63, "signed amount and entered exchange rate must be preserved");
   assert.equal(created.attachments.length, 1);
 
+  const manualForm = new FormData();
+  Object.entries({
+    month: testMonth,
+    transactionDate: "2099-12-16",
+    sourceType: "manual",
+    direction: "receivable",
+    counterparty: "手工流水图片凭证验证客户",
+    originalAmount: "20.00",
+    currency: "CNY",
+    exchangeRate: "1",
+    orderNo: "VERIFY-MANUAL-IMAGE-002",
+    note: "手工新增流水可选上传图片凭证"
+  }).forEach(([key, value]) => manualForm.append(key, value));
+  manualForm.append("files", new Blob([png], { type: "image/png" }), "verify-manual-evidence.png");
+  const manualCreated = await jsonRequest<{ id: number; sourceType: string; attachments: Array<{ id: number }> }>("/finance/manual-entries", { method: "POST", body: manualForm });
+  manualEntryId = manualCreated.id;
+  assert.equal(manualCreated.sourceType, "manual");
+  assert.equal(manualCreated.attachments.length, 1, "manual entry should accept optional image evidence");
+
   const listed = await jsonRequest<{ rows: Array<{ id: number }>; total: number }>(`/finance/manual-entries?month=${testMonth}`);
-  assert.equal(listed.total, 1);
-  assert.equal(listed.rows[0].id, entryId);
+  assert.equal(listed.total, 2);
+  assert.ok(listed.rows.some((row) => row.id === entryId));
+  assert.ok(listed.rows.some((row) => row.id === manualEntryId));
 
   const summary = await jsonRequest<{ payable: number; attachmentCount: number; draftRecords: number }>(`/finance/manual-entries/summary?month=${testMonth}`);
   assert.equal(summary.payable, -85.63);
-  assert.equal(summary.attachmentCount, 1);
-  assert.equal(summary.draftRecords, 1);
+  assert.equal(summary.attachmentCount, 2);
+  assert.equal(summary.draftRecords, 2);
 
   const attachmentResponse = await fetch(`${apiUrl}/finance/manual-entries/${entryId}/attachments/${created.attachments[0].id}`, { headers: { authorization: `Bearer ${token}` } });
   assert.equal(attachmentResponse.status, 200);
@@ -84,9 +105,10 @@ async function main() {
 }
 
 main().finally(async () => {
-  if (entryId) {
-    await prisma.actionLog.deleteMany({ where: { entityType: "manual_ledger_entry", entityId: String(entryId) } });
-    await prisma.manualLedgerEntry.deleteMany({ where: { id: entryId } });
+  const entryIds = [entryId, manualEntryId].filter(Boolean);
+  if (entryIds.length) {
+    await prisma.actionLog.deleteMany({ where: { entityType: "manual_ledger_entry", entityId: { in: entryIds.map(String) } } });
+    await prisma.manualLedgerEntry.deleteMany({ where: { id: { in: entryIds } } });
   }
   await prisma.$disconnect();
 }).catch((error) => {

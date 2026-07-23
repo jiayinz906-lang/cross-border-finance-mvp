@@ -181,6 +181,9 @@ export const manualLedgerService = {
   async create(input: ManualLedgerInput, files: UploadedImage[], operator: string) {
     const data = parseInput(input);
     await ensureMonthOpen(data.month);
+    if (files.length > 6) {
+      throw new AppError(400, "MANUAL_LEDGER_TOO_MANY_IMAGES", "每条原始流水最多上传 6 张图片。", { files: "请删除多余图片后重试" });
+    }
     const images = normalizeImages(files);
     if (data.sourceType === "image_statement" && images.length === 0) {
       throw new AppError(400, "MANUAL_LEDGER_IMAGE_REQUIRED", "图片流水至少需要上传 1 张凭证图片。", { files: "请上传流水图片" });

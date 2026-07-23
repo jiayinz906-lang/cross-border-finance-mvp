@@ -351,14 +351,37 @@ export default function RawEntry() {
             <Form.Item label="客服代表" name="customerServiceName"><Input maxLength={60} /></Form.Item>
             <Form.Item label="供应商" name="supplierName"><Input maxLength={120} /></Form.Item>
           </div>
-          {sourceType === "image_statement" ? (
-            <Form.Item label="流水图片（最多 6 张，单张不超过 10MB）" required>
-              <Upload.Dragger accept=".jpg,.jpeg,.png,.webp" multiple maxCount={6} beforeUpload={() => false} fileList={fileList} onChange={({ fileList: next }) => setFileList(next.slice(-6))}>
-                <p className="ant-upload-drag-icon"><FileImageOutlined /></p>
-                <p>点击或拖拽上传银行流水、付款截图或收款凭证</p>
-              </Upload.Dragger>
-            </Form.Item>
-          ) : null}
+          <Form.Item
+            className="raw-entry-upload-field"
+            label={sourceType === "image_statement" ? "流水图片（必填）" : "图片凭证（可选）"}
+            required={sourceType === "image_statement"}
+            extra="支持 JPG、PNG、WebP；最多 6 张，单张不超过 10MB。图片会和本条原始流水一起保存并可追溯下载。"
+          >
+            <Upload.Dragger
+              accept=".jpg,.jpeg,.png,.webp"
+              multiple
+              maxCount={6}
+              listType="picture"
+              beforeUpload={(file) => {
+                const validType = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+                if (!validType) {
+                  message.error(`${file.name} 不是支持的图片格式`);
+                  return Upload.LIST_IGNORE;
+                }
+                if (file.size > 10 * 1024 * 1024) {
+                  message.error(`${file.name} 超过 10MB，请压缩后重新上传`);
+                  return Upload.LIST_IGNORE;
+                }
+                return false;
+              }}
+              fileList={fileList}
+              onChange={({ fileList: next }) => setFileList(next.slice(-6))}
+            >
+              <p className="ant-upload-drag-icon"><FileImageOutlined /></p>
+              <p className="ant-upload-text">点击选择或拖拽图片到这里</p>
+              <p className="ant-upload-hint">可上传银行流水、付款截图、收款凭证或其他原始业务图片</p>
+            </Upload.Dragger>
+          </Form.Item>
           <Form.Item label="备注" name="note"><Input.TextArea rows={3} maxLength={500} showCount /></Form.Item>
           <div className="raw-entry-modal-actions"><Button onClick={() => setCreateOpen(false)} disabled={saving}>取消</Button><Button type="primary" htmlType="submit" loading={saving}>保存为待确认</Button></div>
         </Form>
