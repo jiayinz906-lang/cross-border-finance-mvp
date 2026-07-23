@@ -19,7 +19,7 @@
     "verify:all": "tsx scripts/verify-all.ts",
     "verify:import": "tsx scripts/verify-import.ts",
     "verify:ui": "tsx scripts/verify-ui-smoke.ts",
-    "verify:roles": "tsx scripts/verify-role-http.ts",
+    "verify:roles": "tsx scripts/verify-role-runner.ts",
     "verify:role-matrix": "tsx scripts/verify-role-matrix.ts",
     "verify:manual-ledger": "tsx scripts/verify-manual-ledger.ts",
     "verify:finance-operations": "tsx scripts/verify-finance-operations.ts",
