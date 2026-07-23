@@ -21,26 +21,9 @@ const expectedNavigation: Record<UserRole, string[]> = {
     "/reports",
     "/settings"
   ],
-  sales: [
-    "/dashboard",
-    "/profit-analysis",
-    "/commission",
-    "/service-confirm",
-    "/signature-confirm",
-    "/customer-profit",
-    "/settings"
-  ],
+  sales: ["/signature-confirm", "/settings"],
   operator: ["/signature-confirm", "/operator-performance", "/settings"],
-  sales_operator: [
-    "/dashboard",
-    "/profit-analysis",
-    "/commission",
-    "/service-confirm",
-    "/signature-confirm",
-    "/operator-performance",
-    "/customer-profit",
-    "/settings"
-  ],
+  sales_operator: ["/signature-confirm", "/operator-performance", "/settings"],
   restricted: []
 };
 

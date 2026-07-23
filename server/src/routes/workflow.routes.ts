@@ -7,6 +7,7 @@ import {
   createExportJobController,
   downloadConfirmationDocumentController,
   downloadExportJobController,
+  employeeConfirmDocumentController,
   exportSystemBackupController,
   generateLogisticsDocumentsController,
   generateOperatorDocumentsController,
@@ -41,6 +42,7 @@ workflowRoutes.post("/documents/operator/generate", requirePermission("confirmat
 workflowRoutes.post("/documents/salary/generate", requirePermission("confirmation:approve"), generateSalaryDocumentsController);
 workflowRoutes.post("/documents/:id/send-signature", requirePermission("confirmation:approve"), sendSignatureLinkController);
 workflowRoutes.post("/documents/:id/mark-notified", requirePermission("confirmation:approve"), markSignatureLinkNotifiedController);
+workflowRoutes.post("/documents/:id/employee-confirm", requirePermission("confirmation:read"), employeeConfirmDocumentController);
 workflowRoutes.get("/signature/:token", publicSignatureDocumentController);
 workflowRoutes.post("/signature/:token/sign", signByTokenController);
 workflowRoutes.post("/documents/:id/supervisor-confirm", requirePermission("confirmation:approve"), supervisorConfirmController);

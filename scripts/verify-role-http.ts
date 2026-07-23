@@ -169,31 +169,22 @@ async function main() {
   assert(hasOwn(managementDashboard.body.summary, "totalPayable"), "Management dashboard keeps total payable data");
 
   const salesDashboard = await request<Record<string, any>>(`/finance/dashboard?month=${month}`, {}, tokens.sales);
-  assert(salesDashboard.status === 200, "Salesperson can open the dashboard");
-  assert((salesDashboard.body.salespersonSummary ?? []).every((row) => row.salespersonName === salespersonName), "Sales dashboard is limited to the signed-in salesperson");
-  assert(salesDashboard.body.visibility?.upstreamCosts === false, "Sales dashboard disables upstream cost visibility");
-  assert(!containsForbiddenKey(salesDashboard.body, new Set(["totalPayable", "totalPaid", "payable", "supplierName", "adjustedPayable"])), "Sales dashboard does not expose payable or supplier cost fields");
+  assert(salesDashboard.status === 403, "Salesperson cannot open the management dashboard");
 
   const salesSummary = await request<Record<string, any>>(`/finance/summary?month=${month}`, {}, tokens.sales);
-  assert(salesSummary.status === 200, "Salesperson can read own monthly summary");
-  assert(!hasOwn(salesSummary.body, "totalPayable") && !hasOwn(salesSummary.body, "totalPaid"), "Sales monthly summary omits payable totals");
+  assert(salesSummary.status === 403, "Salesperson cannot open the management summary");
 
   const salesProfit = await request<Record<string, any>>(`/profit/analysis?month=${month}`, {}, tokens.sales);
-  assert(salesProfit.status === 200, "Salesperson can read own profit analysis");
-  assert(!containsForbiddenKey(salesProfit.body, new Set(["totalPayable", "payable", "adjustedPayable", "calculationNote"])), "Sales profit analysis omits payable and cost calculation fields");
+  assert(salesProfit.status === 403, "Salesperson cannot open profit analysis outside the confirmation portal");
 
   const salesCustomerProfit = await request<Record<string, any>>(`/analytics/customer-profit?month=${month}`, {}, tokens.sales);
-  assert(salesCustomerProfit.status === 200, "Salesperson can read own customer profit analysis");
-  assert(!containsForbiddenKey(salesCustomerProfit.body, new Set(["payable"])), "Sales customer analysis omits customer payable fields");
+  assert(salesCustomerProfit.status === 403, "Salesperson cannot open customer profit analysis outside the confirmation portal");
 
   const commissionRows = await request<Record<string, any>>(`/commissions?month=${month}`, {}, tokens.sales);
-  assert(commissionRows.status === 200, "Salesperson can read own logistics commission rows");
-  assert(!containsForbiddenKey(commissionRows.body, new Set(["supplierName", "adjustedPayable", "calculationNote"])), "Sales commission rows omit supplier and payable details");
+  assert(commissionRows.status === 403, "Salesperson cannot open the standalone commission workspace");
 
   const serviceRows = await request<{ rows?: Array<{ costAmount?: number; financeOrder?: { salespersonName?: string } }> }>(`/reports/service-records?month=${month}`, {}, tokens.sales);
-  assert(serviceRows.status === 200, "Salesperson can read service commission rows");
-  assert((serviceRows.body.rows ?? []).every((row) => row.financeOrder?.salespersonName === salespersonName), "Service commission rows are limited to the signed-in salesperson");
-  assert(!containsForbiddenKey(serviceRows.body, new Set(["costAmount", "supplierName", "adjustedPayable", "payable"])), "Sales service commission rows omit service costs and supplier fields");
+  assert(serviceRows.status === 403, "Salesperson cannot open the standalone service commission workspace");
   const serviceDocuments = await request<{ rows?: Array<{ ownerName?: string; payloadJson?: string }> }>(`/workflow/documents?month=${month}&documentType=service_commission`, {}, tokens.sales);
   const accessibleServiceOrders = new Set((await prisma.financeOrder.findMany({
     where: { month, isServiceBusiness: true, salespersonName, importBatch: { is: { status: "active" } } },
@@ -202,6 +193,7 @@ async function main() {
   assert(serviceDocuments.status === 200, "Salesperson can read own service confirmation documents");
   assert((serviceDocuments.body.rows ?? []).every((row) => Boolean(row.ownerName && accessibleServiceOrders.has(row.ownerName))), "Service confirmation documents are limited to the salesperson's own orders");
   assert((serviceDocuments.body.rows ?? []).every((row) => !containsForbiddenKey(parsePayload(row.payloadJson), new Set(["totalPayable", "payable", "adjustedPayable", "supplierName", "costAmount", "chargeLines"]))), "Sales confirmation snapshots omit upstream cost evidence");
+  assert((await request(`/finance/months`, {}, tokens.sales)).status === 200, "Salesperson can switch confirmation months");
   assert((await request("/reports/monthly?month=2026-06", {}, tokens.sales)).status === 403, "Salesperson cannot read company-wide reports");
   assert((await request("/receivables?month=2026-06", {}, tokens.sales)).status === 403, "Salesperson cannot read company receivables");
   assert((await request("/operations/overview?month=2026-06", {}, tokens.sales)).status === 403, "Salesperson cannot read finance operations data");
@@ -224,12 +216,9 @@ async function main() {
   assert((await request("/workflow/month-status?month=2026-06", {}, tokens.operator)).status === 403, "Operator cannot read company workflow counts");
 
   const dualDashboard = await request<Record<string, any>>(`/finance/dashboard?month=${month}`, {}, tokens.sales_operator);
-  assert(dualDashboard.status === 200, "Dual-role account can open the personal sales dashboard");
-  assert((dualDashboard.body.salespersonSummary ?? []).every((row) => row.salespersonName === dualIdentityName), "Dual-role dashboard remains limited to the person's salesperson records");
-  assert(!containsForbiddenKey(dualDashboard.body, new Set(["totalPayable", "totalPaid", "payable", "supplierName", "adjustedPayable"])), "Dual-role dashboard does not expose payable or supplier cost fields");
+  assert(dualDashboard.status === 403, "Dual-role account cannot open the management dashboard");
   const dualServiceRows = await request<{ rows?: Array<{ financeOrder?: { salespersonName?: string } }> }>(`/reports/service-records?month=${month}`, {}, tokens.sales_operator);
-  assert(dualServiceRows.status === 200, "Dual-role account can open personal service commissions");
-  assert((dualServiceRows.body.rows ?? []).every((row) => row.financeOrder?.salespersonName === dualIdentityName), "Dual-role service commissions remain limited to the person's salesperson records");
+  assert(dualServiceRows.status === 403, "Dual-role account uses confirmation documents instead of the service commission workspace");
   const dualPerformance = await request<{ rows?: Array<{ operatorName?: string }> }>(`/analytics/operator-performance?month=${month}`, {}, tokens.sales_operator);
   assert(dualPerformance.status === 200, "Dual-role account can open personal operator performance");
   assert((dualPerformance.body.rows ?? []).every((row) => row.operatorName === dualIdentityName), "Dual-role performance remains limited to the person's operator records");

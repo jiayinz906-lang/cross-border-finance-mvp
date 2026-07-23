@@ -25,6 +25,8 @@ type SignatureEvidenceInput = {
   action?: string;
   signedName?: string;
   acceptedStatement?: boolean;
+  accountUsername?: string;
+  displayName?: string;
 };
 
 function monthOrDefault(month?: string) {
@@ -113,6 +115,9 @@ function signatureEvidence(input: SignatureEvidenceInput) {
     ip: input.ip ?? "unknown",
     userAgent: input.userAgent ?? "unknown",
     role: input.role ?? "unknown",
+    accountUsername: input.accountUsername ?? null,
+    displayName: input.displayName ?? input.signedName ?? null,
+    signedName: input.signedName ?? null,
     recordedAt: new Date().toISOString()
   };
 }
@@ -1308,6 +1313,82 @@ export const workflowService = {
     const document = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id: current.id } });
     await logAction({ month: document.month, entityType: "confirmation_document", entityId: document.id, action: "employee_sign", operator: current.ownerName, payload: proof });
     return document;
+  },
+
+  async signByAuthenticatedUser(
+    id: number,
+    evidence: SignatureEvidenceInput,
+    scope: FinanceAccessScope = allFinanceAccess
+  ) {
+    const current = await prisma.confirmationDocument.findUnique({ where: { id } });
+    if (!current) {
+      throw new AppError(404, "CONFIRMATION_DOCUMENT_NOT_FOUND", "确认单不存在或已被作废重建。");
+    }
+    const employeeRoles = new Set(["sales", "operator", "sales_operator"]);
+    if (!evidence.accountUsername || !employeeRoles.has(evidence.role ?? "")) {
+      throw new AppError(403, "EMPLOYEE_CONFIRM_ROLE_REQUIRED", "该按钮仅供确认单对应的销售代表或操作员本人使用。");
+    }
+    if (!(await canAccessConfirmationDocument(current, scope))) {
+      throw new AppError(403, "DOCUMENT_ACCESS_DENIED", "只能确认当前账号本人的确认单。");
+    }
+    await assertMonthOpen(prisma, current.month, "employee confirm document");
+    if (current.documentStatus === "voided") {
+      throw new AppError(409, "CONFIRMATION_DOCUMENT_VOIDED", "确认单已作废，请等待主管生成新版本。");
+    }
+    if (current.signatureStatus === "signed") {
+      throw new AppError(409, "CONFIRMATION_ALREADY_SIGNED", "该确认单已完成员工确认，请勿重复提交。");
+    }
+    if (!evidence.acceptedStatement) {
+      throw new AppError(400, "CONFIRMATION_STATEMENT_REQUIRED", "请先确认本人已核对确认单内容。");
+    }
+
+    const signedAt = new Date();
+    const proof = signatureEvidence({ ...evidence, action: "employee_sign" });
+    const signed = await prisma.confirmationDocument.updateMany({
+      where: {
+        id: current.id,
+        signatureStatus: { not: "signed" },
+        documentStatus: { not: "voided" }
+      },
+      data: {
+        signatureStatus: "signed",
+        signedAt,
+        signerIp: proof.ip,
+        signerUserAgent: proof.userAgent,
+        signerRole: proof.role,
+        signatureEvidenceJson: JSON.stringify(proof),
+        signatureToken: null,
+        signatureUrl: null,
+        signatureTokenExpiresAt: null,
+        payloadJson: updatePayloadJson(current.payloadJson, (payload) => ({
+          ...payload,
+          summary: { ...(payload.summary ?? {}), status: "signed by employee, pending supervisor confirmation" },
+          signatureTrace: {
+            ...(payload.signatureTrace ?? {}),
+            employeeSignature: "signed",
+            signedAt: signedAt.toISOString(),
+            confirmIp: proof.ip,
+            deviceInfo: proof.userAgent,
+            signerRole: proof.role,
+            accountUsername: proof.accountUsername,
+            displayName: proof.displayName
+          }
+        }))
+      }
+    });
+    if (signed.count !== 1) {
+      throw new AppError(409, "CONFIRMATION_ALREADY_SIGNED", "确认单状态已变化，请刷新页面后重试。");
+    }
+    const document = await prisma.confirmationDocument.findUniqueOrThrow({ where: { id: current.id } });
+    await logAction({
+      month: document.month,
+      entityType: "confirmation_document",
+      entityId: document.id,
+      action: "employee_sign",
+      operator: evidence.accountUsername,
+      payload: proof
+    });
+    return redactConfirmationDocument(document);
   },
 
   async supervisorConfirm(id: number, evidence: SignatureEvidenceInput = {}, adjustReason?: string, operator = "supervisor") {

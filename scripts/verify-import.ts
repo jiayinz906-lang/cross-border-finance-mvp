@@ -214,7 +214,8 @@ async function verifyRbac(checks: Check[], month: string) {
   assertCheck(checks, "Executive cannot write rules", !can("executive", "rules:write"));
   assertCheck(checks, "Executive can read reports", can("executive", "reports:read"));
   assertCheck(checks, "Executive cannot import", !can("executive", "finance:import"));
-  assertCheck(checks, "Sales can read own commission page", can("sales", "commission:read"));
+  assertCheck(checks, "Sales can read own confirmation page", can("sales", "confirmation:read"));
+  assertCheck(checks, "Sales cannot open the commission management page", !can("sales", "commission:read"));
   assertCheck(checks, "Sales cannot read receivables", !can("sales", "receivables:read"));
   assertCheck(checks, "Operator can read performance page", can("operator", "performance:read"));
   assertCheck(checks, "Operator cannot read business profit", !can("operator", "profit:read"));
@@ -239,7 +240,7 @@ async function verifyRbac(checks: Check[], month: string) {
   assertCheck(
     checks,
     "Role context exposes Chinese responsibility and permission labels",
-    roleContext.description.includes("销售代表") && roleContext.permissionDetails.every((item) => Boolean(item.label)),
+    roleContext.description.includes("确认单") && roleContext.permissionDetails.every((item) => Boolean(item.label)),
     roleContext.description
   );
 
@@ -490,6 +491,31 @@ async function verifySalaryDocuments(checks: Check[], month: string) {
   assertCheck(checks, "Sales salary total matches commission records", closeEnough(actualSalesAmount, expectedSalesAmount), `${actualSalesAmount} / ${expectedSalesAmount}`);
   assertCheck(checks, "Customer service salary total matches performance", closeEnough(actualCustomerServiceAmount, expectedCustomerServiceAmount), `${actualCustomerServiceAmount} / ${expectedCustomerServiceAmount}`);
   assertCheck(checks, "Salary document snapshot records imported source", Boolean(salaryPayload?.sourceFileName) && Boolean(salaryPayload?.importBatchNo) && Array.isArray(salaryPayload?.details), JSON.stringify(salaryPayload && { sourceFileName: salaryPayload.sourceFileName, importBatchNo: salaryPayload.importBatchNo, detailCount: salaryPayload.details.length }));
+
+  const directDocument = salesDocuments[0];
+  if (directDocument) {
+    const directlySigned = await workflowService.signByAuthenticatedUser(
+      directDocument.id,
+      {
+        ip: "127.0.0.1",
+        userAgent: "verify-import-authenticated-employee",
+        role: "sales",
+        signedName: directDocument.ownerName,
+        displayName: directDocument.ownerName,
+        accountUsername: "verify_sales_direct",
+        acceptedStatement: true
+      },
+      { mode: "self", names: [directDocument.ownerName, "verify_sales_direct"], field: "salesperson" }
+    );
+    const directEvidence = directlySigned.signatureEvidenceJson ? JSON.parse(directlySigned.signatureEvidenceJson) : null;
+    assertCheck(checks, "Logged-in employee can confirm own document directly", directlySigned.signatureStatus === "signed", directlySigned.signatureStatus);
+    assertCheck(checks, "Direct employee confirmation stores account, IP and time", directEvidence?.accountUsername === "verify_sales_direct" && directEvidence?.ip === "127.0.0.1" && Boolean(directEvidence?.recordedAt), JSON.stringify(directEvidence));
+    const directLog = await prisma.actionLog.findFirst({
+      where: { entityType: "confirmation_document", entityId: String(directDocument.id), action: "employee_sign", operator: "verify_sales_direct" },
+      orderBy: { id: "desc" }
+    });
+    assertCheck(checks, "Direct employee confirmation writes an account audit log", Boolean(directLog), directLog?.payloadJson ?? undefined);
+  }
 }
 
 async function verifyAging(checks: Check[], month: string) {

@@ -93,7 +93,9 @@ export function pagesForPermissions(permissions: string[] | undefined, role?: st
 
 export function firstAllowedPath(permissions: string[] | undefined, role?: string) {
   const pages = pagesForPermissions(permissions, role);
-  const preferred = role === "operator" ? "/operator-performance" : "/dashboard";
+  const preferred = role === "sales" || role === "operator" || role === "sales_operator"
+    ? "/signature-confirm"
+    : "/dashboard";
   return pages.find((page) => page.path === preferred)?.path ?? pages[0]?.path ?? "/settings";
 }
 

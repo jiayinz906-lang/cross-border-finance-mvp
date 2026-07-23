@@ -127,6 +127,12 @@ export function signDocumentByToken(token: string, signedName: string) {
   });
 }
 
+export function employeeConfirmDocument(id: number) {
+  return request.post(`/workflow/documents/${id}/employee-confirm`, {
+    acceptedStatement: true
+  });
+}
+
 export function supervisorConfirmDocument(id: number, adjustReason?: string) {
   return request.post(`/workflow/documents/${id}/supervisor-confirm`, { adjustReason });
 }

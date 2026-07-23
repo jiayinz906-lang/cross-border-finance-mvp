@@ -57,9 +57,9 @@ export const roleDescriptions: Record<UserRole, string> = {
   finance: "负责原始数据导入、收付款、对账、风险复核和财务报表。",
   supervisor: "负责业务复核、提成与绩效确认、签名审批和月度锁账。",
   executive: "只读查看经营、利润、风险、应收应付和薪资确认汇总。",
-  sales: "仅查看本人作为销售代表的订单、利润、提成和确认单。",
+  sales: "仅进入本人确认单与账号安全页面，核对提成并完成电子签名。",
   operator: "仅查看本人作为操作员（客服代表）负责的绩效和确认单。",
-  sales_operator: "同时查看本人作为销售代表的订单、提成，以及本人作为操作员负责的绩效和确认单。",
+  sales_operator: "进入本人综合确认单与操作员绩效页面，分别核对销售提成和操作员绩效。",
   restricted: "账号未分配有效角色，不能访问业务数据。"
 };
 
@@ -137,9 +137,9 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
   finance: [...allPageReads, ...operatorPerformanceManage, "finance:read", "finance:import", "risk:review", "rules:read", "month-close:read", "master:write", "billing:write", "reconciliation:write", "task:manage", "operations:read", "reports:export", "audit:read"],
   supervisor: [...allPageReads, ...operatorPerformanceManage, "finance:read", "finance:import", "finance:close", "risk:review", "rules:read", "month-close:read", "confirmation:approve", "master:write", "billing:write", "reconciliation:write", "task:manage", "operations:read", "reports:export", "audit:read"],
   executive: [...operatorPerformanceSelf, "dashboard:read", "profit:read", "commission:read", "service:read", "confirmation:read", "performance:read", "customer-profit:read", "risk:read", "receivables:read", "payables:read", "rules:read", "month-close:read", "settings:read", "reports:read", "finance:read", "reports:export", "audit:read"],
-  sales: ["dashboard:read", "profit:read", "commission:read", "service:read", "confirmation:read", "customer-profit:read", "settings:read", "finance:read"],
+  sales: ["confirmation:read", "settings:read", "finance:read"],
   operator: ["confirmation:read", "performance:read", "settings:read", "finance:read", ...operatorPerformanceSelf],
-  sales_operator: ["dashboard:read", "profit:read", "commission:read", "service:read", "confirmation:read", "performance:read", "customer-profit:read", "settings:read", "finance:read", ...operatorPerformanceSelf],
+  sales_operator: ["confirmation:read", "performance:read", "settings:read", "finance:read", ...operatorPerformanceSelf],
   restricted: []
 };
 

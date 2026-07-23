@@ -6,6 +6,7 @@ import {
   createExportJob,
   downloadConfirmationDocumentFile,
   downloadExportJobFile,
+  employeeConfirmDocument,
   generateLogisticsDocuments,
   generateSalaryDocuments,
   getDocuments,
@@ -75,6 +76,8 @@ type ConfirmationPayload = {
     confirmIp: string;
     deviceInfo: string;
     supervisorConfirm: string;
+    accountUsername?: string | null;
+    displayName?: string | null;
   };
 };
 
@@ -137,6 +140,7 @@ export default function SignatureConfirm() {
   const [supervisorDocument, setSupervisorDocument] = useState<ConfirmationDocument | null>(null);
   const [voidingDocument, setVoidingDocument] = useState<ConfirmationDocument | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [employeeConfirmingId, setEmployeeConfirmingId] = useState<number | null>(null);
   const { selectedMonth } = useSelectedMonth();
 
   const selectedPayload = parsePayload(selectedDocument);
@@ -240,6 +244,44 @@ export default function SignatureConfirm() {
 
   const handleVoid = (row: ConfirmationDocument) => setVoidingDocument(row);
 
+  const handleEmployeeConfirm = (row: ConfirmationDocument) => {
+    Modal.confirm({
+      title: "本人确认并完成电子签名",
+      width: 560,
+      okText: "本人确认并签名",
+      cancelText: "暂不确认",
+      content: (
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <Typography.Paragraph style={{ marginBottom: 0 }}>
+            请确认本人已核对本确认单的订单、毛利、提成或绩效金额。
+          </Typography.Paragraph>
+          <Descriptions bordered size="small" column={1}>
+            <Descriptions.Item label="确认账号">{user?.username ?? "-"}</Descriptions.Item>
+            <Descriptions.Item label="员工姓名">{user?.displayName ?? row.ownerName}</Descriptions.Item>
+            <Descriptions.Item label="确认金额">{toPlainMoney(row.commissionAmount)}</Descriptions.Item>
+          </Descriptions>
+          <Typography.Text type="secondary">
+            提交后将记录当前账号、确认时间、访问 IP 和设备信息，作为电子签名审计证据。
+          </Typography.Text>
+        </Space>
+      ),
+      onOk: async () => {
+        setEmployeeConfirmingId(row.id);
+        try {
+          await employeeConfirmDocument(row.id);
+          message.success("本人确认成功，电子签名和审计日志已保存。");
+          setSelectedDocument(null);
+          await loadData();
+        } catch (error: any) {
+          message.error(error?.response?.data?.message ?? "确认失败，请刷新后重试。");
+          throw error;
+        } finally {
+          setEmployeeConfirmingId(null);
+        }
+      }
+    });
+  };
+
   const needConfirmCount = documents.length;
   const sentCount = documents.filter((row) => row.sendStatus === "notified").length;
   const signedCount = documents.filter((row) => row.signatureStatus === "signed").length;
@@ -288,6 +330,9 @@ export default function SignatureConfirm() {
       render: (_, row) => (
         <Space size={6} wrap>
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看个人确认单</Button>
+          {isPersonalAccount && row.signatureStatus !== "signed" && row.documentStatus !== "voided"
+            ? <Button type="primary" size="small" loading={employeeConfirmingId === row.id} onClick={() => handleEmployeeConfirm(row)}>本人确认</Button>
+            : null}
           {canApprove ? <Button size="small" onClick={() => handleSend(row)}>生成并发送钉钉</Button> : null}
           {canApprove ? <Button size="small" disabled={!row.signatureUrl} onClick={async () => {
             if (usesLocalSignatureBackend()) {
@@ -349,6 +394,9 @@ export default function SignatureConfirm() {
       render: (_, row) => (
         <Space size={6} wrap>
           <Button size="small" onClick={() => setSelectedDocument(row)}>查看确认单</Button>
+          {isPersonalAccount && row.signatureStatus !== "signed" && row.documentStatus !== "voided"
+            ? <Button type="primary" size="small" loading={employeeConfirmingId === row.id} onClick={() => handleEmployeeConfirm(row)}>本人确认</Button>
+            : null}
           {canApprove ? <Button size="small" onClick={() => handleSend(row)}>生成并发送钉钉</Button> : null}
           <Button size="small" onClick={() => handleDownload(row, "pdf")}>PDF</Button>
           <Button size="small" onClick={() => handleDownload(row, "png")}>PNG</Button>
@@ -442,7 +490,14 @@ export default function SignatureConfirm() {
       <Modal
         open={Boolean(selectedDocument)}
         title={selectedPayload?.title ?? `${selectedDocument?.ownerName ?? ""} 个人确认单`}
-        footer={<Button type="primary" onClick={() => setSelectedDocument(null)}>关闭</Button>}
+        footer={(
+          <Space>
+            <Button onClick={() => setSelectedDocument(null)}>关闭</Button>
+            {isPersonalAccount && selectedDocument?.signatureStatus !== "signed" && selectedDocument?.documentStatus !== "voided"
+              ? <Button type="primary" loading={employeeConfirmingId === selectedDocument?.id} onClick={() => selectedDocument && handleEmployeeConfirm(selectedDocument)}>本人确认并签名</Button>
+              : null}
+          </Space>
+        )}
         onCancel={() => setSelectedDocument(null)}
         width={1180}
         className="salary-confirmation-modal"
@@ -491,6 +546,8 @@ export default function SignatureConfirm() {
               <Descriptions.Item label="签名时间">{dateTimeText(selectedDocument?.signedAt ?? selectedPayload.signatureTrace.signedAt)}</Descriptions.Item>
               <Descriptions.Item label="确认 IP">{selectedPayload.signatureTrace.confirmIp}</Descriptions.Item>
               <Descriptions.Item label="设备信息">{selectedPayload.signatureTrace.deviceInfo}</Descriptions.Item>
+              <Descriptions.Item label="确认账号">{selectedPayload.signatureTrace.accountUsername ?? (selectedDocument?.signatureStatus === "signed" ? "外部链接签名" : "待确认")}</Descriptions.Item>
+              <Descriptions.Item label="账号姓名">{selectedPayload.signatureTrace.displayName ?? selectedPayload.summary.ownerName}</Descriptions.Item>
               <Descriptions.Item label="主管最终确认">{selectedDocument?.supervisorStatus === "confirmed" ? "主管已确认" : selectedPayload.signatureTrace.supervisorConfirm}</Descriptions.Item>
               <Descriptions.Item label="签名链接">
                 {selectedDocument?.signatureUrl ? externalSignatureUrl(selectedDocument.signatureUrl) : "待发送后生成"}

@@ -65,8 +65,27 @@ function evidence(req: Request, action: string) {
   };
 }
 
+function authenticatedEmployeeEvidence(req: Request) {
+  const actor = requiredCurrentUser(req);
+  return {
+    ...evidence(req, "employee_sign"),
+    accountUsername: actor.username,
+    displayName: actor.displayName,
+    signedName: actor.displayName || actor.username,
+    acceptedStatement: true
+  };
+}
+
 export async function signByTokenController(req: Request, res: Response) {
   res.json(await workflowService.signByToken(req.params.token, evidence(req, "employee_sign")));
+}
+
+export async function employeeConfirmDocumentController(req: Request, res: Response) {
+  res.json(await workflowService.signByAuthenticatedUser(
+    Number(req.params.id),
+    authenticatedEmployeeEvidence(req),
+    currentFinanceAccess(req)
+  ));
 }
 
 export async function supervisorConfirmController(req: Request, res: Response) {
