@@ -171,6 +171,7 @@ async function verifyImport(checks: Check[]) {
       category: airRow.category,
       orderCount: airRow.rawOrderCount + 1,
       rate: 60,
+      reason: "verify import adjustment reason",
       updatedBy: "verify-import"
     });
     const overriddenAir = overridden.rows.find((group) => group.operatorName === airGroup.operatorName)?.rows.find((row) => row.category === "air_white");

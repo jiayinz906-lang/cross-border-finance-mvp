@@ -104,6 +104,40 @@ body {
   background: #5c7cff;
 }
 
+.app-sider .ant-menu-submenu-title {
+  height: 34px !important;
+  margin: 8px 0 2px !important;
+  padding-inline: 10px !important;
+  color: #9fb0d6 !important;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.app-sider .ant-menu-submenu-title:hover {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.app-sider .ant-menu-sub .ant-menu-item {
+  height: 32px;
+  margin: 4px 0;
+  padding-inline-start: 30px !important;
+  line-height: 32px;
+}
+
+.menu-group-icon {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 5px;
+  background: rgba(92, 124, 255, 0.16);
+  color: #dbe5ff;
+  font-size: 11px;
+  font-weight: 950;
+}
+
 .sider-note {
   margin-top: auto;
   padding: 16px;
@@ -1932,6 +1966,68 @@ body {
   gap: 6px;
 }
 
+.operator-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.operator-summary-grid > div {
+  min-height: 76px;
+  padding: 14px;
+  border: 1px solid #e3eaf5;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.operator-summary-grid span {
+  display: block;
+  color: #72829e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.operator-summary-grid strong {
+  display: block;
+  margin-top: 8px;
+  color: #071737;
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.operator-filter-bar {
+  margin-bottom: 12px;
+}
+
+.operator-page-error {
+  margin-bottom: 12px;
+}
+
+.operator-workflow-tabs .ant-tabs-nav {
+  margin-bottom: 14px;
+}
+
+.operator-workflow-tabs .ant-tabs-tab {
+  font-weight: 800;
+}
+
+.operator-table-stack-compact {
+  gap: 10px;
+}
+
+.signature-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.signature-title-block.inline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .operator-rule-grid div {
   min-height: 96px;
   padding: 9px 10px;
@@ -2035,6 +2131,23 @@ body {
   justify-self: start;
   font-style: normal;
   font-weight: 850;
+}
+
+.operator-performance-table .operator-row-dirty > td {
+  background: #fff8df !important;
+}
+
+.operator-performance-table .operator-row-dirty > td:first-child::after {
+  content: "\672A\4FDD\5B58";
+  display: block;
+  width: max-content;
+  margin: 4px auto 0;
+  padding: 1px 6px;
+  border: 1px solid #ffd666;
+  border-radius: 999px;
+  color: #ad6800;
+  background: #fffbe6;
+  font-size: 11px;
 }
 
 .operator-rule-grid .ant-input {

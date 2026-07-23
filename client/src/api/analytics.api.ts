@@ -15,6 +15,7 @@ export function updateOperatorPerformanceOverride(payload: {
   orderCount?: number | null;
   baseCount?: number | null;
   rate?: number | null;
+  reason?: string;
 }) {
   return request.put("/analytics/operator-performance/overrides", payload);
 }

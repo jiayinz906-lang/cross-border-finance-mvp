@@ -32,7 +32,14 @@ export type Permission =
   | "task:manage"
   | "operations:read"
   | "reports:export"
-  | "audit:read";
+  | "audit:read"
+  | "operator_performance:view"
+  | "operator_performance:edit"
+  | "operator_performance:generate_document"
+  | "operator_performance:send_signature"
+  | "operator_performance:supervisor_confirm"
+  | "operator_performance:void"
+  | "operator_performance:export";
 
 export const roleLabels: Record<UserRole, string> = {
   admin: "系统管理员",
@@ -87,8 +94,27 @@ export const permissionLabels: Record<Permission, string> = {
   "task:manage": "处理跨部门待办",
   "operations:read": "查看财务工作台",
   "reports:export": "导出报表和备份",
-  "audit:read": "查看审计日志"
+  "audit:read": "查看审计日志",
+  "operator_performance:view": "查看操作员绩效",
+  "operator_performance:edit": "调整操作员绩效",
+  "operator_performance:generate_document": "生成操作员绩效确认单",
+  "operator_performance:send_signature": "发送操作员绩效签名",
+  "operator_performance:supervisor_confirm": "主管确认操作员绩效",
+  "operator_performance:void": "作废重签操作员绩效确认单",
+  "operator_performance:export": "导出操作员绩效确认单"
 };
+
+const operatorPerformanceManage: Permission[] = [
+  "operator_performance:view",
+  "operator_performance:edit",
+  "operator_performance:generate_document",
+  "operator_performance:send_signature",
+  "operator_performance:supervisor_confirm",
+  "operator_performance:void",
+  "operator_performance:export"
+];
+
+const operatorPerformanceSelf: Permission[] = ["operator_performance:view", "operator_performance:export"];
 
 const allPageReads: Permission[] = [
   "dashboard:read",
@@ -107,13 +133,13 @@ const allPageReads: Permission[] = [
 ];
 
 export const rolePermissions: Record<UserRole, Permission[]> = {
-  admin: [...allPageReads, "finance:read", "finance:import", "users:manage", "finance:reset", "finance:rollback", "finance:close", "risk:review", "rules:read", "rules:write", "month-close:read", "confirmation:approve", "master:write", "billing:write", "reconciliation:write", "task:manage", "operations:read", "reports:export", "audit:read"],
-  finance: [...allPageReads, "finance:read", "finance:import", "risk:review", "rules:read", "month-close:read", "master:write", "billing:write", "reconciliation:write", "task:manage", "operations:read", "reports:export", "audit:read"],
-  supervisor: [...allPageReads, "finance:read", "finance:import", "finance:close", "risk:review", "rules:read", "month-close:read", "confirmation:approve", "master:write", "billing:write", "reconciliation:write", "task:manage", "operations:read", "reports:export", "audit:read"],
-  executive: ["dashboard:read", "profit:read", "commission:read", "service:read", "confirmation:read", "performance:read", "customer-profit:read", "risk:read", "receivables:read", "payables:read", "rules:read", "month-close:read", "settings:read", "reports:read", "finance:read", "reports:export", "audit:read"],
+  admin: [...allPageReads, ...operatorPerformanceManage, "finance:read", "finance:import", "users:manage", "finance:reset", "finance:rollback", "finance:close", "risk:review", "rules:read", "rules:write", "month-close:read", "confirmation:approve", "master:write", "billing:write", "reconciliation:write", "task:manage", "operations:read", "reports:export", "audit:read"],
+  finance: [...allPageReads, ...operatorPerformanceManage, "finance:read", "finance:import", "risk:review", "rules:read", "month-close:read", "master:write", "billing:write", "reconciliation:write", "task:manage", "operations:read", "reports:export", "audit:read"],
+  supervisor: [...allPageReads, ...operatorPerformanceManage, "finance:read", "finance:import", "finance:close", "risk:review", "rules:read", "month-close:read", "confirmation:approve", "master:write", "billing:write", "reconciliation:write", "task:manage", "operations:read", "reports:export", "audit:read"],
+  executive: [...operatorPerformanceSelf, "dashboard:read", "profit:read", "commission:read", "service:read", "confirmation:read", "performance:read", "customer-profit:read", "risk:read", "receivables:read", "payables:read", "rules:read", "month-close:read", "settings:read", "reports:read", "finance:read", "reports:export", "audit:read"],
   sales: ["dashboard:read", "profit:read", "commission:read", "service:read", "confirmation:read", "customer-profit:read", "settings:read", "finance:read"],
-  operator: ["confirmation:read", "performance:read", "settings:read", "finance:read"],
-  sales_operator: ["dashboard:read", "profit:read", "commission:read", "service:read", "confirmation:read", "performance:read", "customer-profit:read", "settings:read", "finance:read"],
+  operator: ["confirmation:read", "performance:read", "settings:read", "finance:read", ...operatorPerformanceSelf],
+  sales_operator: ["dashboard:read", "profit:read", "commission:read", "service:read", "confirmation:read", "performance:read", "customer-profit:read", "settings:read", "finance:read", ...operatorPerformanceSelf],
   restricted: []
 };
 

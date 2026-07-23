@@ -249,6 +249,7 @@ export const analyticsService = {
     orderCount?: unknown;
     baseCount?: unknown;
     rate?: unknown;
+    reason?: unknown;
     updatedBy: string;
   }) {
     const allowedCategories = new Set(["air_white", "white", "grey", "company", "eac", "trademark"]);
@@ -261,6 +262,12 @@ export const analyticsService = {
       baseCount: fixedAirWhiteRule ? null : asOptionalNonNegativeInteger(input.baseCount, "baseCount"),
       rate: fixedAirWhiteRule ? null : asOptionalNonNegativeNumber(input.rate, "rate")
     };
+    const hasManualValue = overrideValues.orderCount !== null || overrideValues.baseCount !== null || overrideValues.rate !== null;
+    const reason = String(input.reason ?? "").trim();
+    if (hasManualValue && reason.length < 2) throw new Error("Operator performance adjustment reason is required.");
+    const previous = await prisma.operatorPerformanceOverride.findUnique({
+      where: { month_operatorName_category: { month: input.month, operatorName: input.operatorName, category: input.category } }
+    });
     await prisma.operatorPerformanceOverride.upsert({
       where: { month_operatorName_category: { month: input.month, operatorName: input.operatorName, category: input.category } },
       create: {
@@ -282,7 +289,11 @@ export const analyticsService = {
         entityId: `${input.operatorName}:${input.category}`,
         action: "update_operator_performance_override",
         operator: input.updatedBy,
-        payloadJson: JSON.stringify(overrideValues)
+        payloadJson: JSON.stringify({
+          before: previous ? { orderCount: previous.orderCount, baseCount: previous.baseCount, rate: previous.rate } : null,
+          after: overrideValues,
+          reason: reason || "恢复自动规则"
+        })
       }
     });
     return this.operatorPerformanceWithSettings(input.month);
