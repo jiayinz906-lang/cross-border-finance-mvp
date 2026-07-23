@@ -326,8 +326,8 @@ export default function CustomerProfit() {
 
       <section className="profit-metric-grid">
         {metrics.map((item) => (
-          <Card key={item.title} className={`profit-metric-card profit-accent-${item.accent}`} loading={loading}>
-            <span className="profit-metric-icon" />
+          <Card key={item.title} className={`profit-metric-card profit-accent-${item.accent}`} loading={loading} aria-label={`${item.title}：${item.value}`}>
+            <span className="profit-metric-icon" aria-hidden="true" />
             <span className="profit-metric-title">{item.title}</span>
             <strong>{item.value}</strong>
             <div className="profit-metric-note">
