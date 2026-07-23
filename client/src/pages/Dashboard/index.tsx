@@ -76,53 +76,93 @@ function MetricCard({ item }: { item: Kpi }) {
 function TrendPanel({ data, showPayable }: { data: MonthlyTrend[]; showPayable: boolean }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const months = data.length ? data : [];
-  const max = Math.max(...months.flatMap((item) => [item.receivable, item.grossProfit, ...(showPayable ? [item.payable ?? 0] : [])]), 1);
+  const amountValues = months.flatMap((item) => [item.receivable, item.grossProfit, ...(showPayable ? [item.payable ?? 0] : [])]);
+  const rateValues = months.map((item) => Number(item.grossProfitRate ?? 0));
+  const amountMin = Math.min(0, ...amountValues);
+  const amountMax = Math.max(1, ...amountValues);
+  const amountRange = Math.max(amountMax - amountMin, 1);
+  const rateMin = Math.min(0, ...rateValues);
+  const rateMax = Math.max(0.1, ...rateValues);
+  const rateRange = Math.max(rateMax - rateMin, 0.01);
   const width = 650;
   const height = 280;
-  const xAt = (index: number) => 42 + (index * (width - 78)) / Math.max(months.length - 1, 1);
-  const yAt = (value: number) => height - 40 - (value / max) * 190;
-  const line = (key: keyof MonthlyTrend) => months.map((item, index) => `${index === 0 ? "M" : "L"} ${xAt(index)} ${yAt(Number(item[key] ?? 0))}`).join(" ");
+  const plotTop = 30;
+  const plotBottom = height - 40;
+  const xAt = (index: number) => 58 + (index * (width - 104)) / Math.max(months.length - 1, 1);
+  const yAmount = (value: number) => plotBottom - ((value - amountMin) / amountRange) * (plotBottom - plotTop);
+  const yRate = (value: number) => plotBottom - ((value - rateMin) / rateRange) * (plotBottom - plotTop);
+  const amountLine = (key: keyof MonthlyTrend) => months.map((item, index) => `${index === 0 ? "M" : "L"} ${xAt(index)} ${yAmount(Number(item[key] ?? 0))}`).join(" ");
+  const rateLine = months.map((item, index) => `${index === 0 ? "M" : "L"} ${xAt(index)} ${yRate(Number(item.grossProfitRate ?? 0))}`).join(" ");
   const activeMonth = activeIndex === null ? null : months[activeIndex];
+  const displayMonth = activeMonth ?? months[months.length - 1] ?? null;
+  const zeroY = yAmount(0);
+  const amountTicks = [0, 1, 2, 3, 4].map((tick) => amountMax - (amountRange * tick) / 4);
+  const compactMoney = (value: number) => {
+    const abs = Math.abs(value);
+    if (abs >= 10000) return `¥${(value / 10000).toFixed(abs >= 100000 ? 0 : 1)}万`;
+    return `¥${Math.round(value).toLocaleString("zh-CN")}`;
+  };
   const hoverBounds = (index: number) => {
     const current = xAt(index);
-    const left = index === 0 ? 28 : (xAt(index - 1) + current) / 2;
-    const right = index === months.length - 1 ? width - 28 : (current + xAt(index + 1)) / 2;
+    const left = index === 0 ? 42 : (xAt(index - 1) + current) / 2;
+    const right = index === months.length - 1 ? width - 42 : (current + xAt(index + 1)) / 2;
     return { left, width: Math.max(right - left, 1) };
   };
 
   return (
     <Card className="overview-card" title="月度经营趋势图（近12个月）">
       <div className="overview-chart-legend">
-        <span><i className="legend-blue" />总应收（元）</span>
-        {showPayable ? <span><i className="legend-green" />总应付（元）</span> : null}
-        <span><i className="legend-orange" />调整后毛利（元）</span>
-        <span><i className="legend-purple" />毛利率（%）</span>
+        <span><i className="legend-blue" />应收</span>
+        {showPayable ? <span><i className="legend-green" />应付</span> : null}
+        <span><i className="legend-orange" />毛利</span>
+        <span><i className="legend-purple" />毛利率</span>
       </div>
+      {displayMonth ? (
+        <div className="overview-trend-summary" aria-live="polite">
+          <strong>{displayMonth.month}</strong>
+          <span><small>应收</small><b>{toMoney(displayMonth.receivable)}</b></span>
+          {showPayable ? <span><small>应付</small><b>{toMoney(displayMonth.payable)}</b></span> : null}
+          <span><small>毛利</small><b>{toMoney(displayMonth.grossProfit)}</b></span>
+          <span><small>毛利率</small><b>{formatPercent(displayMonth.grossProfitRate)}</b></span>
+        </div>
+      ) : null}
+      {!months.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无月度趋势数据" /> : (
       <div className="overview-trend-stage" onMouseLeave={() => setActiveIndex(null)}>
         <svg className="overview-trend-svg" viewBox={`0 0 ${width} ${height}`}>
-          {[0, 1, 2, 3, 4].map((tick) => (
-            <line key={tick} x1="42" x2={width - 28} y1={35 + tick * 48} y2={35 + tick * 48} className="overview-grid" />
+          {amountTicks.map((value, tick) => (
+            <g key={tick}>
+              <line x1="58" x2={width - 46} y1={plotTop + tick * ((plotBottom - plotTop) / 4)} y2={plotTop + tick * ((plotBottom - plotTop) / 4)} className="overview-grid" />
+              <text x="52" y={plotTop + tick * ((plotBottom - plotTop) / 4) + 4} textAnchor="end" className="overview-value-axis">{compactMoney(value)}</text>
+            </g>
           ))}
           {activeIndex !== null ? (() => {
             const bounds = hoverBounds(activeIndex);
-            return <rect x={bounds.left} y="22" width={bounds.width} height={height - 52} rx="6" className="overview-hover-column" />;
+            return <rect x={bounds.left} y="18" width={bounds.width} height={height - 46} rx="8" className="overview-hover-column" />;
           })() : null}
           {months.map((item, index) => (
             <g key={item.month} className={activeIndex !== null && activeIndex !== index ? "overview-month-dimmed" : ""}>
-              {showPayable ? <rect x={xAt(index) - 7} y={yAt(item.payable ?? 0)} width="14" height={height - 40 - yAt(item.payable ?? 0)} rx="3" className={activeIndex === index ? "overview-payable-bar is-active" : "overview-payable-bar"} /> : null}
+              <rect
+                x={xAt(index) - (showPayable ? 15 : 7)}
+                y={Math.min(zeroY, yAmount(item.receivable))}
+                width="12"
+                height={Math.max(Math.abs(zeroY - yAmount(item.receivable)), 1)}
+                rx="3"
+                className={activeIndex === index ? "overview-receivable-bar is-active" : "overview-receivable-bar"}
+              />
+              {showPayable ? <rect x={xAt(index) + 3} y={Math.min(zeroY, yAmount(item.payable ?? 0))} width="12" height={Math.max(Math.abs(zeroY - yAmount(item.payable ?? 0)), 1)} rx="3" className={activeIndex === index ? "overview-payable-bar is-active" : "overview-payable-bar"} /> : null}
               <text x={xAt(index)} y={height - 14} textAnchor="middle" className={activeIndex === index ? "overview-axis is-active" : "overview-axis"}>{item.month.slice(5)}</text>
             </g>
           ))}
-          <path d={line("receivable")} fill="none" stroke="#3769d7" strokeWidth="3" />
-          <path d={line("grossProfit")} fill="none" stroke="#f59a23" strokeWidth="3" />
-          <path d={line("grossProfitRate")} fill="none" stroke="#7567cc" strokeWidth="2.5" strokeDasharray="5 5" />
-          {activeMonth && activeIndex !== null ? (
-            <g className="overview-active-points">
-              <circle cx={xAt(activeIndex)} cy={yAt(activeMonth.receivable)} r="6" fill="#3769d7" />
-              <circle cx={xAt(activeIndex)} cy={yAt(activeMonth.grossProfit)} r="6" fill="#f59a23" />
-              <circle cx={xAt(activeIndex)} cy={yAt(Number(activeMonth.grossProfitRate ?? 0))} r="5" fill="#7567cc" />
+          <path d={amountLine("grossProfit")} fill="none" stroke="#f59a23" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={rateLine} fill="none" stroke="#7567cc" strokeWidth="2.5" strokeDasharray="5 5" strokeLinecap="round" strokeLinejoin="round" />
+          <text x={width - 40} y={plotTop + 4} className="overview-rate-axis">{formatPercent(rateMax)}</text>
+          <text x={width - 40} y={plotBottom + 4} className="overview-rate-axis">{formatPercent(rateMin)}</text>
+          {months.map((item, index) => (
+            <g key={`points-${item.month}`} className={activeIndex !== null && activeIndex !== index ? "overview-month-dimmed" : "overview-active-points"}>
+              <circle cx={xAt(index)} cy={yAmount(item.grossProfit)} r={activeIndex === index ? 5 : 3.5} fill="#f59a23" />
+              <circle cx={xAt(index)} cy={yRate(Number(item.grossProfitRate ?? 0))} r={activeIndex === index ? 5 : 3.5} fill="#7567cc" />
             </g>
-          ) : null}
+          ))}
           {months.map((item, index) => {
             const bounds = hoverBounds(index);
             return (
@@ -147,22 +187,8 @@ function TrendPanel({ data, showPayable }: { data: MonthlyTrend[]; showPayable: 
             );
           })}
         </svg>
-        {activeMonth && activeIndex !== null ? (
-          <div
-            className="overview-trend-tooltip"
-            style={{
-              left: `${(xAt(activeIndex) / width) * 100}%`,
-              transform: activeIndex >= months.length / 2 ? "translateX(-100%)" : "translateX(0)"
-            }}
-          >
-            <strong>{activeMonth.month}</strong>
-            <span><i className="legend-blue" />总应收<b>{toMoney(activeMonth.receivable)}</b></span>
-            {showPayable ? <span><i className="legend-green" />总应付<b>{toMoney(activeMonth.payable)}</b></span> : null}
-            <span><i className="legend-orange" />调整后毛利<b>{toMoney(activeMonth.grossProfit)}</b></span>
-            <span><i className="legend-purple" />毛利率<b>{formatPercent(activeMonth.grossProfitRate)}</b></span>
-          </div>
-        ) : null}
       </div>
+      )}
     </Card>
   );
 }
