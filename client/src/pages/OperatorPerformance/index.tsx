@@ -436,7 +436,7 @@ export default function OperatorPerformance() {
           items={[
             {
               key: "summary",
-              label: "绩效汇总",
+              label: "绩效总览",
               children: <>
                 <div className="operator-summary-grid">
                   <div><span>本月操作员</span><strong>{summaryStats.operatorCount}</strong></div>
@@ -469,7 +469,7 @@ export default function OperatorPerformance() {
                   {!visibleGroups.length ? <Empty description="当前筛选条件下暂无操作员绩效数据" /> : null}
                   {visibleGroups.map((group) => (
                     <div className="operator-performance-table-wrap" key={group.operatorName}>
-                      <div className="operator-table-title">{group.operatorName} ? {selectedMonth} 绩效汇总</div>
+                      <div className="operator-table-title">{group.operatorName} · {selectedMonth} 绩效明细</div>
                       <Table
                         rowKey="id"
                         columns={summaryColumns}
@@ -492,7 +492,7 @@ export default function OperatorPerformance() {
             },
             {
               key: "adjust",
-              label: "绩效汇总",
+              label: "绩效调整",
               disabled: !canEdit,
               children: <>
                 {!canEdit ? <Alert type="warning" showIcon message="当前账号没有绩效调整权限" /> : null}
