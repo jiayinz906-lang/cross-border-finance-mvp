@@ -26,7 +26,7 @@ const managerRoles = ["admin", "finance", "supervisor", "executive"];
 
 export const appPages: AppPageAccess[] = [
   { path: "/dashboard", label: "经营总览", permission: "dashboard:read", navigation: true, roles: [...managerRoles, "sales", "sales_operator"] },
-  { path: "/raw-entry", label: "原始数据录入", permission: "ledger:read", navigation: true },
+  { path: "/raw-entry", label: "业务数据录入", permission: "ledger:read", navigation: true },
   { path: "/finance-ledger", label: "原始台账", permission: "ledger:read" },
   { path: "/finance-operations", label: "财务工作台", permission: "operations:read", navigation: true },
   { path: "/profit-analysis", label: "业务利润", permission: "profit:read", navigation: true, roles: [...managerRoles, "sales", "sales_operator"] },

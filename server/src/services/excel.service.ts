@@ -548,7 +548,7 @@ function finalize(order: DraftOrder, rules: ImportRules): DraftOrder {
   if (order.adjustedPayable === 0 && !order.isServiceBusiness) notes.push("未识别到应付成本");
   if (order.isServiceBusiness) notes.push("注册/证书/店铺等服务类业务，进入主管确认，不计入物流利润分析");
   order.needSupervisorConfirm = order.needSupervisorConfirm || notes.length > 0;
-  order.calculationNote = notes.join("；") || "Excel 导入后端自动聚合分析";
+  order.calculationNote = notes.join("；") || "原始业务明细自动聚合分析";
   return order;
 }
 
@@ -1109,7 +1109,7 @@ async function createDerivedRecords(
         riskLevel: riskLevel(order, rules),
         riskType: riskType(order, rules),
         riskReasons: `${order.orderNo}：${order.calculationNote}`,
-        suggestion: "复核原始 Excel、汇率、应收应付和成本归集后再确认。",
+        suggestion: "复核原始业务明细、汇率、应收应付和成本归集后再确认。",
         status: "open"
       }
     });
@@ -1127,10 +1127,193 @@ async function createDerivedRecords(
         costAmount: order.adjustedPayable,
         grossProfit: order.adjustedGrossProfit,
         confirmStatus: "pending",
-        remark: "Excel 导入服务类业务，单独主管确认；不进入物流利润分析。"
+        remark: "服务类业务单独进入主管确认；不进入物流利润分析。"
       }
     });
   }
+}
+
+/**
+ * 将已确认的 ERP 手工业务单作为当前月份唯一业务来源重建财务派生数据。
+ * 手工录入与历史 Excel 导入共用同一套汇率、赔付、费用分类、风险和提成函数，
+ * 因而不会出现两套计算口径。
+ */
+export async function rebuildFinanceFromManualEntries(month: string, operator = "finance-system") {
+  const rules = await loadImportRules(month);
+  const entries = await prisma.manualLedgerEntry.findMany({
+    where: { month, sourceType: "manual_erp", status: "confirmed" },
+    orderBy: [{ transactionDate: "asc" }, { documentNo: "asc" }, { lineNo: "asc" }, { id: "asc" }]
+  });
+  const rawLines: ParsedRawLine[] = entries.map((entry, index) => {
+    const direction = entry.direction === "payable" ? "应付" : entry.direction === "receivable" ? "应收" : "其他";
+    const raw: RawRow = {
+      运单号: entry.orderNo,
+      客户订单号: entry.customerOrderNo,
+      用户: entry.customerName || entry.counterparty,
+      服务: entry.businessType,
+      "收费重(KG)": entry.chargeWeight,
+      "供应商收费重(KG)": entry.supplierChargeWeight,
+      供应商: entry.supplierName,
+      供应商服务: entry.supplierService,
+      收付类型: direction,
+      费用类型: entry.feeType,
+      金额: entry.originalAmount,
+      单价: entry.unitPrice,
+      本币费用: entry.localAmount,
+      销售代表: entry.salespersonName,
+      备注: entry.note,
+      折合人民币: entry.convertedAmount,
+      客服代表: entry.customerServiceName,
+      下单时间: entry.transactionDate,
+      内部备注: entry.internalRemark,
+      实重: entry.actualWeight,
+      件数: entry.pieces,
+      主品名: entry.mainProductName
+    };
+    const canonical: CanonicalRow = {
+      orderNo: entry.orderNo,
+      customerOrderNo: entry.customerOrderNo,
+      customerName: entry.customerName || entry.counterparty,
+      service: entry.businessType,
+      supplier: entry.supplierName,
+      direction,
+      feeType: entry.feeType,
+      amount: entry.originalAmount,
+      localAmount: entry.localAmount,
+      convertedAmount: entry.convertedAmount,
+      salespersonName: entry.salespersonName,
+      remark: entry.note,
+      exchangeRate: entry.exchangeRate,
+      customerServiceName: entry.customerServiceName,
+      orderDate: entry.transactionDate,
+      internalRemark: entry.internalRemark,
+      actualWeight: entry.actualWeight,
+      pieces: entry.pieces,
+      mainProductName: entry.mainProductName
+    };
+    return {
+      rowIndex: index + 1,
+      orderNo: entry.orderNo || undefined,
+      customerOrderNo: entry.customerOrderNo,
+      raw,
+      canonical,
+      parseStatus: entry.orderNo ? "parsed" : "skipped",
+      parseMessage: entry.orderNo ? undefined : "缺少系统单号，未进入订单聚合"
+    };
+  });
+
+  const orderMap = new Map<string, DraftOrder>();
+  for (const line of rawLines) {
+    if (!line.orderNo) continue;
+    const row = line.canonical;
+    const draft = orderMap.get(line.orderNo) ?? makeDraft(row, rules);
+    const feeType = text(row.feeType);
+    const direction = text(row.direction);
+    const amount = chargeAmount(row, direction, feeType, rules).aggregateAmount;
+    draft.month = month;
+    draft.supplierName = draft.supplierName || text(row.supplier) || undefined;
+    draft.customerOrderNo = text(row.customerOrderNo) || draft.customerOrderNo || text(row.customerName) || line.orderNo;
+    draft.isServiceBusiness = draft.isServiceBusiness || isServiceBusiness(text(row.service), feeType, rules);
+    draft.needSupervisorConfirm = draft.needSupervisorConfirm || draft.isServiceBusiness;
+    applyAmount(draft, direction, feeType, amount);
+    orderMap.set(line.orderNo, draft);
+  }
+  const orders = Array.from(orderMap.values()).map((order) => finalize({ ...order, month }, rules));
+  const summary = summarizeOrders(orders, rules);
+  const qualityReport = buildQualityReport({ orders, rawLines, rules });
+  const sourceSnapshot = Buffer.from(JSON.stringify(entries.map((entry) => ({ ...entry, id: undefined }))), "utf8");
+  const sourceFileSha256 = crypto.createHash("sha256").update(sourceSnapshot).digest("hex");
+  const fileName = `ERP手工录入-${month}.json`;
+  const sheetName = "ERP手工业务单";
+  const batchNumber = batchNo(month);
+  await assertMonthOpen(month, "确认手工业务单");
+
+  return prisma.$transaction(async (tx) => {
+    const batch = await tx.importBatch.create({
+      data: {
+        batchNo: batchNumber,
+        month,
+        fileName,
+        sheetName,
+        sourceType: "manual_erp",
+        importedRows: rawLines.length,
+        importedOrders: summary.importedOrders,
+        logisticsOrders: summary.logisticsOrders,
+        serviceOrders: summary.serviceOrders,
+        totalReceivable: summary.totalReceivable,
+        totalPayable: summary.totalPayable,
+        totalGrossProfit: summary.totalGrossProfit,
+        riskOrderCount: summary.riskOrderCount,
+        abnormalHighProfitCount: summary.abnormalHighProfitOrderCount,
+        templateAuditJson: JSON.stringify({ source: "manual_erp", status: "passed", templateHeaders }),
+        previewJson: JSON.stringify({ ...summary, qualityReport, activeRules: rules, source: "manual_erp" }),
+        sourceFileData: sourceSnapshot,
+        sourceFileSha256,
+        sourceFileSize: sourceSnapshot.length,
+        createdBy: operator
+      }
+    });
+
+    await tx.serviceBusinessRecord.deleteMany({ where: { financeOrder: { month } } });
+    await tx.settlementRecord.deleteMany({ where: { financeOrder: { month } } });
+    await tx.costAdjustment.deleteMany({ where: { financeOrder: { month } } });
+    await tx.riskRecord.deleteMany({ where: { financeOrder: { month } } });
+    await tx.commissionRecord.deleteMany({ where: { financeOrder: { month } } });
+    await tx.financeSummary.deleteMany({ where: { month } });
+    await tx.confirmationDocument.updateMany({
+      where: { month, documentStatus: { not: "voided" } },
+      data: {
+        documentStatus: "voided",
+        signatureStatus: "pending",
+        supervisorStatus: "pending",
+        signatureToken: null,
+        signatureUrl: null,
+        signatureTokenExpiresAt: null,
+        voidReason: "ERP 手工业务单重新过账，旧确认单自动作废",
+        voidedAt: new Date()
+      }
+    });
+    await tx.financeChargeLine.deleteMany({ where: { month } });
+    await tx.financeOrder.deleteMany({ where: { month } });
+    await tx.importBatch.updateMany({ where: { month, id: { not: batch.id }, status: "active" }, data: { status: "superseded" } });
+
+    const createdOrders = [];
+    for (const order of orders) createdOrders.push(await tx.financeOrder.create({ data: { ...order, importBatchId: batch.id } }));
+    if (rawLines.length) {
+      await tx.rawLedgerLine.createMany({
+        data: rawLines.map((line) => ({
+          importBatchId: batch.id,
+          month,
+          orderNo: line.orderNo,
+          customerOrderNo: line.customerOrderNo,
+          rowIndex: line.rowIndex,
+          sheetName,
+          sourceFileName: fileName,
+          rowHash: rowHash(line.raw),
+          rawJson: stableJson(line.raw),
+          canonicalJson: stableJson(line.canonical),
+          parseStatus: line.parseStatus,
+          parseMessage: line.parseMessage
+        }))
+      });
+    }
+    const chargeLineCount = await writeChargeLinesForBatch(tx, { batchId: batch.id, month, fileName, rawLines, rules });
+    const logisticsProfitBySalesperson = new Map<string, number>();
+    for (const order of createdOrders) {
+      if (!order.isServiceBusiness && order.adjustedGrossProfit > 0) logisticsProfitBySalesperson.set(order.salespersonName, sumNumbers([logisticsProfitBySalesperson.get(order.salespersonName) ?? 0, order.adjustedGrossProfit]));
+    }
+    for (const order of createdOrders) await createDerivedRecords(tx, order, logisticsProfitBySalesperson, rules);
+    await rebuildFinanceSummary(tx, month, rules);
+    await writeActionLog(tx, {
+      month,
+      entityType: "import_batch",
+      entityId: batch.id,
+      action: "rebuild_from_manual_erp",
+      operator,
+      payload: { batchNo: batch.batchNo, importedRows: rawLines.length, importedOrders: createdOrders.length, chargeLineCount, totalReceivable: summary.totalReceivable, totalPayable: summary.totalPayable, totalGrossProfit: summary.totalGrossProfit }
+    });
+    return { batchId: batch.id, batchNo: batch.batchNo, month, importedRows: rawLines.length, chargeLineCount, ...summary };
+  }, { timeout: 120_000 });
 }
 
 export const excelService = {
@@ -1401,6 +1584,7 @@ export const excelService = {
         fileName: true,
         sheetName: true,
         importMode: true,
+        sourceType: true,
         status: true,
         importedRows: true,
         importedOrders: true,

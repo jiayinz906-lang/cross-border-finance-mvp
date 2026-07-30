@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily XJD Finance database backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=600
+Unit=xjd-finance-backup.service
+
+[Install]
+WantedBy=timers.target

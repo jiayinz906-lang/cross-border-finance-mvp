@@ -1,0 +1,132 @@
+name: xjd-finance-tencent
+
+services:
+  postgres:
+    image: postgres:17@sha256:a426e44bac0b759c95894d68e1a0ac03ecc20b619f498a91aae373bf06d8508d
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - ${POSTGRES_DATA_DIR:?POSTGRES_DATA_DIR is required}:/var/lib/postgresql/data
+    networks: [finance-internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    logging: &json-logging
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  migrate:
+    image: ${BACKEND_IMAGE_NAME:-xjd-finance-backend}:${IMAGE_TAG:-local}
+    build:
+      context: .
+      target: backend-runtime
+      args:
+        BUILD_GIT_SHA: ${BUILD_GIT_SHA:-local}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+    profiles: ["migration"]
+    restart: "no"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    env_file:
+      - ${TENCENT_ENV_FILE:-.env.tencent}
+    # Dependencies and Prisma Client are already built into the image. Invoke the
+    # guarded deployment script directly so migration never performs a runtime
+    # package install or depends on an interactive TTY.
+    command: ["node", "node_modules/tsx/dist/cli.mjs", "scripts/deploy-prisma-schema.ts"]
+    networks: [finance-internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *json-logging
+
+  backend:
+    image: ${BACKEND_IMAGE_NAME:-xjd-finance-backend}:${IMAGE_TAG:-local}
+    build:
+      context: .
+      target: backend-runtime
+      args:
+        BUILD_GIT_SHA: ${BUILD_GIT_SHA:-local}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    env_file:
+      - ${TENCENT_ENV_FILE:-.env.tencent}
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      PRODUCTION_PROFILE: tencent
+      BUILD_GIT_SHA: ${BUILD_GIT_SHA:-local}
+      FRONTEND_GIT_SHA: ${BUILD_GIT_SHA:-local}
+      BUILD_TIME: ${BUILD_TIME:-unknown}
+    expose: ["4000"]
+    networks: [finance-internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 30s
+    mem_limit: ${BACKEND_MEMORY_LIMIT:-1g}
+    cpus: ${BACKEND_CPU_LIMIT:-1.0}
+    logging: *json-logging
+
+  nginx:
+    image: ${FRONTEND_IMAGE_NAME:-xjd-finance-frontend}:${IMAGE_TAG:-local}
+    build:
+      context: .
+      target: frontend-runtime
+      args:
+        VITE_API_BASE_URL: /api
+        VITE_PUBLIC_APP_URL: ${PUBLIC_APP_URL:?PUBLIC_APP_URL is required}
+        BUILD_GIT_SHA: ${BUILD_GIT_SHA:-local}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      SERVER_NAME: ${SERVER_NAME:?SERVER_NAME is required}
+      TLS_CERT_PATH: ${TLS_CERT_PATH:-/etc/nginx/certs/fullchain.pem}
+      TLS_KEY_PATH: ${TLS_KEY_PATH:-/etc/nginx/certs/privkey.pem}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/tencent.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${TLS_CERT_HOST_DIR:-./certs}:/etc/nginx/certs:ro
+    networks: [finance-internal]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -q -O /dev/null https://127.0.0.1/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *json-logging
+
+networks:
+  finance-internal:
+    driver: bridge
+    internal: false

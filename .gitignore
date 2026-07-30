@@ -5,6 +5,10 @@ dist/
 !.env.example
 !.env.docker.example
 !.env.production.example
+!.env.tencent.example
+.env.tencent
+.env.tencent.test
+certs/
 *.db
 *.db-journal
 prisma/dev.db
@@ -12,6 +16,7 @@ server/dist/
 client/dist/
 .codex-spreadsheet-work/
 outputs/
+.migration-test/
 .codex-server.log
 .codex-server.err.log
 .codex-client.log

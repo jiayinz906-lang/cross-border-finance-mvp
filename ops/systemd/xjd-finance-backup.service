@@ -1,0 +1,17 @@
+[Unit]
+Description=XJD Finance PostgreSQL backup and COS verification
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=xjdfinance
+Group=xjdfinance
+WorkingDirectory=/opt/xjd-finance/current
+Environment=TENCENT_ENV_FILE=/opt/xjd-finance/shared/.env.tencent
+ExecStart=/usr/bin/bash /opt/xjd-finance/current/scripts/backup-tencent.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+NoNewPrivileges=true

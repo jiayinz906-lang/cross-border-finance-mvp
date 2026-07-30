@@ -43,13 +43,36 @@ async function probeDatabase() {
   }
 }
 
-export function healthController(_req: Request, res: Response) {
+async function currentDatabaseMigration() {
+  try {
+    const rows = await withTimeout(prisma.$queryRaw<Array<{ migration_name: string }>>`
+      SELECT migration_name
+      FROM "_prisma_migrations"
+      WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+      ORDER BY finished_at DESC
+      LIMIT 1
+    `, env.healthDbTimeoutMs, "Migration version check");
+    return rows[0]?.migration_name || "none";
+  } catch {
+    return "unavailable";
+  }
+}
+
+export async function healthController(_req: Request, res: Response) {
   const operations = getOperationsSnapshot();
   res.json({
     status: "ok",
     service: "cross-border-finance-server",
     timestamp: currentIsoTimestamp(),
-    version: process.env.RENDER_GIT_COMMIT || process.env.GITHUB_SHA || "local",
+    version: env.buildGitSha,
+    backendCommit: env.buildGitSha,
+    frontendCommit: env.frontendGitSha,
+    buildTime: env.buildTime,
+    databaseMigration: await currentDatabaseMigration(),
+    maintenance: {
+      enabled: env.maintenanceMode,
+      message: env.maintenanceMode ? env.maintenanceMessage : null
+    },
     uptimeSeconds: operations.uptimeSeconds
   });
 }
@@ -92,7 +115,10 @@ export async function readinessController(req: Request, res: Response) {
     details.activeRuleCount = ruleCount;
     details.month = month;
     details.environment = env.nodeEnv;
-    details.version = process.env.RENDER_GIT_COMMIT || process.env.GITHUB_SHA || "local";
+    details.version = env.buildGitSha;
+    details.frontendCommit = env.frontendGitSha;
+    details.buildTime = env.buildTime;
+    details.databaseMigration = await currentDatabaseMigration();
     details.databaseLatencyMs = database.latencyMs;
     details.uptimeSeconds = getOperationsSnapshot().uptimeSeconds;
     details.latestImportBatch = latestBatch ? {
@@ -136,7 +162,11 @@ export async function operationsController(_req: Request, res: Response) {
     status,
     service: "cross-border-finance-server",
     timestamp: currentIsoTimestamp(),
-    version: process.env.RENDER_GIT_COMMIT || process.env.GITHUB_SHA || "local",
+    version: env.buildGitSha,
+    backendCommit: env.buildGitSha,
+    frontendCommit: env.frontendGitSha,
+    buildTime: env.buildTime,
+    databaseMigration: await currentDatabaseMigration(),
     environment: env.nodeEnv,
     database,
     runtime,
@@ -147,7 +177,9 @@ export async function operationsController(_req: Request, res: Response) {
       imageUploadMaxMb: env.imageUploadMaxMb,
       slowRequestThresholdMs: env.slowRequestThresholdMs,
       httpRequestTimeoutMs: env.httpRequestTimeoutMs,
-      dingtalkConfigured: Boolean(env.dingtalkAppKey && env.dingtalkAppSecret && env.dingtalkRobotCode) || Boolean(env.dingtalkWebhookUrl)
+      dingtalkConfigured: Boolean(env.dingtalkAppKey && env.dingtalkAppSecret && env.dingtalkRobotCode) || Boolean(env.dingtalkWebhookUrl),
+      maintenanceMode: env.maintenanceMode,
+      versionMismatch: env.buildGitSha !== "local" && env.frontendGitSha !== "local" && env.buildGitSha !== env.frontendGitSha
     }
   });
 }

@@ -353,6 +353,7 @@ model ImportBatch {
   fileName                String
   sheetName               String
   importMode              String              @default("replace_month")
+  sourceType              String              @default("excel")
   status                  String              @default("active")
   importedRows            Int                 @default(0)
   importedOrders          Int                 @default(0)
@@ -576,21 +577,34 @@ model ExportJob {
 model ManualLedgerEntry {
   id                  Int                @id @default(autoincrement())
   entryNo             String             @unique
+  documentNo          String?
+  lineNo              Int                @default(1)
   month               String
   transactionDate     DateTime
   sourceType          String             @default("manual")
   direction           String
   counterparty        String
+  customerName        String?
   originalAmount      Float
   currency            String             @default("CNY")
   exchangeRate        Float              @default(1)
   localAmount         Float
+  convertedAmount     Float?
+  unitPrice           Float?
   businessType        String?
+  feeType             String?
   orderNo             String?
   customerOrderNo     String?
   salespersonName     String?
   customerServiceName String?
   supplierName        String?
+  supplierService     String?
+  chargeWeight        Float?
+  supplierChargeWeight Float?
+  actualWeight        Float?
+  pieces              Int?
+  mainProductName     String?
+  internalRemark      String?
   note                String?
   status              String             @default("draft")
   createdBy           String
@@ -605,6 +619,7 @@ model ManualLedgerEntry {
   bankTransaction     BankTransaction?
 
   @@index([month, transactionDate])
+  @@index([month, documentNo])
   @@index([month, direction, status])
   @@index([orderNo])
   @@index([customerOrderNo])

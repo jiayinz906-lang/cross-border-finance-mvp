@@ -27,6 +27,12 @@ import {
   voidDocumentController
 } from "../controllers/workflow.controller.js";
 import { requirePermission } from "../middleware/rbac.middleware.js";
+import {
+  signatureIpReadRateLimit,
+  signatureIpWriteRateLimit,
+  signatureTokenReadRateLimit,
+  signatureTokenWriteRateLimit
+} from "../middleware/rate-limit.middleware.js";
 
 export const workflowRoutes = Router();
 const publicSignatureCors = cors({ origin: true });
@@ -43,8 +49,8 @@ workflowRoutes.post("/documents/salary/generate", requirePermission("confirmatio
 workflowRoutes.post("/documents/:id/send-signature", requirePermission("confirmation:approve"), sendSignatureLinkController);
 workflowRoutes.post("/documents/:id/mark-notified", requirePermission("confirmation:approve"), markSignatureLinkNotifiedController);
 workflowRoutes.post("/documents/:id/employee-confirm", requirePermission("confirmation:read"), employeeConfirmDocumentController);
-workflowRoutes.get("/signature/:token", publicSignatureDocumentController);
-workflowRoutes.post("/signature/:token/sign", signByTokenController);
+workflowRoutes.get("/signature/:token", signatureIpReadRateLimit, signatureTokenReadRateLimit, publicSignatureDocumentController);
+workflowRoutes.post("/signature/:token/sign", signatureIpWriteRateLimit, signatureTokenWriteRateLimit, signByTokenController);
 workflowRoutes.post("/documents/:id/supervisor-confirm", requirePermission("confirmation:approve"), supervisorConfirmController);
 workflowRoutes.post("/documents/:id/void", requirePermission("confirmation:approve"), voidDocumentController);
 workflowRoutes.get("/documents/:id/download", requirePermission("confirmation:read"), downloadConfirmationDocumentController);

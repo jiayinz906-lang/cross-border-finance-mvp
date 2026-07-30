@@ -4,6 +4,7 @@ import { authContext, resolveAssignableRole, resolveRole, type AssignableUserRol
 import { env } from "../config/env.js";
 import { prisma } from "../prisma/client.js";
 import { AppError } from "../errors/app-error.js";
+import { getAuditContext } from "../audit/audit-context.js";
 
 const tokenSecret = env.authTokenSecret;
 const tokenTtlMs = 1000 * 60 * 60 * 12;
@@ -186,12 +187,18 @@ export async function verifyAuthToken(token?: string | null) {
 }
 
 async function authLog(action: string, entityId: string, payload: unknown) {
+  const context = getAuditContext();
   await prisma.actionLog.create({
     data: {
       entityType: "app_user",
       entityId,
       action,
       operator: entityId,
+      operatorUserId: context?.userId,
+      operatorRole: context?.role || "anonymous",
+      ipAddress: context?.ipAddress,
+      userAgent: context?.userAgent,
+      requestId: context?.requestId,
       payloadJson: JSON.stringify(payload)
     }
   });

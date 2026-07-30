@@ -3082,7 +3082,7 @@ body {
 
 .raw-entry-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  grid-template-columns: repeat(6, minmax(140px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -3280,6 +3280,127 @@ body {
     height: 240px;
   }
 }
+.erp-entry-modal .ant-modal-content {
+  overflow: hidden;
+  padding: 0;
+}
+
+.erp-entry-modal .ant-modal-header {
+  margin: 0;
+  padding: 18px 24px;
+  border-bottom: 1px solid #e4eaf3;
+}
+
+.erp-entry-modal .ant-modal-body {
+  max-height: calc(100vh - 130px);
+  overflow: auto;
+  padding: 20px 24px 0;
+  background: #f5f7fb;
+}
+
+.erp-form-section {
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid #dfe7f2;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.erp-form-section h3 {
+  margin: 0 0 16px;
+  color: #0e1d38;
+  font-size: 16px;
+}
+
+.erp-header-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 14px;
+}
+
+.erp-grid-wide {
+  grid-column: span 3;
+}
+
+.erp-section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.erp-section-title span {
+  color: #6f7f99;
+  font-size: 13px;
+}
+
+.erp-fee-table {
+  margin-bottom: 12px;
+  overflow-x: auto;
+  border: 1px solid #dfe7f2;
+  border-radius: 7px;
+}
+
+.erp-fee-head,
+.erp-fee-row {
+  display: grid;
+  grid-template-columns: 100px 138px 135px 135px 125px 105px 90px 100px 125px 125px 160px 42px;
+  gap: 8px;
+  align-items: center;
+  min-width: 1460px;
+  padding: 10px 12px;
+}
+
+.erp-fee-head {
+  color: #54647f;
+  font-size: 12px;
+  font-weight: 700;
+  background: #f1f5fa;
+}
+
+.erp-fee-row {
+  border-top: 1px solid #e7edf5;
+  background: #ffffff;
+}
+
+.erp-fee-row .ant-form-item {
+  margin: 0;
+}
+
+.erp-entry-modal .raw-entry-modal-actions {
+  margin: 0 -24px;
+  padding: 14px 24px;
+  border-top: 1px solid #e4eaf3;
+}
+
+@media (max-width: 1280px) {
+  .erp-header-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .erp-grid-wide {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 760px) {
+  .erp-header-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .erp-grid-wide {
+    grid-column: span 1;
+  }
+
+  .erp-entry-modal .ant-modal-body {
+    padding-inline: 12px;
+  }
+
+  .erp-form-section {
+    padding: 14px;
+  }
+}
+
 /* Unified finance operations workspace */
 .finance-operations-page {
   display: grid;
@@ -3346,4 +3467,20 @@ body {
   .operations-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .operations-stat-grid .ant-statistic-content { font-size: 20px; }
   .operations-main-card .ant-card-body { padding: 12px; }
+}
+
+.maintenance-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f3f6fb;
+}
+
+.maintenance-page .ant-result {
+  width: min(680px, 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 18px 55px rgba(15, 34, 68, 0.1);
 }

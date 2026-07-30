@@ -190,6 +190,7 @@ export type ImportBatch = {
   fileName: string;
   sheetName: string;
   importMode: string;
+  sourceType?: "excel" | "manual_erp" | string;
   status: "active" | "superseded" | "reverted" | string;
   importedRows: number;
   importedOrders: number;

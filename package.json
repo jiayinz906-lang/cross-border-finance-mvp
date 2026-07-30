@@ -1,6 +1,7 @@
 {
   "name": "cross-border-finance-mvp",
   "version": "0.1.0",
+  "packageManager": "pnpm@11.9.0",
   "private": true,
   "description": "Lightweight cross-border logistics finance management MVP.",
   "workspaces": [
@@ -25,6 +26,13 @@
     "verify:finance-operations": "tsx scripts/verify-finance-operations.ts",
     "verify:data-foundation": "tsx scripts/verify-data-foundation.ts",
     "verify:operations": "tsx scripts/verify-operations.ts",
+    "verify:maintenance": "tsx scripts/verify-maintenance-mode.ts",
+    "migration:preflight": "tsx scripts/migration-preflight.ts",
+    "migration:manifest": "tsx scripts/export-migration-manifest.ts",
+    "migration:compare": "tsx scripts/compare-migration-manifests.ts",
+    "verify:migration-tooling": "tsx scripts/verify-migration-tooling.ts",
+    "restore:db:test": "tsx scripts/restore-postgres-db.ts",
+    "verify:production-readonly": "tsx scripts/post-migration-verify.ts",
     "audit:money-precision": "tsx scripts/audit-money-precision.ts",
     "doctor": "tsx scripts/doctor.ts",
     "doctor:docker": "tsx scripts/doctor.ts --env-file=.env.production --client-url=http://localhost/ --api-url=http://localhost/api",
@@ -38,7 +46,7 @@
     "prisma:generate": "prisma generate",
     "prisma:prepare-import-archive": "prisma db execute --file prisma/import-archive-schema.sql --schema prisma/schema.prisma",
     "prisma:deploy": "prisma generate && tsx scripts/deploy-prisma-schema.ts",
-    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:migrate": "tsx scripts/run-development-migration.ts",
     "prisma:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {

@@ -1,5 +1,19 @@
 # XJD Finance Docker 架构与操作说明
 
+## 腾讯云生产结构（新增，不替换现有本地结构）
+
+```mermaid
+flowchart LR
+  U["用户浏览器"] -->|"HTTPS :443"| N["Nginx\n静态前端 + /api"]
+  N -->|"Docker 内部网络 :4000"| B["Backend\nNode.js 非 root"]
+  B -->|"Docker 内部网络 :5432"| P["PostgreSQL 17"]
+  P --> D["/data/xjd-finance/postgres\n独立数据盘"]
+  P --> BK["pg_dump + SHA + manifest"]
+  BK --> C["私有 COS"]
+```
+
+腾讯云使用 `docker-compose.tencent.yml` 和 `.env.tencent`。只有 Nginx 映射主机 80/443；Backend 与 PostgreSQL 不映射主机端口。数据库 migration 由 `migrate` profile 显式执行，普通 `docker compose up -d` 不修改数据库结构。详见 `docs/TENCENT_CLOUD_DEPLOYMENT.md`。
+
 > 第二阶段范围：本地/腾讯云可复用的 Docker 基础架构。当前仅启用 HTTP，域名、DNS 和 HTTPS 留到第三阶段；Render PostgreSQL 数据迁移与正式备份恢复留到第四阶段。
 
 ## 1. 容器结构

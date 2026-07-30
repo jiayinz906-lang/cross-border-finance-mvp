@@ -16,7 +16,7 @@ export const agencyRuntimeProfile = {
     {
       name: "API Tester",
       sourcePath: "external_refs/agency-agents-main/testing/testing-api-tester.md",
-      role: "导入接口、健康检查、异常输入和安全边界验证"
+      role: "业务录入接口、健康检查、异常输入和安全边界验证"
     },
     {
       name: "Reality Checker",
@@ -26,13 +26,13 @@ export const agencyRuntimeProfile = {
     {
       name: "Test Automation Engineer",
       sourcePath: "external_refs/agency-agents-main/testing/testing-test-automation-engineer.md",
-      role: "自动化回归测试和导入链路测试"
+      role: "自动化回归测试和业务入账链路测试"
     }
   ],
   importRules: [
-    "Excel 导入必须先做表头自动映射，再写入数据库。",
+    "手工业务单必须先校验表头规范对应字段、收付方向和金额，再确认写入数据库；历史 Excel 仅保留兼容导入。",
     "应收、应付、毛利、风险和提成必须从单票明细聚合，不能只写汇总。",
-    "导入结果必须返回字段映射、模板差异和使用的 agent 规则，便于测试复核。",
+    "业务入账结果必须返回字段映射、质量问题和使用的 agent 规则，便于测试复核。",
     "上线前必须通过后端构建、健康检查、GitHub Pages 或本地页面访问验证。"
   ]
 };

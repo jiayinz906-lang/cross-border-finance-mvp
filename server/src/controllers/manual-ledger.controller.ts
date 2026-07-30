@@ -30,6 +30,37 @@ export async function manualLedgerSummaryController(req: Request, res: Response)
   res.json(await manualLedgerService.summary(req.query.month as string | undefined));
 }
 
+export async function listManualDocumentsController(req: Request, res: Response) {
+  res.json(await manualLedgerService.listDocuments({
+    month: req.query.month as string | undefined,
+    keyword: req.query.keyword as string | undefined,
+    status: req.query.status as string | undefined,
+    page: Number(req.query.page),
+    pageSize: Number(req.query.pageSize)
+  }));
+}
+
+export async function createManualDocumentController(req: Request, res: Response) {
+  const files = Array.isArray(req.files) ? req.files : [];
+  let payload = req.body?.payload ?? req.body ?? {};
+  if (typeof payload === "string") {
+    try {
+      payload = JSON.parse(payload);
+    } catch {
+      throw new AppError(400, "MANUAL_DOCUMENT_INVALID_PAYLOAD", "业务单据数据格式无效。");
+    }
+  }
+  res.status(201).json(await manualLedgerService.createDocument(payload, files, operator(req)));
+}
+
+export async function confirmManualDocumentController(req: Request, res: Response) {
+  res.json(await manualLedgerService.confirmDocument(String(req.params.documentNo ?? ""), operator(req)));
+}
+
+export async function voidManualDocumentController(req: Request, res: Response) {
+  res.json(await manualLedgerService.voidDocument(String(req.params.documentNo ?? ""), String(req.body?.reason ?? ""), operator(req)));
+}
+
 export async function createManualLedgerController(req: Request, res: Response) {
   const files = Array.isArray(req.files) ? req.files : [];
   res.status(201).json(await manualLedgerService.create(req.body ?? {}, files, operator(req)));

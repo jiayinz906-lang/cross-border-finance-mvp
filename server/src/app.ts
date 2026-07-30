@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import helmet from "helmet";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,9 +10,12 @@ import { requireAuthToken } from "./middleware/rbac.middleware.js";
 import { routes } from "./routes/index.js";
 import { env } from "./config/env.js";
 import { auditContextMiddleware } from "./audit/audit-context.js";
+import { maintenanceMiddleware } from "./middleware/maintenance.middleware.js";
 
 export const app = express();
 app.set("trust proxy", 1);
+app.disable("x-powered-by");
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "same-site" } }));
 
 const privateCors = cors({
   // Finance APIs are available only to configured app origins. Public signing
@@ -31,6 +35,7 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 app.use(requestLogMiddleware);
+app.use(maintenanceMiddleware);
 app.use("/api", requireAuthToken);
 app.use("/api", auditContextMiddleware);
 app.use("/api", routes);

@@ -8,6 +8,8 @@ const testMonth = "2099-12";
 let token = "";
 let entryId = 0;
 let manualEntryId = 0;
+let documentNo = "";
+let documentEntryIds: number[] = [];
 
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiUrl}${path}`, {
@@ -76,15 +78,61 @@ async function main() {
   assert.equal(manualCreated.sourceType, "manual");
   assert.equal(manualCreated.attachments.length, 1, "manual entry should accept optional image evidence");
 
+  const documentForm = new FormData();
+  documentForm.append("payload", JSON.stringify({
+    month: testMonth,
+    transactionDate: "2099-12-17",
+    orderNo: "VERIFY-ERP-DOCUMENT-003",
+    customerOrderNo: "VERIFY-CUSTOMER-003",
+    customerName: "迁移审计验证客户",
+    businessType: "汽运灰关",
+    salespersonName: "迁移审计销售",
+    customerServiceName: "迁移审计客服",
+    note: "ERP 手工业务单汇总专项验证",
+    lines: [
+      {
+        direction: "payable",
+        feeType: "运费",
+        supplierName: "专项验证供应商",
+        originalAmount: -12.5,
+        currency: "USD",
+        exchangeRate: 6.85
+      },
+      {
+        direction: "receivable",
+        feeType: "运费",
+        originalAmount: 20,
+        currency: "CNY",
+        exchangeRate: 1
+      }
+    ]
+  }));
+  documentForm.append("files", new Blob([png], { type: "image/png" }), "verify-document-evidence.png");
+  const documentCreated = await jsonRequest<{
+    documentNo: string;
+    payable: number;
+    receivable: number;
+    lines: Array<{ id: number }>;
+    attachments: Array<{ id: number }>;
+  }>("/finance/manual-documents", { method: "POST", body: documentForm });
+  documentNo = documentCreated.documentNo;
+  documentEntryIds = documentCreated.lines.map((line) => line.id);
+  assert.ok(documentNo.startsWith("ERP-209912-"));
+  assert.equal(documentCreated.payable, -85.63, "ERP document payable must preserve the signed amount and entered exchange rate");
+  assert.equal(documentCreated.receivable, 20);
+  assert.equal(documentCreated.attachments.length, 1);
+
   const listed = await jsonRequest<{ rows: Array<{ id: number }>; total: number }>(`/finance/manual-entries?month=${testMonth}`);
-  assert.equal(listed.total, 2);
+  assert.equal(listed.total, 4);
   assert.ok(listed.rows.some((row) => row.id === entryId));
   assert.ok(listed.rows.some((row) => row.id === manualEntryId));
+  assert.ok(documentEntryIds.every((id) => listed.rows.some((row) => row.id === id)));
 
-  const summary = await jsonRequest<{ payable: number; attachmentCount: number; draftRecords: number }>(`/finance/manual-entries/summary?month=${testMonth}`);
+  const summary = await jsonRequest<{ payable: number; receivable: number; attachmentCount: number; draftRecords: number }>(`/finance/manual-entries/summary?month=${testMonth}`);
   assert.equal(summary.payable, -85.63);
-  assert.equal(summary.attachmentCount, 2);
-  assert.equal(summary.draftRecords, 2);
+  assert.equal(summary.receivable, 20);
+  assert.equal(summary.attachmentCount, 1);
+  assert.equal(summary.draftRecords, 1);
 
   const attachmentResponse = await fetch(`${apiUrl}/finance/manual-entries/${entryId}/attachments/${created.attachments[0].id}`, { headers: { authorization: `Bearer ${token}` } });
   assert.equal(attachmentResponse.status, 200);
@@ -105,9 +153,10 @@ async function main() {
 }
 
 main().finally(async () => {
-  const entryIds = [entryId, manualEntryId].filter(Boolean);
+  const entryIds = [entryId, manualEntryId, ...documentEntryIds].filter(Boolean);
   if (entryIds.length) {
     await prisma.actionLog.deleteMany({ where: { entityType: "manual_ledger_entry", entityId: { in: entryIds.map(String) } } });
+    if (documentNo) await prisma.actionLog.deleteMany({ where: { entityType: "manual_erp_document", entityId: documentNo } });
     await prisma.manualLedgerEntry.deleteMany({ where: { id: { in: entryIds } } });
   }
   await prisma.$disconnect();

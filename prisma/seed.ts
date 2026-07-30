@@ -3,8 +3,8 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 const month = "2026-06";
 
-if (process.env.NODE_ENV === "production" && process.env.ALLOW_PRODUCTION_SEED !== "true") {
-  throw new Error("Refusing to seed production database. Set ALLOW_PRODUCTION_SEED=true only for an intentional demo reset.");
+if (process.env.NODE_ENV === "production" || process.env.PRODUCTION_PROFILE === "tencent") {
+  throw new Error("Refusing to seed a production database. Production demo seeding is permanently disabled.");
 }
 
 const systemWaybillHeaders = [

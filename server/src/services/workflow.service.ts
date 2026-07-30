@@ -611,7 +611,7 @@ export const workflowService = {
     const importAuditBlockingCount = blockingIssueCountFromBatch(activeBatch);
     const receivablePayablePending = pendingReceivableOrders + pendingPayableOrders;
     const blockers = [
-      !hasImport ? "尚未完成 Excel 导入" : null,
+      !hasImport ? "尚未确认业务数据入账" : null,
       importAuditBlockingCount > 0 ? `导入审计存在 ${importAuditBlockingCount} 项阻断问题` : null,
       openRisks > 0 ? `风险复核待处理 ${openRisks} 票` : null,
       pendingServices > 0 ? `注册/服务提成待确认 ${pendingServices} 笔` : null,

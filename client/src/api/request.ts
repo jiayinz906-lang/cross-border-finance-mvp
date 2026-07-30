@@ -19,6 +19,12 @@ request.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error?.response?.status;
+    const responseCode = String(error?.response?.data?.code ?? "");
+    if (status === 503 && responseCode === "MAINTENANCE_MODE") {
+      window.dispatchEvent(new CustomEvent("xjd-maintenance-mode", {
+        detail: { message: error?.response?.data?.message || "系统正在维护，请稍后重试。" }
+      }));
+    }
     if (status === 401 || status === 403) {
       const isLoginRequest = String(error?.config?.url ?? "").includes("/auth/login");
       if (isLoginRequest) return Promise.reject(error);

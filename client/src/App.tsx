@@ -7,6 +7,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { routes } from "./router";
 import { useAuth } from "./contexts/AuthContext";
 import { firstAllowedPath } from "./config/access";
+import { MaintenanceGate } from "./components/MaintenanceGate";
 
 const SignaturePublic = lazy(() => import("./pages/SignaturePublic"));
 const Login = lazy(() => import("./pages/Login"));
@@ -40,7 +41,7 @@ export default function App() {
   return (
     <AuthProvider>
       <MonthProvider>
-        <RouterProvider router={router} />
+        <MaintenanceGate><RouterProvider router={router} /></MaintenanceGate>
       </MonthProvider>
     </AuthProvider>
   );

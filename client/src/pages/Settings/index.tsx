@@ -485,8 +485,14 @@ export default function Settings() {
   const batchColumns: ColumnsType<ImportBatch> = [
     { title: "批次号", dataIndex: "batchNo", width: 190 },
     { title: "月份", dataIndex: "month", width: 92 },
-    { title: "文件", dataIndex: "fileName", ellipsis: true },
-    { title: "工作表", dataIndex: "sheetName", width: 140 },
+    {
+      title: "数据来源",
+      dataIndex: "sourceType",
+      width: 118,
+      render: (value) => value === "manual_erp" ? <Tag color="blue">手工业务单</Tag> : <Tag>历史 Excel</Tag>
+    },
+    { title: "来源名称", dataIndex: "fileName", ellipsis: true },
+    { title: "来源模块", dataIndex: "sheetName", width: 140 },
     { title: "状态", dataIndex: "status", width: 120, render: statusTag },
     { title: "明细行", dataIndex: "importedRows", width: 82, align: "right" },
     { title: "票数", dataIndex: "importedOrders", width: 76, align: "right" },
@@ -522,9 +528,9 @@ export default function Settings() {
               setDownloadingBatchId(row.id);
               try {
                 await downloadAuthenticatedFile(importBatchSourcePath(row.id), row.fileName);
-                message.success("原始 Excel 存档已下载");
+                message.success("历史 Excel 原文件已下载");
               } catch {
-                message.error("原始 Excel 存档下载失败");
+                message.error("历史 Excel 原文件下载失败");
               } finally {
                 setDownloadingBatchId(null);
               }
@@ -533,8 +539,8 @@ export default function Settings() {
             下载原文件
           </Button>
           <Popconfirm
-            title="确认回滚该导入批次？"
-            description="回滚会删除该批次写入的订单、提成、风险和服务确认记录，并重新计算月度汇总。"
+            title="确认回滚该数据批次？"
+            description="回滚会删除该批次生成的订单、提成、风险和服务确认记录，并重新计算月度汇总。"
             okText="确认回滚"
             cancelText="取消"
             disabled={row.status !== "active" || !canRollback}
@@ -790,7 +796,7 @@ export default function Settings() {
             <Alert
               type="info"
               showIcon
-              message="表头模版规范已写入后台，后续 Excel 导入会按后台模板进行字段匹配和质量校验。"
+              message="业务数据录入字段规范已写入后台；日常业务请在“业务数据录入”按业务单手工填写，历史 Excel 仅作为兼容导入与审计存档。"
               description="系统备份会导出表头模板、参数规则、导入批次、锁账状态、确认单、操作日志和导出记录，便于审计和迁移。"
             />
             {canExport ? <Space wrap>
@@ -819,7 +825,7 @@ export default function Settings() {
             <Alert
               type={readiness?.status === "ready" && operations?.status === "healthy" ? "success" : "warning"}
               showIcon
-              message={readiness?.status === "ready" && operations?.status === "healthy" ? "系统运行正常，可以进行导入、分析和确认流程" : "系统存在异常，请检查下方运行指标"}
+              message={readiness?.status === "ready" && operations?.status === "healthy" ? "系统运行正常，可以进行业务录入、分析和确认流程" : "系统存在异常，请检查下方运行指标"}
               description={`检查时间：${operations?.timestamp ? String(operations.timestamp).replace("T", " ").slice(0, 19) : "未获取"}；版本：${operations?.version ?? readiness?.details?.version ?? "-"}`}
             />
             <Descriptions bordered size="small" column={4}>
@@ -874,8 +880,8 @@ export default function Settings() {
             type="success"
             showIcon
             style={{ marginBottom: 12 }}
-            message="模板只保存固定表头，不保存业务数据"
-            description="后续 Excel 导入会读取这里的表头规范进行字段映射、缺失表头和额外表头校验，导入批次详情会保留当次模板差异。"
+            message="模板仅保存历史 Excel 兼容字段，不保存业务数据"
+            description="日常数据以 ERP 业务单手工录入为准；这里保留历史 Excel 兼容表头，用于旧数据迁移、字段校验和审计追溯。"
           />
           <Table
             rowKey="templateKey"
@@ -905,7 +911,7 @@ export default function Settings() {
             <Space wrap>
               <Popconfirm
                 title="确认锁定该月份？"
-                description="未完成的风险、确认、签名和对账事项会作为提醒写入操作日志，但不会阻止锁账。锁账后该月份 Excel 导入和批次回滚仍会被后端拒绝。"
+                description="未完成的风险、确认、签名和对账事项会作为提醒写入操作日志，但不会阻止锁账。锁账后该月份业务单确认、历史 Excel 兼容导入和批次回滚都会被后端拒绝。"
                 okText="确认锁账"
                 cancelText="取消"
                 disabled={!canCloseMonth || isMonthLocked}
@@ -917,7 +923,7 @@ export default function Settings() {
               </Popconfirm>
               <Popconfirm
                 title="确认解锁该月份？"
-                description="解锁后可以重新导入或回滚，请确保已记录原因。"
+                description="解锁后可以继续确认业务单或回滚数据批次，请确保已记录原因。"
                 okText="确认解锁"
                 cancelText="取消"
                 disabled={!canCloseMonth || !isMonthLocked}
@@ -933,7 +939,7 @@ export default function Settings() {
               type={isMonthLocked ? "warning" : "info"}
               showIcon
               message={isMonthLocked ? "本月已锁账" : "本月未锁账"}
-              description={isMonthLocked ? "锁账状态由后端强制执行，导入 Excel 和回滚导入批次都会被拒绝。" : "月度复核、提成确认和签名完成后，建议主管锁账，防止历史数据被覆盖。"}
+              description={isMonthLocked ? "锁账状态由后端强制执行，业务单确认、历史 Excel 兼容导入和批次回滚都会被拒绝。" : "月度复核、提成确认和签名完成后，建议主管锁账，防止历史数据被覆盖。"}
             />
           </Space>
         </Card> : null}
@@ -944,7 +950,7 @@ export default function Settings() {
             showIcon
             style={{ marginBottom: 12 }}
             message="规则值以 JSON 保存"
-            description={canWriteRules ? "修改规则后保存到后端数据库，后续导入和计算会读取这里的统一口径。" : "当前角色只能查看参数规则，不能保存修改。"}
+            description={canWriteRules ? "修改规则后保存到后端数据库，后续业务单入账和财务计算会读取这里的统一口径。" : "当前角色只能查看参数规则，不能保存修改。"}
           />
           <Table
             rowKey="ruleKey"
@@ -956,12 +962,12 @@ export default function Settings() {
           />
         </Card> : null}
 
-        {canImport ? <Card title={`导入批次记录（${selectedMonth}）`} extra={<Button onClick={loadBatches} loading={loading}>刷新</Button>}>
+        {canImport ? <Card title={`业务数据批次记录（${selectedMonth}）`} extra={<Button onClick={loadBatches} loading={loading}>刷新</Button>}>
           <Alert
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            message="Excel 导入已具备可追溯批次"
+            message="业务数据入账已具备可追溯批次"
             description={isMonthLocked ? "当前月份已锁账，不能回滚批次。如需调整，请先由主管解锁。" : canRollback ? "当前角色可以回滚生效批次。回滚会删除该批次订单和派生记录，并重新计算汇总。" : "当前角色只能查看批次，不能回滚。"}
           />
           <Table
@@ -981,7 +987,7 @@ export default function Settings() {
             showIcon
             style={{ marginBottom: 12 }}
             message="关键财务动作会写入数据库审计日志"
-            description="当前已记录 Excel 导入、批次回滚、锁账/解锁、确认单生成、发送签名、员工签名、主管确认、风险复核和提成确认等操作。"
+            description="当前已记录业务单创建/确认/作废、历史 Excel 兼容导入、批次回滚、锁账/解锁、确认单生成、发送签名、员工签名、主管确认、风险复核和提成确认等操作。"
           />
           <Space wrap style={{ marginBottom: 12 }}>
             <Select
@@ -1035,7 +1041,7 @@ export default function Settings() {
 
       <Modal
         open={Boolean(selectedBatch)}
-        title={`导入批次详情：${selectedBatch?.batchNo ?? ""}`}
+        title={`数据批次详情：${selectedBatch?.batchNo ?? ""}`}
         width={980}
         footer={<Button type="primary" onClick={() => setSelectedBatch(null)}>关闭</Button>}
         onCancel={() => setSelectedBatch(null)}
@@ -1061,15 +1067,16 @@ export default function Settings() {
             <Space direction="vertical" size={14} style={{ width: "100%" }}>
               <Descriptions size="small" bordered column={3}>
                 <Descriptions.Item label="月份">{selectedBatch.month}</Descriptions.Item>
-                <Descriptions.Item label="文件">{selectedBatch.fileName}</Descriptions.Item>
-                <Descriptions.Item label="工作表">{selectedBatch.sheetName}</Descriptions.Item>
+                <Descriptions.Item label="数据来源">{selectedBatch.sourceType === "manual_erp" ? "手工业务单" : "历史 Excel"}</Descriptions.Item>
+                <Descriptions.Item label="来源名称">{selectedBatch.fileName}</Descriptions.Item>
+                <Descriptions.Item label="来源模块">{selectedBatch.sheetName}</Descriptions.Item>
                 <Descriptions.Item label="状态">{statusTag(selectedBatch.status)}</Descriptions.Item>
                 <Descriptions.Item label="明细行">{selectedBatch.importedRows}</Descriptions.Item>
                 <Descriptions.Item label="票数">{selectedBatch.importedOrders}</Descriptions.Item>
                 <Descriptions.Item label="总应收">{money(selectedBatch.totalReceivable)}</Descriptions.Item>
                 <Descriptions.Item label="总应付">{money(selectedBatch.totalPayable)}</Descriptions.Item>
                 <Descriptions.Item label="毛利">{money(selectedBatch.totalGrossProfit)}</Descriptions.Item>
-                <Descriptions.Item label="原文件存档">{selectedBatch.sourceFileSize ? `${selectedBatch.sourceFileSize} 字节` : "历史批次未保存文件本体"}</Descriptions.Item>
+                <Descriptions.Item label="原文件存档">{selectedBatch.sourceFileSize ? `${selectedBatch.sourceFileSize} 字节` : selectedBatch.sourceType === "manual_erp" ? "业务单已逐行写入数据库" : "历史批次未保存文件本体"}</Descriptions.Item>
                 <Descriptions.Item label="SHA-256" span={2}>
                   <Typography.Text copyable={Boolean(selectedBatch.sourceFileSha256)}>
                     {selectedBatch.sourceFileSha256 ?? "-"}
@@ -1101,7 +1108,7 @@ export default function Settings() {
                 type={(quality?.blockingCount ?? 0) > 0 ? "error" : (quality?.warningCount ?? 0) > 0 ? "warning" : "success"}
                 showIcon
                 message={`质量预检：阻断 ${quality?.blockingCount ?? 0} 项，复核 ${quality?.warningCount ?? 0} 项，提示 ${quality?.infoCount ?? 0} 项`}
-                description={quality ? "质量预检来自导入时保存的批次快照。" : "历史批次未保存质量预检快照，建议后续重新导入后查看。"}
+                description={quality ? "质量预检来自业务入账时保存的批次快照。" : "历史批次未保存质量预检快照，建议后续重新入账后查看。"}
               />
 
               <Table

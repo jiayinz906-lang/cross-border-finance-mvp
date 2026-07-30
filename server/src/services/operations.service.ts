@@ -107,7 +107,13 @@ async function refreshBankTransaction(transactionId: number) {
 
 async function syncManualLedgerTransactions(month: string) {
   const entries = await prisma.manualLedgerEntry.findMany({
-    where: { month, status: "confirmed", direction: { in: ["receivable", "payable"] } }
+    where: {
+      month,
+      status: "confirmed",
+      direction: { in: ["receivable", "payable"] },
+      // ERP 手工业务单是应收/应付费用明细，不等同于已经到账的银行流水。
+      sourceType: { not: "manual_erp" }
+    }
   });
   for (const entry of entries) {
     await prisma.bankTransaction.upsert({

@@ -3,7 +3,7 @@
 ## 生产能力概览（2026-07）
 
 - 新增“财务工作台”：统一处理待办任务、客户/供应商主数据、应收应付账单和银行流水对账。
-- 账单由当前月份最新有效 Excel 批次自动同步，原始金额仍以 `RawLedgerLine` / `FinanceChargeLine` 为唯一追溯来源。
+- 账单由当前月份已确认的 ERP 手工业务单自动同步；原始费用明细仍逐行写入 `RawLedgerLine` / `FinanceChargeLine`，作为唯一财务追溯来源。
 - 图片流水和手工流水可自动进入银行流水池，通过金额与往来单位推荐匹配；确认匹配后复用现有收付款核销记录。
 - 客户、供应商、账单、流水和待办列表使用后端分页，避免数据量增长后一次加载全部记录。
 - 生产环境不再自动创建弱口令账号。空数据库首次启动前必须配置 `BOOTSTRAP_ADMIN_PASSWORD`，首次登录必须修改密码。
@@ -22,14 +22,15 @@ BOOTSTRAP_ADMIN_PASSWORD=<strong initial password>
 ENABLE_LEGACY_DEFAULT_USERS=false
 ```
 
-跨境物流 / 注册服务月度财务分析系统。系统把 Excel 原始台账导入数据库，并生成经营总览、业务利润、物流提成、注册确认、电子签名确认、操作员绩效、客户利润分析、风险复查、上游应付、参数规则和原始数据追溯。
+跨境物流 / 注册服务月度财务分析系统。日常数据通过 ERP 式业务单手工录入并确认入账，随后生成经营总览、业务利润、物流提成、注册确认、电子签名确认、操作员绩效、客户利润分析、风险复查、上游应付、参数规则和原始数据追溯。历史 Excel 导入仅保留为旧数据迁移与兼容工具。
 
 ## 当前能力
 
-- Excel 自动表头映射、导入预检、确认写入数据库。
-- 后台保存固定表头模板，只保存表头规范，不写入模板业务数据。
-- 原始 Excel 每一行写入 `RawLedgerLine`，订单汇总可追溯回原始台账。
-- 支持手工原始流水与图片凭证录入，图片直接持久化到 PostgreSQL，并保留确认、作废和操作审计。
+- ERP 式业务单由“单据头 + 多条费用明细 + 图片凭证”组成，支持保存草稿、确认入账、查看详情和填写原因后作废。
+- 手工字段覆盖 23 列固定表头规范；一张业务单可同时录入应收、应付及不同费用类型，金额正负号、币种和汇率按录入值保留。
+- 确认业务单后，后端统一生成 `RawLedgerLine`、`FinanceChargeLine`、订单、月度汇总、风险、提成和服务确认数据；所有金额可追溯到业务单费用行。
+- 图片凭证直接持久化到 PostgreSQL，并保留创建、确认、作废和月度重算审计日志。
+- 历史 Excel 自动表头映射、预检和确认导入能力继续保留，但不再作为日常主入口。
 - 应收、应付、毛利、风险、提成按单票明细聚合。
 - 物流业务和注册 / 证书 / 店铺租赁等服务类业务分开核算。
 - 汇率严格按原始表格标注：人民币按 1，美金 / 美元 / USD / 汇率未出按 6.85，其余按表格标注。
@@ -72,7 +73,7 @@ docker compose --env-file .env.docker -f docker-compose.dev.yml up -d --build
 
 - 前端网页：http://localhost:5173/
 - 经营总览：http://localhost:5173/#/dashboard
-- 原始数据录入：http://localhost:5173/#/raw-entry
+- 业务数据录入：http://localhost:5173/#/raw-entry
 - 后端 API：http://localhost:4000/api
 - 健康检查：http://localhost:4000/api/health
 - 就绪检查：http://localhost:4000/api/health/ready
@@ -85,7 +86,7 @@ pnpm install
 pnpm prisma:deploy
 ```
 
-## Excel 表头模板
+## 业务数据录入与字段规范
 
 当前后台模板 Key：
 
@@ -93,7 +94,7 @@ pnpm prisma:deploy
 system_waybill_detail
 ```
 
-固定表头来自 `表头模版.xlsx`，共 23 列：
+手工业务单字段规范来自 `表头模版.xlsx`，共 23 列：
 
 ```text
 运单号
@@ -121,13 +122,21 @@ system_waybill_detail
 主品名
 ```
 
-上传模板只会写入 `ExcelImportTemplate`，不会导入业务数据。后续 Excel 导入会按这份模板做字段映射、缺失表头校验和模板差异记录。
+日常录入流程：
+
+1. 进入“业务数据录入”，新增业务单。
+2. 填写月份、业务日期、运单号、客户、服务、销售代表、客服代表等单据头信息。
+3. 在费用明细中逐行选择应收/应付、费用类型、往来单位、原币金额、币种和汇率；一张业务单可包含多条费用。
+4. 可先保存草稿；核对无误后确认入账。确认后系统自动重算该月份的应收、应付、毛利、风险和提成。
+5. 已确认业务单需要调整时，填写作废原因后作废，系统会自动按当前有效业务单重算该月份。
+
+后台表头模板只保存字段规范，不保存业务数据。历史 Excel 导入继续按这份模板做字段映射、缺失表头校验和模板差异记录，供旧数据迁移或审计使用。
 
 ## 验收测试
 
 完整验收前，请保持 `pnpm dev` 或 `.\start-finance-local.ps1` 启动的前后端服务正在运行。
 
-默认读取桌面文件 `2026.6月系统运单明细.xlsx`。也可以用 `IMPORT_VERIFY_FILE` 指定其他 Excel：
+兼容回归测试默认读取桌面文件 `2026.6月系统运单明细.xlsx`。也可以用 `IMPORT_VERIFY_FILE` 指定其他 Excel：
 
 ```powershell
 $env:IMPORT_VERIFY_FILE='D:/Users/DELL/Desktop/2026.6月系统运单明细.xlsx'
@@ -242,7 +251,7 @@ pnpm install --frozen-lockfile
 pnpm build:render
 ```
 
-`pnpm build:render` 只同步数据库结构并构建前后端，不会自动写入演示数据。真实业务数据应通过 Excel 导入写入数据库。
+`pnpm build:render` 只同步数据库结构并构建前后端，不会自动写入演示数据。真实业务数据应在“业务数据录入”中按业务单手工填写并确认入账。
 
 启动命令：
 
@@ -265,7 +274,24 @@ AUTH_TOKEN_SECRET=<production secret>
 pnpm prisma:seed
 ```
 
-生产环境默认禁止执行种子数据写入。只有明确做演示库重置时，才可设置 `ALLOW_PRODUCTION_SEED=true` 后执行。
+生产环境永久禁止执行种子数据写入；演示数据只能在隔离的本地测试数据库中生成。
+
+## 腾讯云生产化准备
+
+仓库新增独立的 `docker-compose.tencent.yml`，不会改变现有 GitHub Pages、Render 或本地 Docker 入口。腾讯云环境只允许 Nginx 暴露 80/443，Backend 与 PostgreSQL 仅通过 Docker 网络访问；数据库目录固定挂载到 Git 仓库外的 `/data/xjd-finance/postgres`。普通容器启动不会自动执行 migration，数据库变更只能在备份和维护模式后显式运行。
+
+正式迁移前请依次审阅：
+
+- [腾讯云部署手册](docs/TENCENT_CLOUD_DEPLOYMENT.md)
+- [数据库迁移 Runbook](docs/TENCENT_DATABASE_MIGRATION.md)
+- [腾讯云迁移安全审核](docs/TENCENT_MIGRATION_SECURITY_AUDIT.md)
+- [腾讯云迁移变更审核清单与最小权限矩阵](docs/TENCENT_MIGRATION_REVIEW_CHECKLIST.md)
+- [腾讯云数据库迁移本地演练记录](docs/TENCENT_MIGRATION_LOCAL_REHEARSAL.md)
+- [备份与恢复](docs/DATABASE_BACKUP_RESTORE.md)
+- [发布与回滚](docs/PRODUCTION_RELEASE_ROLLBACK.md)
+- [生产安全清单](docs/PRODUCTION_SECURITY_CHECKLIST.md)
+
+本轮仅完成代码、配置、脚本和本地演练准备，不连接 Render 正式库，也不执行真实腾讯云迁移。
 
 ## Docker 部署
 
@@ -298,8 +324,8 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d --bui
 - `client/`：前端应用
 - `server/`：后端 API
 - `prisma/`：PostgreSQL 数据模型与迁移文件
-- `scripts/verify-all.ts`：构建、导入验收和 UI smoke 总验收脚本
-- `scripts/verify-import.ts`：Excel 导入和财务工作流验收脚本
+- `scripts/verify-all.ts`：构建、历史兼容导入验收和 UI smoke 总验收脚本
+- `scripts/verify-import.ts`：历史 Excel 兼容导入和财务工作流回归脚本
 - `start-finance-local.ps1`：Finance 项目本地一键启动脚本
 - `agents/finance/`：FP&A Analyst 规则
 - `docs/`：业务、API、部署和计算口径文档
@@ -314,7 +340,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d --bui
 - Production must use PostgreSQL through `DATABASE_URL`. Render deployment reads the Render PostgreSQL `connectionString`; SQLite is only kept for local backup or historical validation.
 - Set `AUTH_REQUIRE_TOKEN=true` and `ALLOW_HEADER_ROLE=false` in production. With this mode enabled, `x-finance-role` is ignored and all protected API calls require a Bearer token.
 - Public endpoints are limited to `/api/health`, `/api/auth/login`, and `/api/workflow/signature/:token/sign`.
-- Write operations require explicit permissions: Excel import/template/rollback, parameter rules, risk review, confirmation approval, exports, and month close.
-- Excel import is a two-step flow: preview first, confirm import second. Preview does not write orders, raw ledger lines, or import batches.
-- Month close is blocked until risk review, service confirmation, commission signature/supervisor confirmation, and receivable/payable reconciliation are completed.
+- Write operations require explicit permissions: business document create/confirm/void, legacy Excel import/template/rollback, parameter rules, risk review, confirmation approval, exports, and month close.
+- Manual ERP documents are the primary data-entry flow. Legacy Excel import remains a two-step compatibility flow: preview first, confirm import second.
+- Month close reports unfinished risk review, service confirmation, signatures, and reconciliation as warnings and records them in the audit log; an authorized supervisor may still close the month with a reason.
 - Commission confirmation documents are versioned. Supervisor-confirmed documents are immutable; voiding requires a reason and regeneration creates a new version. Signature tokens are one-time-use and store IP, User-Agent, and signature timestamps.

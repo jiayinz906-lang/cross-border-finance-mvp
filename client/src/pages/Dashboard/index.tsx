@@ -1,7 +1,7 @@
 import {
   CalendarOutlined,
   DownloadOutlined,
-  FileExcelOutlined,
+  FormOutlined,
   MenuOutlined,
   ReloadOutlined,
   SafetyOutlined
@@ -12,8 +12,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getFinanceDashboard, getFinanceMonths } from "../../api/finance.api";
 import { downloadMonthlyReport } from "../../api/workflow.api";
-import { ImportButton } from "../../components/ImportButton";
-import { TemplateImportButton } from "../../components/TemplateImportButton";
 import { useSelectedMonth } from "../../contexts/MonthContext";
 import type { BusinessSummary, DashboardData, MonthlyTrend } from "../../types/finance.types";
 import { formatMoney } from "../../utils/formatMoney";
@@ -340,12 +338,6 @@ export default function Dashboard() {
     setMonthModalOpen(false);
   };
 
-  const handleImported = (result: { month: string }) => {
-    setSelectedMonth(result.month);
-    void loadMonth(result.month);
-    message.success(`已切换到导入月份 ${result.month}`);
-  };
-
   const summary = data?.summary;
   const businessRows = data?.businessSummary ?? [];
   const rankingRows: RankingRow[] = (data?.salespersonSummary ?? []).slice(0, 5);
@@ -397,10 +389,9 @@ export default function Dashboard() {
           <span>{isSalesAccount ? "仅显示本人销售订单、利润与提成" : "数据概览与经营分析"}</span>
         </div>
         <div className="overview-actions">
-          <div className="overview-select"><FileExcelOutlined /> 数据源：<b>{summary?.month ? `${summary.month} 数据库` : "Excel 数据"}</b></div>
+          <div className="overview-select"><FormOutlined /> 数据源：<b>{summary?.month ? `${summary.month} 业务单据` : "业务单据"}</b></div>
           <Button className="overview-select" onClick={openMonthModal}>月份：<b>{selectedMonth}</b><CalendarOutlined /></Button>
-          {canImport ? <TemplateImportButton /> : null}
-          {canImport ? <ImportButton targetMonth={selectedMonth} onImported={handleImported} /> : null}
+          {canImport ? <Button type="primary" icon={<FormOutlined />} onClick={() => navigate("/raw-entry")}>录入业务单</Button> : null}
           {canExport ? <Button type="primary" loading={reportDownloading} icon={<DownloadOutlined />} onClick={async () => {
             setReportDownloading(true);
             try {
@@ -423,12 +414,11 @@ export default function Dashboard() {
         <Card className="first-import-card">
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={<Space direction="vertical" size={4}><strong>当前月份暂无可查看数据</strong><span>{canImport ? "请上传符合固定表头规范的 Excel，系统会生成原始台账、应收应付、毛利、风险与提成数据。" : "当前账号不能导入数据，请联系财务或主管确认月份及数据范围。"}</span></Space>}
+            description={<Space direction="vertical" size={4}><strong>当前月份暂无可查看数据</strong><span>{canImport ? "请新增业务单并录入应收、应付费用，确认入账后系统会生成台账、利润、风险与提成数据。" : "当前账号不能录入业务数据，请联系财务或主管确认月份及数据范围。"}</span></Space>}
           >
             <Space wrap>
-              {canImport ? <ImportButton targetMonth={selectedMonth} onImported={handleImported} /> : null}
-              {canImport ? <TemplateImportButton /> : null}
-              <Button onClick={() => navigate("/settings")}>查看模板与参数规则</Button>
+              {canImport ? <Button type="primary" icon={<FormOutlined />} onClick={() => navigate("/raw-entry")}>前往业务数据录入</Button> : null}
+              <Button onClick={() => navigate("/settings")}>查看参数规则</Button>
             </Space>
           </Empty>
         </Card>

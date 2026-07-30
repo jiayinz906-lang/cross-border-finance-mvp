@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22-bookworm-slim AS dependencies
+FROM node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS dependencies
 
 WORKDIR /app
 ENV CI=true
@@ -31,8 +31,12 @@ FROM development AS frontend-build
 
 ARG VITE_API_BASE_URL=/api
 ARG VITE_PUBLIC_APP_URL=http://localhost/
+ARG BUILD_GIT_SHA=local
+ARG BUILD_TIME=unknown
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_PUBLIC_APP_URL=${VITE_PUBLIC_APP_URL}
+ENV VITE_BUILD_GIT_SHA=${BUILD_GIT_SHA}
+ENV VITE_BUILD_TIME=${BUILD_TIME}
 
 RUN pnpm --filter cross-border-finance-client build
 
@@ -40,22 +44,35 @@ FROM development AS backend-build
 
 RUN pnpm --filter cross-border-finance-server build
 
-FROM nginx:1.27-alpine AS frontend-runtime
+FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 AS frontend-runtime
+
+ARG BUILD_GIT_SHA=local
+ARG BUILD_TIME=unknown
+LABEL org.opencontainers.image.revision=${BUILD_GIT_SHA}
+LABEL org.opencontainers.image.created=${BUILD_TIME}
 
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=frontend-build /app/client/dist /usr/share/nginx/html
+RUN printf '{"frontendCommit":"%s","buildTime":"%s"}\n' "${BUILD_GIT_SHA}" "${BUILD_TIME}" > /usr/share/nginx/html/version.json
 
 EXPOSE 80
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
   CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1
 
-FROM node:22-bookworm-slim AS backend-runtime
+FROM node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS backend-runtime
 
 WORKDIR /app
+ARG BUILD_GIT_SHA=local
+ARG BUILD_TIME=unknown
 ENV NODE_ENV=production
 ENV PORT=4000
+ENV BUILD_GIT_SHA=${BUILD_GIT_SHA}
+ENV FRONTEND_GIT_SHA=${BUILD_GIT_SHA}
+ENV BUILD_TIME=${BUILD_TIME}
 ENV CONFIRMATION_FONT_PATH=/usr/share/fonts/truetype/xjd/SimHei.ttf
+LABEL org.opencontainers.image.revision=${BUILD_GIT_SHA}
+LABEL org.opencontainers.image.created=${BUILD_TIME}
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates fontconfig poppler-utils \

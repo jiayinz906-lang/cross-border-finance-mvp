@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { getMonthWorkflowStatus, type MonthWorkflowStatus as MonthWorkflowStatusData } from "../api/workflow.api";
 
 const labels: Record<string, string> = {
-  excel_imported: "Excel导入",
-  import_audit_passed: "导入审计",
+  excel_imported: "业务数据入账",
+  import_audit_passed: "数据校验",
   risk_review_pending: "风险复核",
   service_confirm_pending: "注册确认",
   commission_signature_pending: "提成签名",

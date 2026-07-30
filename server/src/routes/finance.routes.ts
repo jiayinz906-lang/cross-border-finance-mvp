@@ -24,11 +24,15 @@ import {
 } from "../controllers/finance.controller.js";
 import {
   confirmManualLedgerController,
+  confirmManualDocumentController,
   createManualLedgerController,
+  createManualDocumentController,
+  listManualDocumentsController,
   listManualLedgerController,
   manualLedgerAttachmentController,
   manualLedgerSummaryController,
-  voidManualLedgerController
+  voidManualLedgerController,
+  voidManualDocumentController
 } from "../controllers/manual-ledger.controller.js";
 
 export const financeRoutes = Router();
@@ -43,7 +47,7 @@ const upload = multer({
 });
 const imageUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: env.imageUploadMaxMb * 1024 * 1024, files: 6 },
+  limits: { fileSize: env.imageUploadMaxMb * 1024 * 1024, files: 12 },
   fileFilter: (_req, file, callback) => {
     const validExtension = /\.(jpe?g|png|webp)$/i.test(file.originalname);
     const validMime = ["image/jpeg", "image/png", "image/webp"].includes(file.mimetype);
@@ -66,6 +70,10 @@ financeRoutes.get("/raw-ledger-lines", requirePermission("finance:import"), rawL
 financeRoutes.get("/charge-lines", requirePermission("finance:import"), chargeLinesController);
 financeRoutes.get("/manual-entries", requirePermission("finance:import"), listManualLedgerController);
 financeRoutes.get("/manual-entries/summary", requirePermission("finance:import"), manualLedgerSummaryController);
+financeRoutes.get("/manual-documents", requirePermission("finance:import"), listManualDocumentsController);
+financeRoutes.post("/manual-documents", requirePermission("finance:import"), imageUpload.array("files", 12), createManualDocumentController);
+financeRoutes.post("/manual-documents/:documentNo/confirm", requirePermission("finance:import"), confirmManualDocumentController);
+financeRoutes.post("/manual-documents/:documentNo/void", requirePermission("finance:import"), voidManualDocumentController);
 financeRoutes.get("/manual-entries/:id/attachments/:attachmentId", requirePermission("finance:import"), manualLedgerAttachmentController);
 financeRoutes.post("/manual-entries", requirePermission("finance:import"), imageUpload.array("files", 6), createManualLedgerController);
 financeRoutes.post("/manual-entries/:id/confirm", requirePermission("finance:import"), confirmManualLedgerController);

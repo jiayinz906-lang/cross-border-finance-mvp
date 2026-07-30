@@ -10,10 +10,11 @@ import {
   updateUserController
 } from "../controllers/auth.controller.js";
 import { requirePermission } from "../middleware/rbac.middleware.js";
+import { loginAccountFailureRateLimit, loginIpRateLimit } from "../middleware/rate-limit.middleware.js";
 
 export const authRoutes = Router();
 
-authRoutes.post("/login", loginController);
+authRoutes.post("/login", loginIpRateLimit, loginAccountFailureRateLimit, loginController);
 authRoutes.get("/me", meController);
 authRoutes.post("/change-password", changePasswordController);
 authRoutes.get("/users", requirePermission("users:manage"), listUsersController);
