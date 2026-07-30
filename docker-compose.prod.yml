@@ -8,7 +8,6 @@ services:
       - .env.production
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./prisma/migrations/20260720000100_baseline/migration.sql:/docker-entrypoint-initdb.d/001-baseline.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -68,3 +67,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${POSTGRES_DATA_DIR:-/data/xjd-finance/postgres}
