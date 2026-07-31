@@ -185,7 +185,7 @@ function notificationContent(document: SignatureNotificationDocument) {
   return {
     externalUrl,
     markdown: [
-      "# XJD Finance 个人确认单",
+      "# Finance 个人确认单",
       `> 月份：${document.month}`,
       `> 确认人：${document.ownerName}`,
       `> 确认金额：¥${money(document.commissionAmount).toFixed(2)}`,
@@ -214,7 +214,7 @@ async function sendDingtalkNotification(document: SignatureNotificationDocument)
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       msgtype: "link",
-      link: { title: "XJD Finance 个人确认单", text: `${document.month} ${document.ownerName}，请打开确认单完成电子签名。`, messageUrl: content.externalUrl, picUrl: "" }
+      link: { title: "Finance 个人确认单", text: `${document.month} ${document.ownerName}，请打开确认单完成电子签名。`, messageUrl: content.externalUrl, picUrl: "" }
     })
   });
   const receipt = await response.json().catch(() => ({ httpStatus: response.status }));
@@ -264,7 +264,7 @@ async function sendDingtalkDirectNotification(document: SignatureNotificationDoc
       robotCode: env.dingtalkRobotCode || env.dingtalkAppKey,
       userIds: [dingtalkUserId],
       msgKey: "sampleLink",
-      msgParam: JSON.stringify({ title: "XJD Finance 个人确认单", text: `${document.month} ${document.ownerName}，请打开确认单完成电子签名。`, messageUrl: content.externalUrl, picUrl: "" })
+      msgParam: JSON.stringify({ title: "Finance 个人确认单", text: `${document.month} ${document.ownerName}，请打开确认单完成电子签名。`, messageUrl: content.externalUrl, picUrl: "" })
     })
   });
   const receipt = await response.json().catch(() => ({ httpStatus: response.status }));

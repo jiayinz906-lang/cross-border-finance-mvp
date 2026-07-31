@@ -18,7 +18,7 @@ xjd_lock() {
   local lock_dir="${XJD_DEPLOY_STATE_DIR:-/data/xjd-finance/.deploy}"
   mkdir -p "$lock_dir"
   exec 9>"$lock_dir/deploy.lock"
-  flock -n 9 || { echo "Another XJD Finance deployment is already running." >&2; exit 1; }
+  flock -n 9 || { echo "Another Finance deployment is already running." >&2; exit 1; }
 }
 xjd_wait_health() {
   local attempts="${1:-60}"

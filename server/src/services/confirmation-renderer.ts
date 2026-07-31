@@ -329,7 +329,7 @@ export async function renderConfirmationPdf(document: ConfirmationRenderDocument
   const isOperator = document.documentType === "operator_performance"
     || document.documentType === "customer_service_salary"
     || summary.businessType === "operator_salary";
-  const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 34, bufferPages: true, info: { Title: documentTitle(document, payload), Author: "XJD Finance" } });
+  const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 34, bufferPages: true, info: { Title: documentTitle(document, payload), Author: "Finance" } });
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
@@ -396,7 +396,7 @@ export async function renderConfirmationPdf(document: ConfirmationRenderDocument
   for (let index = range.start; index < range.start + range.count; index += 1) {
     doc.switchToPage(index);
     doc.fillColor(palette.secondary).fontSize(7).text(
-      `XJD Finance · ${payload.documentCode ?? `DOC-${document.id}`} · 第 ${index + 1} / ${range.count} 页`,
+      `Finance · ${payload.documentCode ?? `DOC-${document.id}`} · 第 ${index + 1} / ${range.count} 页`,
       doc.page.margins.left,
       doc.page.height - doc.page.margins.bottom - 10,
       { width: contentWidth, align: "center", lineBreak: false }

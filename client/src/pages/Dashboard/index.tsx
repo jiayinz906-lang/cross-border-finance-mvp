@@ -491,7 +491,7 @@ export default function Dashboard() {
         </Card>
       </section> : null}
 
-      <footer className="overview-footer">XJD Finance UI 财务提成分析系统 © 2026 All Rights Reserved.</footer>
+      <footer className="overview-footer">Finance 财务提成分析系统 © 2026 All Rights Reserved.</footer>
 
       </> : null}
 

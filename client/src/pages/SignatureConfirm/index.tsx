@@ -207,7 +207,7 @@ export default function SignatureConfirm() {
     if (usesLocalSignatureBackend()) {
       Modal.warning({
         title: "本地确认单不能外发",
-        content: <Space direction="vertical"><Typography.Paragraph>当前确认单和签名 Token 保存于本机数据库，复制出的 localhost 链接只能在本机打开，不能发给手机或其他员工。</Typography.Paragraph><Typography.Link href={`${productionAppUrl}#/signature-confirm`} target="_blank">打开线上 XJD Finance 生成可外发链接</Typography.Link></Space>
+        content: <Space direction="vertical"><Typography.Paragraph>当前确认单和签名 Token 保存于本机数据库，复制出的 localhost 链接只能在本机打开，不能发给手机或其他员工。</Typography.Paragraph><Typography.Link href={`${productionAppUrl}#/signature-confirm`} target="_blank">打开线上 Finance 生成可外发链接</Typography.Link></Space>
       });
       return;
     }

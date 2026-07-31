@@ -56,12 +56,12 @@ Write-Host "Preparing database..."
 $backendCommand = "`$env:PATH='$bundledNodeBin;' + `$env:PATH; `$env:PORT='4000'; & '$pnpm' --filter cross-border-finance-server dev"
 $frontendCommand = "`$env:PATH='$bundledNodeBin;' + `$env:PATH; `$env:VITE_API_BASE_URL='http://localhost:4000/api'; & '$pnpm' --filter cross-border-finance-client dev -- --host localhost --port 5173"
 
-Start-FinanceWindow -Title "XJD Finance API :4000" -Command $backendCommand
+Start-FinanceWindow -Title "Finance API :4000" -Command $backendCommand
 Start-Sleep -Seconds 2
-Start-FinanceWindow -Title "XJD Finance Web :5173" -Command $frontendCommand
+Start-FinanceWindow -Title "Finance Web :5173" -Command $frontendCommand
 
 Write-Host ""
-Write-Host "XJD Finance local system is starting."
+Write-Host "Finance local system is starting."
 Write-Host "Frontend:  http://localhost:5173/"
 Write-Host "Dashboard: http://localhost:5173/#/dashboard"
 Write-Host "Backend:   http://localhost:4000/api"

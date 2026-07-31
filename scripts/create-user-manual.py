@@ -300,7 +300,7 @@ def configure_document(doc: Document):
     p = header.paragraphs[0]
     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
     style_paragraph(p, after=0)
-    r = p.add_run("XJD Finance  |  跨境物流财务管理使用操作说明书")
+    r = p.add_run("Finance  |  跨境物流财务管理使用操作说明书")
     set_run_font(r, size=9, color=MUTED, bold=True)
 
     footer = section.footer
@@ -323,7 +323,7 @@ def build_manual():
     configure_document(doc)
 
     # Compact reference guide: credentials and the complete monthly workflow in six short sections.
-    add_text(doc, "XJD FINANCE", bold=True, color=BLUE, size=12, after=30, align=WD_ALIGN_PARAGRAPH.CENTER)
+    add_text(doc, "FINANCE", bold=True, color=BLUE, size=12, after=30, align=WD_ALIGN_PARAGRAPH.CENTER)
     add_text(doc, "系统精简使用说明书", bold=True, color=NAVY, size=30, after=8, align=WD_ALIGN_PARAGRAPH.CENTER)
     add_text(doc, "登录 · Excel 导入 · 提成绩效 · 电子签名 · 收付款 · 锁账", color=MUTED, size=13, after=20, align=WD_ALIGN_PARAGRAPH.CENTER)
     add_text(doc, f"版本 1.1  |  {date.today().isoformat()}", color=MUTED, size=10, after=26, align=WD_ALIGN_PARAGRAPH.CENTER)
@@ -439,10 +439,10 @@ def build_manual():
     )
     add_callout(doc, "内部责任", "系统用于计算、追溯和流程留痕，不替代会计凭证、银行流水、合同、发票和主管审批。", fill=LIGHT_ORANGE, accent=ORANGE)
 
-    doc.core_properties.title = "XJD Finance 系统精简使用说明书"
+    doc.core_properties.title = "Finance 系统精简使用说明书"
     doc.core_properties.subject = "跨境物流财务管理系统精简操作指南"
-    doc.core_properties.author = "XJD Finance"
-    doc.core_properties.keywords = "XJD Finance, 财务管理, Excel导入, 提成, 电子签名, 应收应付"
+    doc.core_properties.author = "Finance"
+    doc.core_properties.keywords = "Finance, 财务管理, Excel导入, 提成, 电子签名, 应收应付"
     doc.core_properties.comments = "根据当前系统功能与权限生成。"
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)

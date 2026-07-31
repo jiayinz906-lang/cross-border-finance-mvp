@@ -25,7 +25,7 @@ function Brand() {
   const { selectedMonth } = useSelectedMonth();
   return (
     <div className="brand">
-      <Typography.Title level={3}>XJD 财务运营系统</Typography.Title>
+      <Typography.Title level={3}>Finance</Typography.Title>
       <Typography.Text>跨境物流与企业服务</Typography.Text>
       <Typography.Text>当前账期：{selectedMonth}</Typography.Text>
     </div>
@@ -109,7 +109,7 @@ export function BasicLayout() {
         {isMobile ? (
           <header className="mobile-app-header">
             <Button type="text" icon={<MenuOutlined />} aria-label="打开导航" onClick={() => setDrawerOpen(true)} />
-            <strong>XJD Finance</strong>
+            <strong>Finance</strong>
             <span>{user?.displayName || user?.username || ""}</span>
           </header>
         ) : null}

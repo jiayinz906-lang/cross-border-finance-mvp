@@ -38,9 +38,8 @@ export default function Login() {
     <main className="login-page">
       <Card className="login-card">
         <div className="login-brand">
-          <span className="login-brand-mark">XJD</span>
           <div>
-            <Typography.Title level={2}>XJD Finance</Typography.Title>
+            <Typography.Title level={2}>Finance</Typography.Title>
             <Typography.Text>跨境物流财务管理</Typography.Text>
           </div>
         </div>
