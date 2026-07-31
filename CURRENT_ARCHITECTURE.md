@@ -217,11 +217,6 @@ sequenceDiagram
 
 ### 6.3 消息通知变量
 
-- `DINGTALK_APP_KEY`
-- `DINGTALK_APP_SECRET`
-- `DINGTALK_ROBOT_CODE`
-- `DINGTALK_WEBHOOK_URL`
-- `DINGTALK_WEBHOOK_SECRET`
 - `WECOM_WEBHOOK_URL`
 
 这些凭证只能保存在服务器环境变量或密钥管理服务中，不得写入 Git。

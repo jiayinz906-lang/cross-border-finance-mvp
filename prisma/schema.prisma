@@ -521,6 +521,81 @@ model ServiceBusinessRecord {
   updatedAt                 DateTime     @updatedAt
 }
 
+// Unified operational dossier adapted from the MIT-licensed Shizhou logistics
+// source.  It complements, rather than replaces, the finance ledger and
+// ServiceBusinessRecord calculation chain.
+model BusinessCase {
+  id                  Int                   @id @default(autoincrement())
+  caseNo              String                @unique
+  month               String
+  caseType            String
+  title               String
+  customerName        String
+  customerCode        String?
+  salespersonName     String?
+  customerServiceName String?
+  status              String                @default("draft")
+  startDate           DateTime?
+  endDate             DateTime?
+  deliveryDate        DateTime?
+  arrivalDate         DateTime?
+  contactName         String?
+  contactPhone        String?
+  address             String?
+  productName         String?
+  taxNumber           String?
+  detailsJson         String?
+  attachmentUrls      String?
+  remark              String?
+  createdBy           String
+  updatedBy           String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  items               BusinessCaseItem[]
+  comments            BusinessCaseComment[]
+
+  @@index([month, caseType, status])
+  @@index([customerName])
+  @@index([salespersonName])
+}
+
+model BusinessCaseItem {
+  id           Int          @id @default(autoincrement())
+  businessCaseId Int
+  businessCase BusinessCase @relation(fields: [businessCaseId], references: [id], onDelete: Cascade)
+  serialNo     Int
+  name         String
+  brand        String?
+  model        String?
+  manufacturer String?
+  material     String?
+  purpose      String?
+  description  String?
+  imageUrl     String?
+  linkUrl      String?
+  certificate  String?
+  hsCode       String?
+  status       String        @default("pending")
+  remark       String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([businessCaseId, serialNo])
+  @@index([businessCaseId])
+}
+
+model BusinessCaseComment {
+  id             Int          @id @default(autoincrement())
+  businessCaseId Int
+  businessCase   BusinessCase @relation(fields: [businessCaseId], references: [id], onDelete: Cascade)
+  content        String
+  attachmentUrls String?
+  createdBy      String
+  createdAt      DateTime     @default(now())
+
+  @@index([businessCaseId, createdAt])
+}
+
 model ConfirmationDocument {
   id                      Int       @id @default(autoincrement())
   month                   String

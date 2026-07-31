@@ -20,6 +20,7 @@ const ServiceConfirm = lazy(() => import("../pages/ServiceConfirm"));
 const Settings = lazy(() => import("../pages/Settings"));
 const SignatureConfirm = lazy(() => import("../pages/SignatureConfirm"));
 const RawEntry = lazy(() => import("../pages/RawEntry"));
+const BusinessCases = lazy(() => import("../pages/BusinessCases"));
 const FinanceOperations = lazy(() => import("../pages/FinanceOperations"));
 
 function page(element: ReactNode) {
@@ -42,6 +43,7 @@ export const routes: RouteObject[] = [
       { path: "profit-analysis", element: protectedPage("profit:read", <ProfitAnalysis />) },
       { path: "commission", element: protectedPage("commission:read", <Commission />) },
       { path: "service-confirm", element: protectedPage("service:read", <ServiceConfirm />) },
+      { path: "business-cases", element: protectedPage("service:read", <BusinessCases />) },
       { path: "signature-confirm", element: protectedPage("confirmation:read", <SignatureConfirm />) },
       { path: "operator-performance", element: protectedPage("performance:read", <OperatorPerformance />) },
       { path: "customer-profit", element: protectedPage("customer-profit:read", <CustomerProfit />) },

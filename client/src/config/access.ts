@@ -32,6 +32,7 @@ export const appPages: AppPageAccess[] = [
   { path: "/profit-analysis", label: "业务利润", permission: "profit:read", navigation: true, roles: [...managerRoles, "sales", "sales_operator"] },
   { path: "/commission", label: "物流提成", permission: "commission:read", navigation: true, roles: [...managerRoles, "sales", "sales_operator"] },
   { path: "/service-confirm", label: "注册提成", permission: "service:read", navigation: true, roles: [...managerRoles, "sales", "sales_operator"] },
+  { path: "/business-cases", label: "业务档案", permission: "service:read", navigation: true },
   { path: "/signature-confirm", label: "电子签名确认", permission: "confirmation:read", navigation: true },
   { path: "/operator-performance", label: "操作员绩效", permission: "performance:read", navigation: true, roles: [...managerRoles, "operator", "sales_operator"] },
   { path: "/customer-profit", label: "客户利润分析", permission: "customer-profit:read", navigation: true, roles: [...managerRoles, "sales", "sales_operator"] },

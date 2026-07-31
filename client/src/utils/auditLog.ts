@@ -104,7 +104,6 @@ const statusLabels: Record<string, string> = {
 };
 
 const changedFieldLabels: Record<string, string> = {
-  dingtalkUserId: "钉钉用户 ID",
   displayName: "姓名",
   isActive: "账号状态",
   mustChangePassword: "首次登录改密状态",

@@ -356,7 +356,7 @@ export type OperationsStatus = {
     imageUploadMaxMb: number;
     slowRequestThresholdMs: number;
     httpRequestTimeoutMs: number;
-    dingtalkConfigured: boolean;
+    notificationConfigured: boolean;
   };
 };
 

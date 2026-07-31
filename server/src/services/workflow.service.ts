@@ -175,122 +175,22 @@ async function canAccessConfirmationDocument(document: { month: string; document
   }));
 }
 
-type NotificationChannel = "dingtalk_direct" | "dingtalk_webhook" | "wecom_webhook";
+type NotificationChannel = "wecom_webhook";
 type SignatureNotificationDocument = { month: string; ownerName: string; commissionAmount: number; signatureUrl: string | null };
-
-let dingtalkAccessTokenCache: { token: string; expiresAt: number } | null = null;
-
 function notificationContent(document: SignatureNotificationDocument) {
   const externalUrl = `${env.publicAppUrl}#${document.signatureUrl}`;
-  return {
-    externalUrl,
-    markdown: [
-      "# Finance 个人确认单",
-      `> 月份：${document.month}`,
-      `> 确认人：${document.ownerName}`,
-      `> 确认金额：¥${money(document.commissionAmount).toFixed(2)}`,
-      "",
-      `[打开确认单并电子签名](${externalUrl})`
-    ].join("\n")
-  };
+  return { externalUrl, markdown: ["# Finance confirmation", `> Month: ${document.month}`, `> Employee: ${document.ownerName}`, `> Amount: CNY ${money(document.commissionAmount).toFixed(2)}`, "", `[Open and sign confirmation](${externalUrl})`].join("\n") };
 }
-
-function dingtalkWebhookUrl() {
-  if (!env.dingtalkWebhookUrl || !env.dingtalkWebhookSecret) return env.dingtalkWebhookUrl;
-  const timestamp = Date.now().toString();
-  const sign = crypto.createHmac("sha256", env.dingtalkWebhookSecret).update(`${timestamp}\n${env.dingtalkWebhookSecret}`).digest("base64");
-  const url = new URL(env.dingtalkWebhookUrl);
-  url.searchParams.set("timestamp", timestamp);
-  url.searchParams.set("sign", sign);
-  return url.toString();
-}
-
-async function sendDingtalkNotification(document: SignatureNotificationDocument) {
-  const webhookUrl = dingtalkWebhookUrl();
-  if (!webhookUrl || !document.signatureUrl) return null;
-  const content = notificationContent(document);
-  const response = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      msgtype: "link",
-      link: { title: "Finance 个人确认单", text: `${document.month} ${document.ownerName}，请打开确认单完成电子签名。`, messageUrl: content.externalUrl, picUrl: "" }
-    })
-  });
-  const receipt = await response.json().catch(() => ({ httpStatus: response.status }));
-  if (!response.ok || (typeof receipt?.errcode === "number" && receipt.errcode !== 0)) {
-    throw new Error(receipt?.errmsg || `钉钉通知发送失败（HTTP ${response.status}）`);
-  }
-  return receipt;
-}
-
 async function sendWecomNotification(document: SignatureNotificationDocument) {
   if (!env.wecomWebhookUrl || !document.signatureUrl) return null;
   const content = notificationContent(document);
-  const response = await fetch(env.wecomWebhookUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ msgtype: "markdown", markdown: { content: content.markdown } })
-  });
+  const response = await fetch(env.wecomWebhookUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ msgtype: "markdown", markdown: { content: content.markdown } }) });
   const receipt = await response.json().catch(() => ({ httpStatus: response.status }));
-  if (!response.ok || (typeof receipt?.errcode === "number" && receipt.errcode !== 0)) {
-    throw new Error(receipt?.errmsg || `企业微信通知发送失败（HTTP ${response.status}）`);
-  }
+  if (!response.ok || (typeof receipt?.errcode === "number" && receipt.errcode !== 0)) throw new Error(receipt?.errmsg || `WeCom notification failed (HTTP ${response.status})`);
   return receipt;
 }
-
-async function getDingtalkAccessToken() {
-  if (!env.dingtalkAppKey || !env.dingtalkAppSecret) throw new Error("钉钉企业应用凭据未配置。");
-  if (dingtalkAccessTokenCache && dingtalkAccessTokenCache.expiresAt > Date.now() + 60_000) return dingtalkAccessTokenCache.token;
-  const response = await fetch("https://api.dingtalk.com/v1.0/oauth2/accessToken", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ appKey: env.dingtalkAppKey, appSecret: env.dingtalkAppSecret })
-  });
-  const payload = await response.json().catch(() => ({})) as { accessToken?: string; expireIn?: number; message?: string; code?: string };
-  if (!response.ok || !payload.accessToken) throw new Error(payload.message || payload.code || `钉钉应用 Token 获取失败（HTTP ${response.status}）`);
-  dingtalkAccessTokenCache = { token: payload.accessToken, expiresAt: Date.now() + Math.max((payload.expireIn ?? 7200) - 120, 60) * 1000 };
-  return payload.accessToken;
-}
-
-async function sendDingtalkDirectNotification(document: SignatureNotificationDocument, dingtalkUserId: string) {
-  if (!document.signatureUrl) return null;
-  const accessToken = await getDingtalkAccessToken();
-  const content = notificationContent(document);
-  const response = await fetch("https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-acs-dingtalk-access-token": accessToken },
-    body: JSON.stringify({
-      robotCode: env.dingtalkRobotCode || env.dingtalkAppKey,
-      userIds: [dingtalkUserId],
-      msgKey: "sampleLink",
-      msgParam: JSON.stringify({ title: "Finance 个人确认单", text: `${document.month} ${document.ownerName}，请打开确认单完成电子签名。`, messageUrl: content.externalUrl, picUrl: "" })
-    })
-  });
-  const receipt = await response.json().catch(() => ({ httpStatus: response.status }));
-  if (!response.ok || (typeof receipt?.code === "string" && receipt.code !== "0") || (typeof receipt?.errcode === "number" && receipt.errcode !== 0)) {
-    throw new Error(receipt?.message || receipt?.errmsg || receipt?.code || `钉钉单聊发送失败（HTTP ${response.status}）`);
-  }
-  return receipt;
-}
-
-async function configuredNotificationChannel(document: SignatureNotificationDocument): Promise<{ channel: NotificationChannel; dingtalkUserId?: string } | null> {
-  if (env.dingtalkAppKey && env.dingtalkAppSecret) {
-    const user = await prisma.appUser.findFirst({
-      where: { dingtalkUserId: { not: null }, OR: [{ displayName: document.ownerName }, { username: document.ownerName }] },
-      select: { dingtalkUserId: true }
-    });
-    if (user?.dingtalkUserId) return { channel: "dingtalk_direct", dingtalkUserId: user.dingtalkUserId };
-  }
-  if (env.dingtalkWebhookUrl) return { channel: "dingtalk_webhook" };
-  if (env.wecomWebhookUrl) return { channel: "wecom_webhook" };
-  return null;
-}
-
-async function sendNotification(target: { channel: NotificationChannel; dingtalkUserId?: string }, document: SignatureNotificationDocument) {
-  if (target.channel === "dingtalk_direct") return sendDingtalkDirectNotification(document, target.dingtalkUserId!);
-  return target.channel === "dingtalk_webhook" ? sendDingtalkNotification(document) : sendWecomNotification(document);
-}
+async function configuredNotificationChannel(_document: SignatureNotificationDocument): Promise<{ channel: NotificationChannel } | null> { return env.wecomWebhookUrl ? { channel: "wecom_webhook" } : null; }
+async function sendNotification(_target: { channel: NotificationChannel }, document: SignatureNotificationDocument) { return sendWecomNotification(document); }
 
 function textValue(value: unknown) {
   if (value === null || value === undefined || value === "") return "-";

@@ -344,3 +344,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d --bui
 - Manual ERP documents are the primary data-entry flow. Legacy Excel import remains a two-step compatibility flow: preview first, confirm import second.
 - Month close reports unfinished risk review, service confirmation, signatures, and reconciliation as warnings and records them in the audit log; an authorized supervisor may still close the month with a reason.
 - Commission confirmation documents are versioned. Supervisor-confirmed documents are immutable; voiding requires a reason and regeneration creates a new version. Signature tokens are one-time-use and store IP, User-Agent, and signature timestamps.
+
+## Business dossiers integration (2026-07-31)
+
+The system now includes a Business Dossiers workspace for customs clearance, company registration, EAC records, products/certificates and follow-up comments. Existing finance, commission, signature, ledger and audit modules remain unchanged. DingTalk outbound delivery was removed; WeCom webhook and manual signature-link delivery remain available. See `THIRD_PARTY_NOTICES.md`.

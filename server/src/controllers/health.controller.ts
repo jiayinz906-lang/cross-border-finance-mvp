@@ -177,7 +177,7 @@ export async function operationsController(_req: Request, res: Response) {
       imageUploadMaxMb: env.imageUploadMaxMb,
       slowRequestThresholdMs: env.slowRequestThresholdMs,
       httpRequestTimeoutMs: env.httpRequestTimeoutMs,
-      dingtalkConfigured: Boolean(env.dingtalkAppKey && env.dingtalkAppSecret && env.dingtalkRobotCode) || Boolean(env.dingtalkWebhookUrl),
+      notificationConfigured: Boolean(env.wecomWebhookUrl),
       maintenanceMode: env.maintenanceMode,
       versionMismatch: env.buildGitSha !== "local" && env.frontendGitSha !== "local" && env.buildGitSha !== env.frontendGitSha
     }

@@ -123,9 +123,7 @@ export default function Settings() {
   const [usersLoading, setUsersLoading] = useState(false);
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
-  const [dingtalkMappingTarget, setDingtalkMappingTarget] = useState<ManagedUser | null>(null);
-  const [dingtalkUserIdDraft, setDingtalkUserIdDraft] = useState("");
-  const [newUser, setNewUser] = useState({ username: "", password: "", displayName: "", role: "sales", dingtalkUserId: "" });
+  const [newUser, setNewUser] = useState({ username: "", password: "", displayName: "", role: "sales" });
   const [passwordDraft, setPasswordDraft] = useState({ currentPassword: "", nextPassword: "" });
   const [accountSaving, setAccountSaving] = useState(false);
   const [notificationConfigured, setNotificationConfigured] = useState<boolean | null>(null);
@@ -366,7 +364,7 @@ export default function Settings() {
     try {
       await createUser(newUser);
       message.success("账号已创建，首次登录必须修改密码。");
-      setNewUser({ username: "", password: "", displayName: "", role: "sales", dingtalkUserId: "" });
+      setNewUser({ username: "", password: "", displayName: "", role: "sales" });
       setUserModalOpen(false);
       await loadManagedUsers();
     } catch (error: any) {
@@ -393,22 +391,6 @@ export default function Settings() {
       message.error(error?.response?.data?.message ?? "同步员工个人账号失败");
     } finally {
       setStaffSyncLoading(false);
-    }
-  };
-
-  const submitDingtalkMapping = async () => {
-    if (!dingtalkMappingTarget) return;
-    setAccountSaving(true);
-    try {
-      await updateUser(dingtalkMappingTarget.id, { dingtalkUserId: dingtalkUserIdDraft });
-      message.success("钉钉用户 ID 已保存。");
-      setDingtalkMappingTarget(null);
-      setDingtalkUserIdDraft("");
-      await loadManagedUsers();
-    } catch (error: any) {
-      message.error(error?.response?.data?.message ?? "保存钉钉用户 ID 失败。");
-    } finally {
-      setAccountSaving(false);
     }
   };
 
@@ -725,7 +707,7 @@ export default function Settings() {
         >
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             {currentAccount.user?.mustChangePassword ? <Alert type="warning" showIcon message="首次登录请先修改密码" description="为保护财务数据，请将初始密码改为至少 10 位的新密码。" /> : null}
-            {canManageUsers ? <Alert type={notificationConfigured ? "success" : "warning"} showIcon message={notificationConfigured ? (notificationProvider === "dingtalk_direct" ? "钉钉企业应用单聊已配置" : notificationProvider === "dingtalk_webhook" ? "钉钉群机器人通知已配置" : "企业微信机器人通知已配置") : "钉钉/企业微信通知尚未配置"} description={notificationConfigured ? `发送签名链接时会优先通过${notificationProvider === "dingtalk_direct" ? "钉钉企业应用单聊（需维护员工钉钉用户 ID）" : notificationProvider === "dingtalk_webhook" ? "钉钉群机器人" : "企业微信群机器人"}投递。` : "请在 Render 环境变量配置钉钉企业应用或群机器人凭据。"} /> : null}
+            {canManageUsers ? <Alert type={notificationConfigured ? "success" : "info"} showIcon message={notificationConfigured ? "企业微信通知已配置" : "当前使用手动外发链接"} description={notificationConfigured ? "发送签名链接时可通过企业微信群机器人投递。" : "生成签名链接后可复制并通过现有沟通工具发送给员工。"} /> : null}
             {canManageUsers ? <Table<ManagedUser>
               rowKey="id"
               loading={usersLoading}
@@ -738,11 +720,9 @@ export default function Settings() {
                 { title: "角色", dataIndex: "role", render: (value) => <Tag color="blue">{roleDirectory.find((item) => item.role === value)?.label ?? value}</Tag> },
                 { title: "状态", render: (_, row) => <Tag color={row.isActive ? "green" : "red"}>{row.isActive ? "启用" : "已停用"}</Tag> },
                 { title: "首次改密", render: (_, row) => row.mustChangePassword ? <Tag color="gold">待修改</Tag> : <Tag>已完成</Tag> },
-                { title: "钉钉用户 ID", dataIndex: "dingtalkUserId", render: (value) => value || <Tag>未映射</Tag> },
                 { title: "最后登录", dataIndex: "lastLoginAt", render: (value) => value ? String(value).replace("T", " ").slice(0, 19) : "-" },
                 { title: "操作", render: (_, row) => <Space>
                   <Button size="small" onClick={async () => { const password = window.prompt(`重置 ${row.displayName} 的密码（至少 10 位）`); if (password && password.length >= 10) { await updateUser(row.id, { resetPassword: password }); message.success("密码已重置，用户下次登录必须修改密码。"); loadManagedUsers(); } }}>重置密码</Button>
-                  <Button size="small" onClick={() => { setDingtalkMappingTarget(row); setDingtalkUserIdDraft(row.dingtalkUserId ?? ""); }}>钉钉映射</Button>
                   <Button size="small" danger={row.isActive} disabled={row.id === currentAccount.user?.id} onClick={async () => { await updateUser(row.id, { isActive: !row.isActive }); message.success(row.isActive ? "账号已停用" : "账号已启用"); loadManagedUsers(); }}>{row.isActive ? "停用" : "启用"}</Button>
                 </Space> }
               ]}
@@ -860,7 +840,7 @@ export default function Settings() {
               <Descriptions.Item label="Excel上传限制">{operations?.configuration.uploadMaxMb ?? "-"} MB</Descriptions.Item>
               <Descriptions.Item label="图片上传限制">{operations?.configuration.imageUploadMaxMb ?? "-"} MB</Descriptions.Item>
               <Descriptions.Item label="请求超时">{operations ? `${Math.round(operations.configuration.httpRequestTimeoutMs / 1000)} 秒` : "-"}</Descriptions.Item>
-              <Descriptions.Item label="钉钉通知">{operations ? configurationTag(operations.configuration.dingtalkConfigured) : "-"}</Descriptions.Item>
+              <Descriptions.Item label="外发通知">{operations ? configurationTag(operations.configuration.notificationConfigured) : "-"}</Descriptions.Item>
             </Descriptions>
             {readiness?.details?.error && <Alert type="error" showIcon message="就绪检查错误" description={readiness.details.error} />}
             {operations?.database?.error && <Alert type="error" showIcon message="数据库探针失败" description={operations.database.error} />}
@@ -1145,7 +1125,6 @@ export default function Settings() {
           <Input value={newUser.username} onChange={(event) => setNewUser((value) => ({ ...value, username: event.target.value }))} placeholder="登录账号" />
           <Input value={newUser.displayName} onChange={(event) => setNewUser((value) => ({ ...value, displayName: event.target.value }))} placeholder="姓名" />
           <Input.Password value={newUser.password} onChange={(event) => setNewUser((value) => ({ ...value, password: event.target.value }))} placeholder="初始密码，至少 10 位" />
-          <Input value={newUser.dingtalkUserId} onChange={(event) => setNewUser((value) => ({ ...value, dingtalkUserId: event.target.value }))} placeholder="钉钉用户 ID（可后续维护）" />
           <Select
             value={newUser.role}
             onChange={(role) => setNewUser((value) => ({ ...value, role }))}
@@ -1153,17 +1132,6 @@ export default function Settings() {
             placeholder="选择账号角色"
           />
         </Space>
-      </Modal>
-      <Modal
-        title={`维护 ${dingtalkMappingTarget?.displayName ?? ""} 的钉钉用户 ID`}
-        open={Boolean(dingtalkMappingTarget)}
-        onCancel={() => { setDingtalkMappingTarget(null); setDingtalkUserIdDraft(""); }}
-        onOk={submitDingtalkMapping}
-        okText="保存映射"
-        confirmLoading={accountSaving}
-      >
-        <Typography.Paragraph type="secondary">用于将个人确认单链接发送至该员工的钉钉单聊；留空并保存即可移除映射。</Typography.Paragraph>
-        <Input value={dingtalkUserIdDraft} onChange={(event) => setDingtalkUserIdDraft(event.target.value)} placeholder="钉钉用户 ID" autoFocus />
       </Modal>
       <Modal
         title={`${staffSyncResult?.month ?? selectedMonth} 员工个人账号同步结果`}

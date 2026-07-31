@@ -92,7 +92,6 @@ function publicUser(user: AppUser) {
     mustChangePassword: user.mustChangePassword,
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     passwordChangedAt: user.passwordChangedAt?.toISOString() ?? null,
-    dingtalkUserId: user.dingtalkUserId,
     auth: authContext(role)
   };
 }
@@ -397,7 +396,7 @@ export const authService = {
     };
   },
 
-  async createUser(input: UserInput & { dingtalkUserId?: string }, operator: string) {
+  async createUser(input: UserInput, operator: string) {
     const username = input.username.trim();
     const displayName = input.displayName.trim();
     validateUsername(username);
@@ -409,13 +408,13 @@ export const authService = {
     if (!role) throw new AppError(400, "INVALID_ROLE", "请选择有效的账号角色。");
     const password = makePassword(input.password);
     const user = await prisma.appUser.create({
-      data: { username, displayName, role, passwordHash: password.hash, passwordSalt: password.salt, mustChangePassword: true, dingtalkUserId: input.dingtalkUserId?.trim() || null }
+      data: { username, displayName, role, passwordHash: password.hash, passwordSalt: password.salt, mustChangePassword: true }
     });
     await authLog("create_user", String(user.id), { operator, username, role: user.role });
     return publicUser(user);
   },
 
-  async updateUser(id: number, input: { displayName?: string; role?: UserRole; isActive?: boolean; resetPassword?: string; dingtalkUserId?: string | null }, operator: string, operatorId?: number) {
+  async updateUser(id: number, input: { displayName?: string; role?: UserRole; isActive?: boolean; resetPassword?: string }, operator: string, operatorId?: number) {
     const existing = await prisma.appUser.findUnique({ where: { id } });
     if (!existing) throw new AppError(404, "USER_NOT_FOUND", "账号不存在。");
     if (operatorId === id && input.isActive === false) throw new AppError(400, "CANNOT_DISABLE_SELF", "不能停用当前登录账号。");
@@ -431,7 +430,6 @@ export const authService = {
       data.role = role;
     }
     if (input.isActive !== undefined) data.isActive = input.isActive;
-    if (input.dingtalkUserId !== undefined) data.dingtalkUserId = input.dingtalkUserId?.trim() || null;
     if (input.resetPassword !== undefined && input.resetPassword !== "") {
       validatePassword(input.resetPassword);
       const password = makePassword(input.resetPassword);

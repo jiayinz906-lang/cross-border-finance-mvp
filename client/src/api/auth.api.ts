@@ -12,7 +12,6 @@ export type LoginResult = {
     mustChangePassword: boolean;
     lastLoginAt?: string | null;
     passwordChangedAt?: string | null;
-    dingtalkUserId?: string | null;
     auth: {
       role: string;
       label: string;
@@ -52,7 +51,7 @@ export function getUsers() {
   return request.get<{ rows: ManagedUser[] }>("/auth/users");
 }
 
-export function createUser(payload: { username: string; password: string; displayName: string; role: string; dingtalkUserId?: string }) {
+export function createUser(payload: { username: string; password: string; displayName: string; role: string }) {
   return request.post<ManagedUser>("/auth/users", payload);
 }
 
@@ -77,10 +76,10 @@ export function syncStaffUsers(month: string) {
   return request.post<StaffAccountSyncResult>("/auth/users/sync-staff", { month });
 }
 
-export function updateUser(id: number, payload: { displayName?: string; role?: string; isActive?: boolean; resetPassword?: string; dingtalkUserId?: string | null }) {
+export function updateUser(id: number, payload: { displayName?: string; role?: string; isActive?: boolean; resetPassword?: string }) {
   return request.patch<ManagedUser>(`/auth/users/${id}`, payload);
 }
 
 export function getNotificationStatus() {
-  return request.get<{ provider: string | null; configured: boolean; channels: { dingtalkDirect: { configured: boolean; appKeyConfigured: boolean; appSecretConfigured: boolean; robotCodeConfigured: boolean }; dingtalkWebhook: { configured: boolean; signingEnabled: boolean }; wecomWebhook: { configured: boolean } } }>("/auth/notification-status");
+  return request.get<{ provider: string | null; configured: boolean; channels: { wecomWebhook: { configured: boolean } } }>("/auth/notification-status");
 }
