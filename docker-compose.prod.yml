@@ -19,6 +19,9 @@ services:
     build:
       context: .
       target: backend-runtime
+      args:
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://mirrors.cloud.tencent.com}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     restart: "no"
     env_file:
       - .env.production
@@ -31,6 +34,9 @@ services:
     build:
       context: .
       target: backend-runtime
+      args:
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://mirrors.cloud.tencent.com}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
     env_file:
       - .env.production
@@ -56,6 +62,8 @@ services:
       context: .
       target: frontend-runtime
       args:
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-http://mirrors.cloud.tencent.com}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
         VITE_API_BASE_URL: /api
         VITE_PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost/}
     restart: unless-stopped

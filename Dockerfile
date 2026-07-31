@@ -4,18 +4,29 @@ FROM node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca440
 
 WORKDIR /app
 ENV CI=true
+ARG DEBIAN_MIRROR=http://mirrors.cloud.tencent.com
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ENV PNPM_HOME=/pnpm
+ENV PATH=${PNPM_HOME}:${PATH}
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
-  && rm -rf /var/lib/apt/lists/* \
-  && corepack enable
+RUN sed -i -E "s#https?://deb.debian.org#${DEBIAN_MIRROR}#g; s#https?://security.debian.org#${DEBIAN_MIRROR}#g" /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+  timeout 120s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update \
+  && timeout 120s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends openssl ca-certificates \
+  && timeout 120s npm install --global pnpm@11.9.0 --registry="${NPM_REGISTRY}" --fetch-retries=2 --fetch-timeout=60000
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY prisma ./prisma
 COPY server/package.json server/tsconfig.json ./server/
 COPY client/package.json client/tsconfig.json client/vite.config.ts client/index.html ./client/
 
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=xjd-pnpm-store,target=/pnpm/store,sharing=locked \
+  pnpm config set registry "${NPM_REGISTRY}" \
+  && pnpm config set store-dir /pnpm/store \
+  && pnpm config set fetch-retries 2 \
+  && pnpm config set fetch-timeout 60000 \
+  && timeout 600s pnpm install --frozen-lockfile
 RUN pnpm prisma:generate
 
 FROM dependencies AS development
@@ -65,6 +76,7 @@ FROM node:22-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca440
 WORKDIR /app
 ARG BUILD_GIT_SHA=local
 ARG BUILD_TIME=unknown
+ARG DEBIAN_MIRROR=http://mirrors.cloud.tencent.com
 ENV NODE_ENV=production
 ENV PORT=4000
 ENV BUILD_GIT_SHA=${BUILD_GIT_SHA}
@@ -74,10 +86,11 @@ ENV CONFIRMATION_FONT_PATH=/usr/share/fonts/truetype/xjd/SimHei.ttf
 LABEL org.opencontainers.image.revision=${BUILD_GIT_SHA}
 LABEL org.opencontainers.image.created=${BUILD_TIME}
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates fontconfig poppler-utils \
-  && rm -rf /var/lib/apt/lists/* \
-  && corepack enable
+RUN sed -i -E "s#https?://deb.debian.org#${DEBIAN_MIRROR}#g; s#https?://security.debian.org#${DEBIAN_MIRROR}#g" /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+  timeout 120s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update \
+  && timeout 120s apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends openssl ca-certificates fontconfig poppler-utils
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY prisma ./prisma
